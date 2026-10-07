@@ -64,5 +64,21 @@ class RolesAndPermissionsSeeder extends Seeder
         $staffViewer->syncPermissions([
             'devices.view',
         ]);
+
+        // Dipakai satu-satunya oleh akun layanan bot Telegram (lihat
+        // TelegramBotAccountSeeder). Beda dari role lain: boleh lintas site
+        // (satu bot token melayani banyak chat/organization berbeda lewat
+        // telegram_bindings), TAPI tidak dapat organizations.manage,
+        // consent-documents.manage, geofence-rules.manage, apk-builds.manage,
+        // atau telegram.manage — bot hanya boleh mengontrol device, tidak
+        // boleh mengubah pengaturan site.
+        $telegramBotService = Role::firstOrCreate(['name' => 'telegram_bot_service', 'guard_name' => 'web']);
+        $telegramBotService->syncPermissions([
+            'devices.view',
+            'devices.lock',
+            'devices.unlock',
+            'devices.locate',
+            'devices.monitor',
+        ]);
     }
 }

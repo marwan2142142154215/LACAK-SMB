@@ -47,6 +47,30 @@ class TelegramBindingController extends Controller
         return $this->success('Binding Telegram berhasil dibuat', new TelegramBindingResource($binding), 201);
     }
 
+    /**
+     * Dipakai bot Telegram (role telegram_bot_service) untuk mencocokkan
+     * chat_id yang baru saja mengirim pesan ke organization_id-nya, tanpa
+     * perlu permission 'telegram.manage' penuh (bot tidak boleh kelola
+     * binding, hanya boleh tahu dia melayani site mana). Hanya organization_id
+     * yang dibalas — bot_token_ref dan field lain tidak diekspos di sini.
+     */
+    public function lookup(Request $request)
+    {
+        $chatId = $request->string('chat_id')->toString();
+
+        if ($chatId === '') {
+            return $this->fail('chat_id wajib diisi', null, 422);
+        }
+
+        $binding = TelegramBinding::where('telegram_chat_id', $chatId)->where('is_active', true)->first();
+
+        if (! $binding) {
+            return $this->fail('Chat ini belum terdaftar ke site mana pun', null, 404);
+        }
+
+        return $this->success('Binding ditemukan', ['organization_id' => $binding->organization_id]);
+    }
+
     public function destroy(Request $request, TelegramBinding $telegramBinding)
     {
         $request->user()->can('telegram.manage') || abort(403);

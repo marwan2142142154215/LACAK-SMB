@@ -4,6 +4,7 @@ import ViolationLog from '#models/violation_log'
 import DeviceCommand from '#models/device_command'
 import socketManager from '#services/socket_manager'
 import { getSystemUserId } from '#services/system_user'
+import { notifyTelegramViolation } from '#services/telegram_notifier'
 import type Device from '#models/device'
 
 type LocationReport = {
@@ -58,12 +59,28 @@ async function recordViolation(
   type: 'wifi_mismatch' | 'ip_mismatch' | 'distance_exceeded',
   detectedValue: string
 ) {
+  const violationLabel = {
+    wifi_mismatch: 'WiFi di luar whitelist',
+    ip_mismatch: 'IP di luar whitelist',
+    distance_exceeded: 'Melewati jarak maksimum',
+  }[type]
+
+  const telegramText = [
+    '⚠️ Pelanggaran terdeteksi — Lacak SMB',
+    `Device: ${device.deviceName}`,
+    `Aturan: ${rule.ruleName}`,
+    `Jenis: ${violationLabel}`,
+    `Detail: ${detectedValue}`,
+  ].join('\n')
+
+  const notifiedTelegram = await notifyTelegramViolation(device.organizationId, telegramText)
+
   const log = await ViolationLog.create({
     deviceId: device.id,
     geofenceRuleId: rule.id,
     violationType: type,
     detectedValue,
-    notifiedTelegram: false, // bot Telegram mengambil/mem-poll ini di tahap berikutnya
+    notifiedTelegram,
     notifiedDashboard: true,
     detectedAt: DateTime.now(),
   })

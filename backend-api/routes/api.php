@@ -66,5 +66,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::apiResource('apk-builds', ApkBuildController::class)->only(['index', 'store']);
 
         Route::apiResource('telegram-bindings', TelegramBindingController::class)->only(['index', 'store', 'destroy']);
+        Route::get('/telegram-bindings-lookup', [TelegramBindingController::class, 'lookup']);
     });
 });

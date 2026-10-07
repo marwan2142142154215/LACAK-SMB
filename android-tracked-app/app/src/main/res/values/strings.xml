@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lacak SMB</string>
+    <string name="notification_channel_tracking">Pemantauan Aktif</string>
+    <string name="notification_tracking_title">Lacak SMB sedang memantau</string>
+    <string name="notification_tracking_text">Terhubung ke server, lokasi dipantau sesuai persetujuan.</string>
+</resources>

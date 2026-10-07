@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             RolesAndPermissionsSeeder::class,
             InitialSuperAdminSeeder::class,
             SystemAccountSeeder::class,
+            TelegramBotAccountSeeder::class,
         ]);
     }
 }
