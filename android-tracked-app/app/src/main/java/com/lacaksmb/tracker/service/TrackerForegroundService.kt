@@ -5,10 +5,16 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 import com.lacaksmb.tracker.BuildConfig
 import com.lacaksmb.tracker.R
@@ -28,8 +34,9 @@ import kotlinx.coroutines.launch
  *  - Notifikasi persisten yang JUJUR (standar android-apk-pro bagian 4:
  *    jangan menyembunyikan diri dari pemilik device)
  *  - Menjalankan perintah 'lock' lewat Device Admin, balas command:ack
- *  - Heartbeat ringan tiap 30 detik (battery level) supaya dashboard tahu
- *    device online — pelaporan BLE/GPS penuh menyusul di iterasi berikutnya
+ *  - Heartbeat tiap 30 detik berisi posisi GPS + level baterai + SSID WiFi
+ *    (terpasang, bukan null) supaya radar dashboard & geofence WiFi/IP
+ *    benar-benar berfungsi
  */
 class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
 
@@ -39,6 +46,21 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(serviceJob)
     private var heartbeatJob: Job? = null
+
+    // Lokasi GPS terbaru dari LocationManager. null sampai perangkat pertama
+    // kali melaporkan posisi (atau sampai isi sendiri dari last-known saat
+    // heartbeat pertama) — radar dashboard menampilkan posisi begitu ada.
+    private var latestLocation: Location? = null
+    private var lastKnownSentAt: Long = 0L
+
+    // Penerima lokasi Android 8 s/d 9 (Listener API).
+    @Suppress("DEPRECATION")
+    private val legacyLocationListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            latestLocation = location
+        }
+    }
+    private var gpsUpdatesStarted = false
 
     override fun onCreate() {
         super.onCreate()
@@ -72,6 +94,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
 
     override fun onDestroy() {
         heartbeatJob?.cancel()
+        stopGpsUpdates()
         socketClient?.disconnect()
         serviceJob.cancel()
         super.onDestroy()
@@ -92,6 +115,10 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     override fun onAccepted(deviceId: Int, status: String) {
         updateNotification("Aktif memantau (status: $status)")
         startHeartbeat()
+        startGpsUpdates()
+        // Kirim satu laporan segera supaya radar tidak menunggu interval
+        // heartbeat pertama; posisi GPS mungkin tetap null sampai fix pertama.
+        serviceScope.launch { sendHeartbeatOnce() }
     }
 
     override fun onRejected(message: String) {
@@ -135,16 +162,98 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     }
 
     private fun sendHeartbeatOnce() {
+        val position = currentPosition()
         socketClient?.sendLocation(
             source = "gps",
-            latitude = null,
-            longitude = null,
+            latitude = position.first,
+            longitude = position.second,
             bleDistanceMeters = null,
             bleRssi = null,
             batteryLevel = currentBatteryLevel(),
-            ssid = null,
+            ssid = currentSsid(),
             ip = null,
         )
+    }
+
+    // ---- Lokasi GPS ----
+
+    /**
+     * Mulai mendengarkan pembaruan lokasi. Cadence hemat baterai: 60 detik
+     * / 10 meter (kalau device diam, Android tidak memanggil callback).
+     * Provider GPS + NETWORK (NETWORK sebagai cadangan di dalam ruangan).
+     * Dipakai Listener API lintas versi (deprecated sejak API 30 tapi tetap
+     * didukung penuh di Android 8-16) karena API Consumer/Builder baru tidak
+     * tersedia penuh di compileSdk 36. Dipanggil hanya setelah device
+     * diterima server (device yang ditolak tidak akan diancam lokasinya).
+     */
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun startGpsUpdates() {
+        if (gpsUpdatesStarted) return
+        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        gpsUpdatesStarted = true
+
+        @Suppress("DEPRECATION")
+        lm.requestLocationUpdates(
+            LocationManager.GPS_PROVIDER, 60_000L, 10f,
+            legacyLocationListener, Looper.getMainLooper(),
+        )
+        @Suppress("DEPRECATION")
+        lm.requestLocationUpdates(
+            LocationManager.NETWORK_PROVIDER, 60_000L, 10f,
+            legacyLocationListener, Looper.getMainLooper(),
+        )
+    }
+
+    @Suppress("DEPRECATION")
+    private fun stopGpsUpdates() {
+        if (!gpsUpdatesStarted) return
+        gpsUpdatesStarted = false
+        try {
+            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            lm.removeUpdates(legacyLocationListener)
+        } catch (_: SecurityException) {
+            // Service sudah berhenti dan izin mungkin sudah tidak relevan — abaikan.
+        }
+    }
+
+    /**
+     * Posisi terbaru untuk dikirim: pakai update terakhir, atau sekali per
+     * menit coba ambil last-known (berguna saat pertama kali start supaya
+     * radar langsung dapat titik tanpa menunggu fix GPS pertama).
+     */
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun currentPosition(): Pair<Double?, Double?> {
+        if (latestLocation == null && System.currentTimeMillis() - lastKnownSentAt > 60_000L) {
+            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val last = try {
+                lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                    ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            } catch (_: SecurityException) {
+                null
+            }
+            if (last != null) {
+                latestLocation = last
+                lastKnownSentAt = System.currentTimeMillis()
+            }
+        }
+        return (latestLocation?.latitude) to (latestLocation?.longitude)
+    }
+
+    /**
+     * Nama WiFi yang sedang dihubungkan — dipakai server untuk aturan
+     * geofence "wifi di luar whitelist → pelanggaran". null kalau tidak
+     * tersambung WiFi atau izin tidak cukup.
+     */
+    @Suppress("DEPRECATION")
+    private fun currentSsid(): String? {
+        val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager ?: return null
+        val ssid = try {
+            wifi.connectionInfo?.ssid
+        } catch (_: SecurityException) {
+            null
+        }
+        if (ssid.isNullOrBlank() || ssid == "<unknown ssid>") return null
+        return ssid.trim().removePrefix("\"").removeSuffix("\"")
     }
 
     private fun currentBatteryLevel(): Int? {

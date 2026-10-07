@@ -13,8 +13,30 @@ android {
         // minSdk 26 (Android 8.0) per permintaan: dukungan Android 8 s/d 16.
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = (project.findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("appVersionName") as String?) ?: "1.0.0"
+
+        // Konfigurasi per-site ditanam SAAT BUILD lewat Gradle property
+        // (-PsiteCode=... -PgatewayUrl=... -PsiteName=...), bukan diketik
+        // staf saat pakai APK. Lihat scripts/build-for-site.sh — dipanggil
+        // oleh backend-api saat admin memilih site di dashboard untuk
+        // download APK. Default di bawah HANYA untuk build pengembangan
+        // lokal (emulator Windows -> host via 10.0.2.2).
+        buildConfigField(
+            "String",
+            "SITE_CODE",
+            "\"${project.findProperty("siteCode") ?: "DEV-UNSET"}\"",
+        )
+        buildConfigField(
+            "String",
+            "GATEWAY_URL",
+            "\"${project.findProperty("gatewayUrl") ?: "http://10.0.2.2:3333"}\"",
+        )
+        buildConfigField(
+            "String",
+            "SITE_NAME",
+            "\"${project.findProperty("siteName") ?: "Development"}\"",
+        )
     }
 
     buildTypes {
