@@ -39,6 +39,7 @@ import androidx.lifecycle.lifecycleScope
 import com.lacaksmb.tracker.BuildConfig
 import com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver
 import com.lacaksmb.tracker.data.DeviceIdentityStore
+import com.lacaksmb.tracker.data.DeviceLockStore
 import com.lacaksmb.tracker.service.TrackerForegroundService
 import com.lacaksmb.tracker.ui.theme.LacakTrackerTheme
 import kotlinx.coroutines.launch
@@ -132,6 +133,16 @@ class MainActivity : ComponentActivity() {
         lifecycleOwner.lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_RESUME) {
+                    // Pertahanan kunci: kalau status masih "dikunci admin" dan
+                    // app kebetulan dibuka (mis. via notifikasi), kunci lagi —
+                    // tidak ada jalan pintas lewat app ini sendiri.
+                    lifecycleScope.launch {
+                        val lock = DeviceLockStore(applicationContext).snapshot()
+                        if (lock.adminLocked) {
+                            TrackerDeviceAdminReceiver.lockNow(applicationContext)
+                        }
+                    }
+
                     when (pendingStep) {
                         EnrollmentStep.BACKGROUND_LOCATION -> {
                             if (backgroundLocationGranted()) {
@@ -148,6 +159,15 @@ class MainActivity : ComponentActivity() {
                                 advanceFrom(EnrollmentStep.BATTERY_EXEMPTION)
                             } else {
                                 statusText = "Pengecualian baterai belum disetujui. Tekan Coba Lagi lalu pilih \"Izinkan\"."
+                                canRetry = true
+                            }
+                        }
+
+                        EnrollmentStep.DISPLAY_OVER_OTHER_APPS -> {
+                            if (Settings.canDrawOverlays(this@MainActivity)) {
+                                advanceFrom(EnrollmentStep.DISPLAY_OVER_OTHER_APPS)
+                            } else {
+                                statusText = "Lapisan peringatan kunci belum diizinkan. Pilih \"Izinkan\" pada halaman Setelan lalu tekan Coba Lagi."
                                 canRetry = true
                             }
                         }
@@ -217,6 +237,19 @@ class MainActivity : ComponentActivity() {
                 requestBatteryOptimizationExemption()
             }
 
+            EnrollmentStep.DISPLAY_OVER_OTHER_APPS -> {
+                if (Settings.canDrawOverlays(this)) {
+                    advanceFrom(EnrollmentStep.DISPLAY_OVER_OTHER_APPS)
+                    return
+                }
+                statusText = "Buka Setelan → Izinkan \"tampil di atas aplikasi lain\"..."
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName"),
+                )
+                startActivity(intent)
+            }
+
             EnrollmentStep.STARTING -> startMonitoring()
 
             EnrollmentStep.ACTIVE -> Unit
@@ -259,6 +292,7 @@ private enum class EnrollmentStep {
     BACKGROUND_LOCATION,
     DEVICE_ADMIN,
     BATTERY_EXEMPTION,
+    DISPLAY_OVER_OTHER_APPS,
     STARTING,
     ACTIVE,
     ;
@@ -316,7 +350,8 @@ private fun EnrollmentScreen(
             StepRow("Lokasi, Bluetooth & notifikasi", step >= EnrollmentStep.BACKGROUND_LOCATION, step == EnrollmentStep.RUNTIME_PERMISSIONS)
             StepRow("Izin lokasi \"selalu\"", step >= EnrollmentStep.DEVICE_ADMIN, step == EnrollmentStep.BACKGROUND_LOCATION)
             StepRow("Kemampuan lock jarak jauh", step >= EnrollmentStep.BATTERY_EXEMPTION, step == EnrollmentStep.DEVICE_ADMIN)
-            StepRow("Pengecualian baterai", step >= EnrollmentStep.STARTING, step == EnrollmentStep.BATTERY_EXEMPTION)
+            StepRow("Pengecualian baterai", step >= EnrollmentStep.DISPLAY_OVER_OTHER_APPS, step == EnrollmentStep.BATTERY_EXEMPTION)
+            StepRow("Lapisan peringatan kunci (tampil di atas app lain)", step >= EnrollmentStep.STARTING, step == EnrollmentStep.DISPLAY_OVER_OTHER_APPS)
 
             if (statusText.isNotBlank()) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

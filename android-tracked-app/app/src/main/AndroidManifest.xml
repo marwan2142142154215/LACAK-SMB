@@ -46,6 +46,12 @@
     <!-- Supaya tracking tetap jalan walau device masuk Doze/App Standby -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Lapisan peringatan lock layar penuh (SYSTEM_ALERT_WINDOW): menutup
+         semua layar dengan peringatan "PERANGKAT DIKUNCI" saat dikunci admin.
+         Izin ini tidak bisa di-grant lewat dialog biasa — lewat halaman
+         Setelan (langkah enrollment DISPLAY_OVER_OTHER_APPS). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <application
         android:name=".TrackerApplication"
         android:allowBackup="false"
@@ -87,6 +93,19 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Pertahanan lock jarak jauh: kunci ulang seketika setiap kali
+             keyguard dilewati user saat status masih "dikunci admin"
+             (ACTION_USER_PRESENT) dan setiap layar menyala (ACTION_SCREEN_ON)
+             — membuka paksa tidak mungkin melewati lock. -->
+        <receiver
+            android:name=".service.LockDefenseReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SCREEN_ON" />
+                <action android:name="android.intent.action.USER_PRESENT" />
             </intent-filter>
         </receiver>
 
