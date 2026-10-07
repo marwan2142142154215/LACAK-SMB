@@ -1,0 +1,17 @@
+# IDE (JetBrains/Android Studio/IntelliJ) — konfigurasi lokal, bukan bagian proyek.
+.idea/
+*.iml
+
+# Editor lain
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Catatan: tiap sub-proyek (backend-api, realtime-gateway, web-dashboard,
+# android-tracked-app, telegram-bot) punya .gitignore sendiri untuk
+# .env, node_modules, vendor, build, dsb. File ini hanya menutup celah
+# di level root monorepo.
