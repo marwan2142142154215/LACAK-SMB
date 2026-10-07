@@ -34,8 +34,12 @@
     <!-- Auto-start service setelah reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- Device Admin: kemampuan lock-screen jarak jauh (lockNow()) -->
-    <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
+    <!-- Device Admin: kemampuan lock-screen jarak jauh (lockNow()). TIDAK
+         dideklarasikan sebagai <uses-permission> di sini — BIND_DEVICE_ADMIN
+         adalah permission level-sistem yang hanya boleh dipegang SISTEM saat
+         memanggil receiver (lihat atribut android:permission di <receiver>
+         TrackerDeviceAdminReceiver di bawah). App pihak ketiga tidak pernah
+         "meminta" izin ini untuk dirinya sendiri. -->
 
     <!-- Supaya tracking tetap jalan walau device masuk Doze/App Standby -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />

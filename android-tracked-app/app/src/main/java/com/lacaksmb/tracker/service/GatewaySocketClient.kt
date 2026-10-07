@@ -67,7 +67,7 @@ class GatewaySocketClient(
             listener.onCommandPush(
                 commandId,
                 data.optString("command_type"),
-                data.optString("reason_note", null),
+                if (data.isNull("reason_note") || !data.has("reason_note")) null else data.getString("reason_note"),
             )
         }
 

@@ -5,31 +5,43 @@ umur). Menerima perintah dari [realtime-gateway](../realtime-gateway) lewat
 Socket.IO, selalu online di latar belakang, dan bisa dikunci jarak jauh
 lewat Device Admin API resmi Android.
 
-## ⚠️ Status: Fondasi — BELUM diverifikasi compile
+## ✅ Status: Fondasi — terverifikasi build & jalan di device nyata
 
-Kode di repo ini sudah ditulis lengkap untuk tahap fondasi (lihat di bawah),
-tapi **belum berhasil di-build** di sesi pengembangan ini karena blocker
-lingkungan: Gradle (semua versi yang dicoba: 8.9, 9.3.0) gagal start karena
-`java.nio.channels.Selector.open()` butuh Unix Domain Socket untuk pipe
-internal, dan AF_UNIX diblokir khusus untuk proses Java di sandbox sesi ini
-(provider kernel `afunix.sys` aktif, tapi socket tetap gagal — kemungkinan
-kebijakan keamanan level proses, bukan driver). Ini terjadi dengan 2 JDK
-berbeda (Temurin 17 sistem & JBR 25 bawaan Android Studio), jadi bukan bug
-JDK tertentu.
+Build Gradle via command-line Windows diblokir sandbox sesi ini (AF_UNIX
+pada `Selector.open()` ditolak khusus untuk proses Java — dicoba 2 JDK beda,
+2 versi Gradle beda, hasil identik). **Jalan keluarnya: build lewat WSL2**
+(kernel Linux WSL tidak kena restriksi yang sama sama sekali). Alur yang
+dipakai dan terbukti berhasil:
 
-**Sebelum dipakai nyata, build & verifikasi dulu** (per android-apk-pro
-checklist):
+```bash
+# Di WSL2 Ubuntu, dari folder project (diakses via /mnt/c/...)
+./gradlew assembleDebug   # BUILD SUCCESSFUL
+./gradlew lint            # 0 error setelah perbaikan di bawah
+```
+
+APK hasil build (`app/build/outputs/apk/debug/app-debug.apk`) lalu
+di-**install lewat `adb.exe` Windows biasa** (USB tetap lewat Windows, WSL2
+tidak perlu USB passthrough):
 ```powershell
-cd android-tracked-app
-.\gradlew.bat clean assembleDebug
-.\gradlew.bat lint
 adb -s R9RXC03EC9N install -r app\build\outputs\apk\debug\app-debug.apk
 ```
-Catatan: `gradlew.bat`/`gradlew` dan `gradle-wrapper.jar` belum ter-generate
-di repo ini (langkah itu sendiri yang gagal karena blocker di atas) — jalankan
-`gradle wrapper --gradle-version 8.13` dulu kalau project dibuka di Android
-Studio (yang biasanya punya jalur Gradle sendiri yang berbeda dari sesi
-command-line ini).
+
+**Diuji nyata di device fisik `R9RXC03EC9N`**: app terpasang, diluncurkan,
+tidak crash (`ps` menunjukkan proses hidup, tidak ada `FATAL EXCEPTION` di
+logcat), dan layar enrollment Compose tampil benar — termasuk `device_uuid`
+yang berhasil di-generate (`198a1eb0-c64d-40ea-875f-1d66597cc568` pada
+pengujian ini) dan dialog izin lokasi Android asli muncul saat diminta.
+
+**1 bug nyata ditemukan & diperbaiki oleh Android Lint**:
+`BIND_DEVICE_ADMIN` sempat dideklarasikan sebagai `<uses-permission>`
+aplikasi di manifest — itu salah, permission itu level-sistem (protected)
+dan hanya boleh muncul di atribut `android:permission` pada `<receiver>`
+Device Admin, bukan diminta aplikasi untuk dirinya sendiri. Lint menolak
+build karena ini (`ProtectedPermissions` error); sudah dihapus.
+
+Untuk membangun ulang: coba dulu langsung di Windows/Android Studio
+(`./gradlew.bat clean assembleDebug`) — kalau kena error AF_UNIX yang sama,
+pakai [`scripts/build-in-wsl.sh`](scripts/build-in-wsl.sh) dari WSL2.
 
 ## Fitur yang sudah ditulis (fondasi)
 - **Enrollment**: layar Compose untuk isi kode site + alamat gateway,
