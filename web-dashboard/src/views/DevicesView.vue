@@ -1,0 +1,168 @@
+<script setup>
+import { KeyRound, Lock, MapPin, PlayCircle, StopCircle, Unlock } from '@lucide/vue'
+import dayjs from 'dayjs'
+import { onMounted, ref } from 'vue'
+
+import BaseBadge from '@/components/ui/BaseBadge.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseCard from '@/components/ui/BaseCard.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import { useToast } from '@/composables/useToast'
+import api from '@/lib/api'
+
+const devices = ref([])
+const loading = ref(true)
+const actingDeviceId = ref(null)
+const otpResult = ref(null)
+const toast = useToast()
+
+const statusVariant = { online: 'success', offline: 'neutral', locked: 'danger', pending_enrollment: 'warning' }
+
+async function loadDevices() {
+    loading.value = true
+    try {
+        const response = await api.get('/devices', { params: { per_page: 100 } })
+        devices.value = response.data.data.items
+    } catch {
+        toast.error('Gagal memuat device')
+    } finally {
+        loading.value = false
+    }
+}
+
+async function issueCommand(device, commandType, reasonNote = null) {
+    actingDeviceId.value = device.id
+    try {
+        await api.post(`/devices/${device.id}/commands`, {
+            command_type: commandType,
+            issued_via: 'web_dashboard',
+            reason_note: reasonNote,
+        })
+        toast.success('Perintah terkirim', `${commandType} untuk ${device.device_name}`)
+        await loadDevices()
+    } catch (err) {
+        toast.error('Gagal mengirim perintah', err.response?.data?.message)
+    } finally {
+        actingDeviceId.value = null
+    }
+}
+
+async function generateOtp(device) {
+    actingDeviceId.value = device.id
+    try {
+        const response = await api.post(`/devices/${device.id}/otp`)
+        otpResult.value = { device, ...response.data.data }
+    } catch (err) {
+        toast.error('Gagal membuat OTP', err.response?.data?.message)
+    } finally {
+        actingDeviceId.value = null
+    }
+}
+
+onMounted(loadDevices)
+</script>
+
+<template>
+    <div>
+        <PageHeader title="Device" subtitle="Kelola perangkat yang terdaftar dan kirim perintah" />
+
+        <div class="p-8">
+            <BaseCard title="Semua Device">
+                <div v-if="loading" class="py-12 text-center text-sm text-base-500">Memuat...</div>
+                <div v-else-if="devices.length === 0" class="py-12 text-center text-sm text-base-500">Belum ada device terdaftar.</div>
+
+                <div v-else class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead>
+                            <tr class="border-b border-base-800 text-xs text-base-500">
+                                <th class="pb-3 font-medium">Nama Device</th>
+                                <th class="pb-3 font-medium">Status</th>
+                                <th class="pb-3 font-medium">Baterai</th>
+                                <th class="pb-3 font-medium">Terakhir Terlihat</th>
+                                <th class="pb-3 font-medium">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-base-800/60">
+                            <tr v-for="d in devices" :key="d.id">
+                                <td class="py-3">
+                                    <p class="font-medium text-base-100">{{ d.device_name }}</p>
+                                    <p class="text-xs text-base-500">{{ d.device_uuid }}</p>
+                                </td>
+                                <td class="py-3">
+                                    <BaseBadge :variant="statusVariant[d.status] ?? 'neutral'">{{ d.status }}</BaseBadge>
+                                </td>
+                                <td class="py-3 text-base-300">{{ d.battery_level != null ? `${d.battery_level}%` : '—' }}</td>
+                                <td class="py-3 text-base-400">
+                                    {{ d.last_seen_at ? dayjs(d.last_seen_at).format('DD MMM YYYY HH:mm') : '—' }}
+                                </td>
+                                <td class="py-3">
+                                    <div class="flex flex-wrap gap-1.5">
+                                        <BaseButton
+                                            size="sm"
+                                            variant="danger"
+                                            :disabled="actingDeviceId === d.id"
+                                            @click="issueCommand(d, 'lock', 'Dikunci manual dari dashboard')"
+                                        >
+                                            <Lock class="size-3.5" /> Lock
+                                        </BaseButton>
+                                        <BaseButton
+                                            size="sm"
+                                            variant="outline"
+                                            :disabled="actingDeviceId === d.id"
+                                            @click="issueCommand(d, 'unlock')"
+                                        >
+                                            <Unlock class="size-3.5" /> Unlock
+                                        </BaseButton>
+                                        <BaseButton
+                                            size="sm"
+                                            variant="ghost"
+                                            :disabled="actingDeviceId === d.id"
+                                            @click="issueCommand(d, 'locate_now')"
+                                        >
+                                            <MapPin class="size-3.5" /> Lokasi
+                                        </BaseButton>
+                                        <BaseButton
+                                            size="sm"
+                                            variant="ghost"
+                                            :disabled="actingDeviceId === d.id"
+                                            @click="issueCommand(d, 'start_monitor')"
+                                        >
+                                            <PlayCircle class="size-3.5" /> Mulai Pantau
+                                        </BaseButton>
+                                        <BaseButton
+                                            size="sm"
+                                            variant="ghost"
+                                            :disabled="actingDeviceId === d.id"
+                                            @click="issueCommand(d, 'stop_monitor')"
+                                        >
+                                            <StopCircle class="size-3.5" /> Stop Pantau
+                                        </BaseButton>
+                                        <BaseButton size="sm" variant="outline" :disabled="actingDeviceId === d.id" @click="generateOtp(d)">
+                                            <KeyRound class="size-3.5" /> Buat OTP
+                                        </BaseButton>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </BaseCard>
+        </div>
+
+        <div
+            v-if="otpResult"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            @click.self="otpResult = null"
+        >
+            <div class="w-full max-w-sm rounded-2xl border border-base-800 bg-base-900 p-6 text-center shadow-2xl">
+                <p class="text-sm text-base-400">OTP untuk {{ otpResult.device.device_name }}</p>
+                <p class="mt-3 font-mono text-4xl font-bold tracking-widest text-accent-400">{{ otpResult.code }}</p>
+                <p class="mt-3 text-xs text-base-500">
+                    Berlaku sampai {{ dayjs(otpResult.expires_at).format('HH:mm:ss') }} — beri tahu pemegang device ini secara lisan/tatap
+                    muka, jangan dikirim lewat chat yang tersimpan permanen.
+                </p>
+                <BaseButton class="mt-5 w-full" variant="outline" @click="otpResult = null">Tutup</BaseButton>
+            </div>
+        </div>
+    </div>
+</template>
