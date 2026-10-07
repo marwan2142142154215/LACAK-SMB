@@ -20,6 +20,7 @@ class DeviceCommand extends Model
         'status',
         'reason_note',
         'acknowledged_at',
+        'created_at',
     ];
 
     protected $casts = [

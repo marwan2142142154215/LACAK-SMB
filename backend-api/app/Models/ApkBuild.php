@@ -19,6 +19,7 @@ class ApkBuild extends Model
         'embedded_site_code',
         'checksum_sha256',
         'built_by',
+        'created_at',
     ];
 
     protected $casts = [

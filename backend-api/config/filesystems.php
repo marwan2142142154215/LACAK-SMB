@@ -15,6 +15,10 @@ return [
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
+    // Disk tujuan dokumen consent/foto penting (standar 6.3). 'spaces' di production,
+    // fallback 'local' untuk dev sebelum kredensial DigitalOcean Spaces diisi.
+    'documents_disk' => env('DOCUMENTS_DISK', 'local'),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
@@ -56,6 +60,23 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            'throw' => false,
+            'report' => false,
+        ],
+
+        // Standar 6.3: berkas penting (consent, foto, dokumen) wajib di DigitalOcean
+        // Spaces, bukan disk lokal server. Spaces kompatibel S3, jadi pakai driver s3.
+        // Belum diisi kredensialnya -> dev lokal otomatis fallback ke disk 'local'
+        // (lihat DOCUMENTS_DISK di .env).
+        'spaces' => [
+            'driver' => 's3',
+            'key' => env('DO_SPACES_KEY'),
+            'secret' => env('DO_SPACES_SECRET'),
+            'region' => env('DO_SPACES_REGION', 'sgp1'),
+            'bucket' => env('DO_SPACES_BUCKET'),
+            'endpoint' => env('DO_SPACES_ENDPOINT'),
+            'url' => env('DO_SPACES_URL'),
+            'use_path_style_endpoint' => false,
             'throw' => false,
             'report' => false,
         ],

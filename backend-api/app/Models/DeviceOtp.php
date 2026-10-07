@@ -19,6 +19,7 @@ class DeviceOtp extends Model
         'purpose',
         'expires_at',
         'used_at',
+        'created_at',
     ];
 
     protected $hidden = [
@@ -51,6 +52,7 @@ class DeviceOtp extends Model
             'otp_code_hash' => Hash::make($plainCode),
             'purpose' => $purpose,
             'expires_at' => now()->addMinutes($validMinutes),
+            'created_at' => now(),
         ]);
 
         return ['otp' => $otp, 'plain_code' => $plainCode];

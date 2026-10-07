@@ -20,6 +20,7 @@ class DeviceLocation extends Model
         'ble_distance_meters',
         'ble_rssi',
         'recorded_at',
+        'created_at',
     ];
 
     protected $casts = [

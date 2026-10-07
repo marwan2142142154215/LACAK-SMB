@@ -20,6 +20,7 @@ class ViolationLog extends Model
         'notified_telegram',
         'notified_dashboard',
         'detected_at',
+        'created_at',
     ];
 
     protected $casts = [
