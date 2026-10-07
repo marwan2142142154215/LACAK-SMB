@@ -44,6 +44,9 @@ class DeviceCommandController extends Controller
     {
         $data = $request->validate([
             'command_type' => ['required', Rule::in(['lock', 'unlock', 'start_monitor', 'stop_monitor', 'locate_now'])],
+            // 'system_auto' sengaja tidak termasuk di sini — hanya gateway yang
+            // menulis baris itu langsung ke DB (tidak lewat endpoint HTTP ini),
+            // supaya tidak ada klien luar yang bisa menyamar sebagai sistem.
             'issued_via' => ['required', Rule::in(['web_dashboard', 'master_app', 'telegram_bot'])],
             'reason_note' => ['nullable', 'string', 'max:255'],
         ]);
