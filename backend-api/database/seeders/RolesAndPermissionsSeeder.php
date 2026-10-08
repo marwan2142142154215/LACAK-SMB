@@ -52,12 +52,19 @@ class RolesAndPermissionsSeeder extends Seeder
             'activity-logs.view',
         ]);
 
-        $parent = Role::firstOrCreate(['name' => 'parent', 'guard_name' => 'web']);
-        $parent->syncPermissions([
+        // admin & leader: TIDAK terkunci ke satu organization_id seperti
+        // site_admin/staff_viewer -- scope-nya ke site yang diberikan izin
+        // eksplisit oleh super_admin lewat user_site_access (bisa lebih dari
+        // satu site), dan VIEW-ONLY (lihat radar, jumlah device, dsb. untuk
+        // site yang diizinkan) -- tidak ada permission *.manage sama sekali.
+        $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        $admin->syncPermissions([
             'devices.view',
-            'devices.lock',
-            'devices.unlock',
-            'devices.locate',
+        ]);
+
+        $leader = Role::firstOrCreate(['name' => 'leader', 'guard_name' => 'web']);
+        $leader->syncPermissions([
+            'devices.view',
         ]);
 
         $staffViewer = Role::firstOrCreate(['name' => 'staff_viewer', 'guard_name' => 'web']);

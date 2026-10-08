@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -53,6 +54,18 @@ class User extends Authenticatable
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    /**
+     * Site yang diizinkan super_admin untuk role 'admin'/'leader' -- berbeda
+     * dari organization_id (satu site "rumah"), user ini bisa diberi akses
+     * lihat ke BANYAK site sekaligus (lihat ResolvesOrganizationScope).
+     */
+    public function siteAccess(): BelongsToMany
+    {
+        return $this->belongsToMany(Organization::class, 'user_site_access', 'user_id', 'organization_id')
+            ->withPivot('granted_by')
+            ->withTimestamps();
     }
 
     public function hasConfirmedTwoFactor(): bool

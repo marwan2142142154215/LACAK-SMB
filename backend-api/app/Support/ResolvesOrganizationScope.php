@@ -6,16 +6,21 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Aturan scoping multi-tenant: super_admin bisa lintas site, role lain
- * (site_admin, parent, staff_viewer) terkunci ke organization_id miliknya
- * sendiri. Dipakai di semua controller yang berhubungan dengan satu site.
+ * Aturan scoping multi-tenant:
+ *  - super_admin / telegram_bot_service: lintas site penuh (tidak dibatasi).
+ *  - admin / leader: dibatasi ke site yang DIBERIKAN IZIN eksplisit oleh
+ *    super_admin lewat tabel user_site_access (bisa lebih dari satu site,
+ *    beda dari organization_id "rumah" yang cuma satu) -- role ini VIEW-ONLY
+ *    (lihat RolesAndPermissionsSeeder, tidak ada *.manage), jadi method di
+ *    sini dipakai controller index/show, bukan untuk endpoint tulis.
+ *  - role lain (site_admin, staff_viewer, dst): terkunci ke organization_id
+ *    miliknya sendiri saja.
  *
- * telegram_bot_service JUGA boleh lintas site — satu bot token melayani
+ * telegram_bot_service boleh lintas site karena satu bot token melayani
  * banyak chat Telegram yang masing-masing terikat ke organization berbeda
  * (lihat telegram_bindings). Kepercayaan ini aman karena permission role
- * tersebut sudah dipersempit (hanya devices.view/lock/unlock/locate/monitor,
- * TIDAK ada organizations.manage dkk — lihat RolesAndPermissionsSeeder), dan
- * bot sendiri wajib mencocokkan chat_id ke organization_id lewat
+ * tersebut sudah dipersempit (lihat RolesAndPermissionsSeeder), dan bot
+ * sendiri wajib mencocokkan chat_id ke organization_id lewat
  * telegram_bindings sebelum memanggil API ini (ditegakkan di sisi bot).
  */
 trait ResolvesOrganizationScope
@@ -23,6 +28,19 @@ trait ResolvesOrganizationScope
     private function hasCrossOrganizationAccess(User $user): bool
     {
         return $user->hasRole('super_admin') || $user->hasRole('telegram_bot_service');
+    }
+
+    private function hasGrantBasedAccess(User $user): bool
+    {
+        return $user->hasRole('admin') || $user->hasRole('leader');
+    }
+
+    /** Daftar organization_id yang boleh diakses user grant-based, dari cache relasi kalau sudah di-load. */
+    private function grantedOrganizationIds(User $user): array
+    {
+        return $user->relationLoaded('siteAccess')
+            ? $user->siteAccess->pluck('id')->all()
+            : $user->siteAccess()->pluck('organizations.id')->all();
     }
 
     /**
@@ -34,6 +52,16 @@ trait ResolvesOrganizationScope
     {
         if ($this->hasCrossOrganizationAccess($user)) {
             return $requestedOrganizationId;
+        }
+
+        if ($this->hasGrantBasedAccess($user)) {
+            if ($requestedOrganizationId === null) {
+                return null; // admin/leader wajib sebutkan site mana, tidak ada "default milik sendiri".
+            }
+
+            return in_array($requestedOrganizationId, $this->grantedOrganizationIds($user), true)
+                ? $requestedOrganizationId
+                : null;
         }
 
         if ($requestedOrganizationId !== null && $requestedOrganizationId !== $user->organization_id) {
@@ -56,6 +84,18 @@ trait ResolvesOrganizationScope
     {
         if ($this->hasCrossOrganizationAccess($user)) {
             return $requestedOrganizationId ? $query->where('organization_id', $requestedOrganizationId) : $query;
+        }
+
+        if ($this->hasGrantBasedAccess($user)) {
+            $granted = $this->grantedOrganizationIds($user);
+
+            if ($requestedOrganizationId !== null) {
+                return in_array($requestedOrganizationId, $granted, true)
+                    ? $query->where('organization_id', $requestedOrganizationId)
+                    : null;
+            }
+
+            return $query->whereIn('organization_id', $granted);
         }
 
         if ($requestedOrganizationId !== null && $requestedOrganizationId !== $user->organization_id) {

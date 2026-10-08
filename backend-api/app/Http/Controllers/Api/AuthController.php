@@ -195,6 +195,10 @@ class AuthController extends Controller
             'organization_id' => $user->organization_id,
             'roles' => $user->getRoleNames(),
             'permissions' => $user->getAllPermissions()->pluck('name'),
+            // Site yang boleh dilihat role admin/leader (lihat user_site_access)
+            // -- array kosong untuk role lain (super_admin/site_admin dkk tidak
+            // butuh ini, scoping mereka dari organization_id atau lintas-site penuh).
+            'accessible_organization_ids' => $user->siteAccess()->pluck('organizations.id'),
         ];
     }
 }

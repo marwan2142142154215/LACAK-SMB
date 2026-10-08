@@ -3,12 +3,14 @@
 use App\Http\Controllers\Api\ApkBuildController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConsentDocumentController;
+use App\Http\Controllers\Api\DashboardSummaryController;
 use App\Http\Controllers\Api\DeviceCommandController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\DeviceOtpController;
 use App\Http\Controllers\Api\GeofenceRuleController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\TelegramBindingController;
+use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ViolationLogController;
 use Illuminate\Support\Facades\Route;
 
@@ -51,6 +53,13 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('organizations', OrganizationController::class);
+
+        Route::get('/dashboard-summary', [DashboardSummaryController::class, 'show']);
+
+        Route::apiResource('users', UserController::class);
+        Route::post('/users/{user}/suspend', [UserController::class, 'suspend']);
+        Route::post('/users/{user}/reactivate', [UserController::class, 'reactivate']);
+        Route::put('/users/{user}/site-access', [UserController::class, 'syncSiteAccess']);
 
         Route::apiResource('consent-documents', ConsentDocumentController::class)->only(['index', 'store', 'show']);
         Route::post('/consent-documents/{consentDocument}/revoke', [ConsentDocumentController::class, 'revoke']);
