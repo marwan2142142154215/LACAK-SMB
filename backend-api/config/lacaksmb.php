@@ -14,7 +14,7 @@ return [
     'tracker_project_path' => env('LACAKSMB_TRACKER_PROJECT_PATH', base_path('../android-tracked-app')),
     'master_project_path' => env('LACAKSMB_MASTER_PROJECT_PATH', base_path('../android-master-app')),
 
-    'public_gateway_url' => env('LACAKSMB_PUBLIC_GATEWAY_URL', 'https://gw.lacaksmbbot.com'),
+    'public_gateway_url' => env('LACAKSMB_PUBLIC_GATEWAY_URL', 'https://ws.lacaksmbbot.com'),
     'public_backend_api_url' => env('LACAKSMB_PUBLIC_BACKEND_API_URL', 'https://api.lacaksmbbot.com/api/v1'),
 
     // Nama distro WSL yang dipakai untuk build Gradle (lihat catatan proyek:
