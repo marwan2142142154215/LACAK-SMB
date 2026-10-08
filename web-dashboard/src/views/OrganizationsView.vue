@@ -1,5 +1,5 @@
 <script setup>
-import { Copy, Plus } from '@lucide/vue'
+import { Copy, Pencil, Plus, Trash2 } from '@lucide/vue'
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { onMounted, ref } from 'vue'
 
@@ -18,6 +18,7 @@ const submitting = ref(false)
 const toast = useToast()
 
 const form = ref({ name: '', type: 'company_asset' })
+const editingOrg = ref(null)
 
 async function loadOrganizations() {
     loading.value = true
@@ -32,15 +33,38 @@ async function loadOrganizations() {
 async function submitForm() {
     submitting.value = true
     try {
-        await api.post('/organizations', form.value)
-        toast.success('Site berhasil dibuat')
+        if (editingOrg.value) {
+            await api.put(`/organizations/${editingOrg.value.id}`, form.value)
+            toast.success('Nama site diubah')
+        } else {
+            await api.post('/organizations', form.value)
+            toast.success('Site berhasil dibuat')
+        }
         dialogOpen.value = false
         form.value = { name: '', type: 'company_asset' }
+        editingOrg.value = null
         await loadOrganizations()
     } catch (err) {
-        toast.error('Gagal membuat site', err.response?.data?.message)
+        toast.error(editingOrg.value ? 'Gagal mengubah site' : 'Gagal membuat site', err.response?.data?.message)
     } finally {
         submitting.value = false
+    }
+}
+
+function openEdit(org) {
+    editingOrg.value = org
+    form.value = { name: org.name, type: org.type ?? 'company_asset' }
+    dialogOpen.value = true
+}
+
+async function removeSite(org) {
+    if (!confirm(`Hapus site "${org.name}"? Semua data device/consent milik site ini ikut terhapus.`)) return
+    try {
+        await api.delete(`/organizations/${org.id}`)
+        toast.success('Site dihapus')
+        await loadOrganizations()
+    } catch (err) {
+        toast.error('Gagal menghapus site', err.response?.data?.message)
     }
 }
 
@@ -54,9 +78,9 @@ onMounted(loadOrganizations)
 
 <template>
     <div>
-        <PageHeader title="Site / Organisasi" subtitle="Kelola perusahaan/keluarga yang pakai sistem ini">
+        <PageHeader title="Site / Organisasi" subtitle="LIST SITE TERDAFTAR">
             <template #actions>
-                <BaseButton @click="dialogOpen = true"><Plus class="size-4" /> Tambah Site</BaseButton>
+                <BaseButton @click="dialogOpen = true; editingOrg = null"><Plus class="size-4" /> Tambah Site</BaseButton>
             </template>
         </PageHeader>
 
@@ -79,6 +103,22 @@ onMounted(loadOrganizations)
                         >
                             <Copy class="size-3" /> {{ org.unique_site_code }}
                         </button>
+                        <div class="mt-3 flex items-center gap-2">
+                            <button
+                                type="button"
+                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-2.5 py-1.5 text-xs text-base-300 hover:border-accent-500/50 hover:text-accent-300"
+                                @click="openEdit(org)"
+                            >
+                                <Pencil class="size-3" /> Ubah Nama
+                            </button>
+                            <button
+                                type="button"
+                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-2.5 py-1.5 text-xs text-base-300 hover:border-danger-500/50 hover:text-danger-300"
+                                @click="removeSite(org)"
+                            >
+                                <Trash2 class="size-3" /> Hapus
+                            </button>
+                        </div>
                     </div>
                 </div>
             </BaseCard>
@@ -90,15 +130,15 @@ onMounted(loadOrganizations)
                 <DialogContent
                     class="fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
                 >
-                    <DialogTitle class="text-base font-semibold text-base-50">Tambah Site Baru</DialogTitle>
+                    <DialogTitle class="text-base font-semibold text-base-50">{{ editingOrg ? `Ubah Nama Site: ${editingOrg.name}` : 'Tambah Site Baru' }}</DialogTitle>
                     <form class="mt-5 space-y-4" @submit.prevent="submitForm">
                         <BaseInput v-model="form.name" label="Nama Site" placeholder="PT Contoh Logistik" required />
                         <p class="text-xs text-base-500">
                             Kode unik site akan dibuat otomatis oleh sistem (mengikuti nama site) dan ditanam ke APK yang didownload untuk site ini.
                         </p>
                         <div class="flex justify-end gap-3 pt-2">
-                            <BaseButton type="button" variant="ghost" @click="dialogOpen = false">Batal</BaseButton>
-                            <BaseButton type="submit" :loading="submitting">Buat Site</BaseButton>
+                            <BaseButton type="button" variant="ghost" @click="dialogOpen = false; editingOrg = null">Batal</BaseButton>
+                            <BaseButton type="submit" :loading="submitting">{{ editingOrg ? 'Simpan' : 'Buat Site' }}</BaseButton>
                         </div>
                     </form>
                 </DialogContent>

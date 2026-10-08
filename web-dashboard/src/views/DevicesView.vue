@@ -1,5 +1,5 @@
 <script setup>
-import { KeyRound, Lock, MapPin, Pencil, PlayCircle, StopCircle, Unlock } from '@lucide/vue'
+import { KeyRound, Lock, MapPin, Pencil, PlayCircle, StopCircle, Trash2, Unlock } from '@lucide/vue'
 import dayjs from 'dayjs'
 import { onMounted, ref } from 'vue'
 
@@ -61,6 +61,17 @@ async function generateOtp(device) {
         toast.error('Gagal membuat OTP', err.response?.data?.message)
     } finally {
         actingDeviceId.value = null
+    }
+}
+
+async function removeDevice(device) {
+    if (!confirm(`Hapus device "${device.device_name}" dari sistem? History lokasi miliknya ikut terhapus.`)) return
+    try {
+        await api.delete(`/devices/${device.id}`)
+        toast.success('Device dihapus')
+        await loadDevices()
+    } catch (err) {
+        toast.error('Gagal menghapus device', err.response?.data?.message)
     }
 }
 
@@ -173,6 +184,9 @@ onMounted(loadDevices)
                                         </BaseButton>
                                         <BaseButton size="sm" variant="outline" :disabled="actingDeviceId === d.id" @click="generateOtp(d)">
                                             <KeyRound class="size-3.5" /> Buat OTP
+                                        </BaseButton>
+                                        <BaseButton size="sm" variant="ghost" @click="removeDevice(d)">
+                                            <Trash2 class="size-3.5" /> Hapus
                                         </BaseButton>
                                     </div>
                                 </td>

@@ -161,8 +161,15 @@ class ApkBuildController extends Controller
 
         $slugName = str($apkBuild->organization?->name ?? 'site')->slug()->value();
         $ext = $apkBuild->apk_type === 'server' ? '.exe' : '.apk';
-        $typeLabel = $apkBuild->apk_type === 'master' ? 'apk-master' : ($apkBuild->apk_type === 'server' ? 'lacak-server' : 'apk-pelacak');
-        $filename = "{$typeLabel}-{$slugName}-v{$apkBuild->version}{$ext}";
+
+        // APK master bersifat universal (bukan milik satu site) -- nama file
+        // tidak menyebut site, cukup apk-master-v{version}.apk.
+        if ($apkBuild->apk_type === 'master') {
+            $filename = "apk-master-v{$apkBuild->version}.apk";
+        } else {
+            $typeLabel = $apkBuild->apk_type === 'server' ? 'lacak-server' : 'apk-pelacak';
+            $filename = "{$typeLabel}-{$slugName}-v{$apkBuild->version}{$ext}";
+        }
 
         return Storage::disk($disk)->download($apkBuild->file_path, $filename);
     }

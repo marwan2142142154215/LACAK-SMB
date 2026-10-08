@@ -23,7 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import com.lacaksmb.master.BuildConfig
 import com.lacaksmb.master.data.ApiClient
 import com.lacaksmb.master.data.ApiResult
 import kotlinx.coroutines.launch
@@ -51,7 +50,7 @@ fun LoginScreen(apiClient: ApiClient, navController: NavHostController) {
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                "Site: ${BuildConfig.SITE_NAME} (${BuildConfig.SITE_CODE})",
+                "Satu APK untuk semua site — akses mengikuti akun yang masuk",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(bottom = 24.dp, top = 4.dp),

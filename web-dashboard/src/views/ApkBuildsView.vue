@@ -39,8 +39,20 @@ const uploadForm = ref({
 
 const hasActiveBuild = computed(() => builds.value.some((b) => b.status === 'pending' || b.status === 'building'))
 
+function typeLabel(build) {
+    return build.apk_type === 'master' ? 'APK Master' : (build.apk_type === 'server' ? 'Server' : 'APK Pelacak')
+}
+
+function buildTitle(build) {
+    const base = `${typeLabel(build)} v${build.version}`
+    // APK master bersifat universal -- bukan milik satu site, akses ditentukan
+    // oleh akun yang login. Tidak perlu menampilkan nama/kode site.
+    if (build.apk_type === 'master') return base
+    return `${base} - ${build.organization_name ?? build.embedded_site_code}`
+}
+
 async function removeBuild(build) {
-    const label = build.apk_type === 'master' ? 'APK Master' : (build.apk_type === 'server' ? 'Server' : 'APK Pelacak')
+    const label = typeLabel(build)
     if (!confirm(`Hapus ${label} (v${build.version})? File di server juga ikut dibersihkan.`)) {
         return
     }
@@ -148,7 +160,7 @@ onBeforeUnmount(() => {
 
 <template>
     <div>
-        <PageHeader title="APK Builds" subtitle="Build APK tracker & master per site, langsung dari server">
+        <PageHeader title="APK Builds" subtitle="Traker per site, APK master & server universal — build langsung dari server">
             <template #actions>
                 <BaseButton variant="ghost" @click="uploadDialogOpen = true"><Upload class="size-4" /> Unggah Manual</BaseButton>
                 <BaseButton @click="generateDialogOpen = true"><Hammer class="size-4" /> Build & Unduh</BaseButton>
@@ -174,7 +186,7 @@ onBeforeUnmount(() => {
                             </div>
                             <div>
                                 <p class="font-medium text-base-100">
-                                    {{ build.apk_type === 'master' ? 'APK Master' : (build.apk_type === 'server' ? 'Server' : 'APK Pelacak') }} v{{ build.version }} - {{ build.organization_name ?? build.embedded_site_code }}
+                                    {{ buildTitle(build) }}
                                 </p>
                                 <p class="font-mono text-xs text-base-500">{{ build.checksum_sha256 ? `${build.checksum_sha256.slice(0, 24)}…` : '—' }}</p>
                                 <p class="text-[11px] text-base-600">{{ dayjs(build.created_at).format('DD MMM YYYY HH:mm') }}</p>
@@ -213,7 +225,7 @@ onBeforeUnmount(() => {
                 >
                     <DialogTitle class="text-base font-semibold text-base-50">Build APK Baru</DialogTitle>
                     <form class="mt-5 space-y-4" @submit.prevent="submitGenerate">
-                        <label v-if="auth.isSuperAdmin" class="block">
+                        <label v-if="auth.isSuperAdmin && generateForm.apk_type !== 'master'" class="block">
                             <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>
                             <select
                                 v-model="generateForm.organization_id"
@@ -228,13 +240,17 @@ onBeforeUnmount(() => {
                                 v-model="generateForm.apk_type"
                                 class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
                             >
-                                <option value="tracker">APK Pelacak (perangkat target)</option>
-                                <option value="master">APK Master (admin/owner)</option>
+                                <option value="tracker">APK Pelacak (perangkat target per site)</option>
+                                <option value="master">APK Master (universal — akses ikut akun)</option>
                                 <option value="server">Server (lacak-server.exe)</option>
                             </select>
                         </label>
                         <BaseInput v-model="generateForm.version" label="Versi" placeholder="1.0.0" required />
-                        <p class="text-xs text-base-500">
+                        <p v-if="generateForm.apk_type === 'master'" class="text-xs text-base-400">
+                            APK Master tidak terikat site — satu APK untuk semua site. Site mana yang bisa dilihat
+                            ditentukan oleh akun yang login (peran + akses site), bukan oleh APK-nya.
+                        </p>
+                        <p v-else class="text-xs text-base-500">
                             Server menjalankan build Gradle sungguhan dengan kode site ditanam otomatis — butuh sekitar
                             1-2 menit, status diperbarui otomatis di daftar setelah ditutup.
                         </p>

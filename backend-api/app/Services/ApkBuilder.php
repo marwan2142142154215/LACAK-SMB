@@ -59,11 +59,18 @@ class ApkBuilder
         $scriptPathWindows = rtrim($projectPath, '/\\').'/scripts/build_only.sh';
         $scriptPathWsl = $this->toWslPath($scriptPathWindows);
 
+        // APK master bersifat UNIVERSAL -- bukan milik salah satu site. Akses
+        // ke site ditentukan oleh akun yang login (role + site_access), bukan
+        // dari kode site yang ditanam saat build. Karena itu kode/nama site
+        // generik dipakai biar build tetap bisa lewat skrip yang sama.
+        $siteCode = $apkBuild->apk_type === 'master' ? 'MASTER-UNIVERSAL' : $organization->unique_site_code;
+        $siteName = $apkBuild->apk_type === 'master' ? 'Lacak SMB' : $organization->name;
+
         $command = [
             'wsl', '-d', config('lacaksmb.wsl_distro'), '--', 'bash', $scriptPathWsl,
-            $organization->unique_site_code,
+            $siteCode,
             config('lacaksmb.public_gateway_url'),
-            $organization->name,
+            $siteName,
             $apkBuild->version,
             config('lacaksmb.public_backend_api_url'),
         ];
@@ -116,7 +123,7 @@ class ApkBuilder
         $apkBuild->update([
             'status' => 'success',
             'file_path' => $storedPath,
-            'embedded_site_code' => $organization->unique_site_code,
+            'embedded_site_code' => $siteCode,
             'checksum_sha256' => $checksum,
             'build_log' => mb_substr($output, -5000),
         ]);

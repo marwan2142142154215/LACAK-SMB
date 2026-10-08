@@ -69,7 +69,7 @@ fun DownloadApkScreen(apiClient: ApiClient, sessionStore: SessionStore, navContr
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             Text(
-                "Build APK sungguhan di server dengan kode site ditanam otomatis untuk site Anda, lalu unduh.",
+                "Build APK sungguhan di server. APK Pelacak per site (kode site ditanam otomatis), APK Master universal — akses ditentukan akun yang masuk.",
                 style = MaterialTheme.typography.bodyMedium,
             )
 

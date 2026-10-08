@@ -19,10 +19,11 @@ class StoreUserRequest extends FormRequest
             'username' => ['required', 'string', 'max:255', 'unique:users,username'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8'],
-            // super_admin & telegram_bot_service SENGAJA tidak termasuk --
-            // super_admin cuma dibuat lewat seeder, telegram_bot_service
-            // satu-satunya dipegang akun layanan bot (lihat TelegramBotAccountSeeder).
-            'role' => ['required', Rule::in(['admin', 'leader', 'site_admin', 'staff_viewer'])],
+            // telegram_bot_service tetap tidak termasuk -- satu-satunya akun
+            // layanan bot (lihat TelegramBotAccountSeeder). super_admin BOLEH
+            // dibuat lewat dashboard (Tambah Staf) oleh super_admin lain yang
+            // punya users.manage -- memberi full akses semua fitur & semua site.
+            'role' => ['required', Rule::in(['super_admin', 'admin', 'leader', 'site_admin', 'staff_viewer'])],
             // organization_id = site "rumah" staf ini (dipakai site_admin/staff_viewer).
             // admin/leader scoping-nya dari site_access, bukan field ini -- tetap boleh
             // diisi sebagai site utama/default tapi tidak membatasi akses mereka.

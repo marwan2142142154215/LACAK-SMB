@@ -20,10 +20,19 @@ const dialogOpen = ref(false)
 const submitting = ref(false)
 
 const ROLE_LABELS = {
+    super_admin: 'Super Admin',
     admin: 'Admin',
     leader: 'Leader',
     site_admin: 'Site Admin',
     staff_viewer: 'Staff Viewer',
+}
+
+const roleDescriptions = {
+    super_admin: 'Super Admin (full akses semua fitur & semua site)',
+    admin: 'Admin (lihat site yang diizinkan)',
+    leader: 'Leader (lihat site yang diizinkan)',
+    site_admin: 'Site Admin (kelola site sendiri penuh)',
+    staff_viewer: 'Staff Viewer (lihat site sendiri)',
 }
 
 const form = ref({
@@ -190,14 +199,15 @@ onMounted(async () => {
                                 v-model="form.role"
                                 class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
                             >
-                                <option value="admin">Admin (lihat site yang diizinkan)</option>
-                                <option value="leader">Leader (lihat site yang diizinkan)</option>
-                                <option value="site_admin">Site Admin (kelola site sendiri penuh)</option>
-                                <option value="staff_viewer">Staff Viewer (lihat site sendiri)</option>
+                                <option v-for="(desc, role) in roleDescriptions" :key="role" :value="role">{{ desc }}</option>
                             </select>
                         </label>
 
-                        <label v-if="!needsSiteAccess" class="block">
+                        <p v-if="form.role === 'super_admin'" class="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-base-300">
+                            Super Admin punya full akses semua fitur & semua site — tidak perlu memilih site.
+                        </p>
+
+                        <label v-else-if="!needsSiteAccess" class="block">
                             <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>
                             <select
                                 v-model="form.organization_id"
