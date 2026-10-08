@@ -25,6 +25,14 @@
         android:name="android.permission.BLUETOOTH_SCAN"
         tools:targetApi="31" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Android 12+ (API 31+): izin runtime untuk BLE advertise — device ini
+         memancarkan beacon berisi device_uuid-nya sendiri supaya APK master
+         bisa mendeteksi jarak dekat (RSSI) saat mencari device secara fisik,
+         terpisah dari GPS yang dipakai untuk posisi jarak jauh. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADVERTISE"
+        tools:targetApi="31" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 
     <!-- Foreground service: wajib selalu online memantau (standar permintaan) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

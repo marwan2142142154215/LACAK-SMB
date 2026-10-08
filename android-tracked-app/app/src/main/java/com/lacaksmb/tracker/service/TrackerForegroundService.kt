@@ -55,6 +55,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     private lateinit var identityStore: DeviceIdentityStore
     private lateinit var lockStore: DeviceLockStore
     private var socketClient: GatewaySocketClient? = null
+    private val bleAdvertiser by lazy { BleBeaconAdvertiser(applicationContext) }
 
     // Watchdog kunci: selama status locked, pasang ulang LockActivity tiap
     // beberapa detik (jaring pengaman kalau user berhasil pindah layar
@@ -173,6 +174,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         heartbeatJob?.cancel()
         lockWatchdogHandler.removeCallbacks(lockWatchdogRunnable)
         stopGpsUpdates()
+        bleAdvertiser.stop()
         socketClient?.disconnect()
         serviceJob.cancel()
         if (lockDefenseRegistered) {
@@ -202,6 +204,9 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         updateNotification("Aktif memantau (status: $status)")
         startHeartbeat()
         startGpsUpdates()
+        serviceScope.launch {
+            bleAdvertiser.start(identityStore.snapshot().deviceUuid)
+        }
         // Kirim satu laporan segera supaya radar tidak menunggu interval
         // heartbeat pertama; posisi GPS mungkin tetap null sampai fix pertama.
         serviceScope.launch { sendHeartbeatOnce() }

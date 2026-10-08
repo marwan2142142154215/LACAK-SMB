@@ -200,6 +200,7 @@ class MainActivity : ComponentActivity() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     permissions += android.Manifest.permission.BLUETOOTH_SCAN
                     permissions += android.Manifest.permission.BLUETOOTH_CONNECT
+                    permissions += android.Manifest.permission.BLUETOOTH_ADVERTISE
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     permissions += android.Manifest.permission.POST_NOTIFICATIONS
