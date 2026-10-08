@@ -2,7 +2,9 @@
 import { Battery, BatteryLow, Lock, LockOpen, Radar as RadarIcon, Wifi, WifiOff } from '@lucide/vue'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
-import { computed, onMounted, reactive, ref } from 'vue'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
@@ -20,18 +22,54 @@ const devices = reactive(new Map())
 const violations = ref([])
 const loading = ref(true)
 const selectedDeviceId = ref(null)
-// Dipaksa naik tiap klik "Muat ulang peta", dipakai di :key iframe supaya
-// Vue benar-benar membongkar & membuat elemen iframe baru (bukan cuma
-// menimpa atribut src pada elemen yang sama) -- iframe Google Maps embed
-// kadang gagal re-init kalau cuma src-nya yang diganti di elemen yang sama,
-// sebelumnya ini cuma bisa diatasi dengan refresh seluruh halaman.
-const mapReloadNonce = ref(0)
 const selectedDevice = computed(() => (selectedDeviceId.value != null ? devices.get(selectedDeviceId.value) : null))
 
-function mapEmbedUrl(device) {
-    if (device?.latitude == null || device?.longitude == null) return null
-    return `https://maps.google.com/maps?q=${device.latitude},${device.longitude}&z=16&output=embed`
+// Peta pakai Leaflet + tile OpenStreetMap, BUKAN iframe embed Google Maps
+// (https://maps.google.com/maps?...&output=embed) seperti sebelumnya --
+// iframe embed konsumen itu memuat seluruh JS "mfe" (maps frontend
+// experience) yang sama dengan situs maps.google.com penuh, termasuk kode
+// komunikasi antar-frame/ekstensi yang tidak pernah dapat balasan di dalam
+// iframe tersembunyi kita (makanya console selalu penuh "message port
+// closed", bukan error yang bisa diperbaiki dari sisi kita). Leaflet
+// me-render peta langsung sebagai elemen yang kita kontrol penuh, tanpa
+// iframe sama sekali, tanpa API key, dan tanpa noise itu.
+const mapEl = ref(null)
+let mapInstance = null
+let mapMarker = null
+
+function renderMap(device) {
+    if (!mapEl.value || device?.latitude == null || device?.longitude == null) return
+    const lat = Number(device.latitude)
+    const lng = Number(device.longitude)
+
+    if (!mapInstance) {
+        mapInstance = L.map(mapEl.value, { attributionControl: true }).setView([lat, lng], 16)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors',
+        }).addTo(mapInstance)
+        mapMarker = L.marker([lat, lng]).addTo(mapInstance)
+    } else {
+        mapInstance.setView([lat, lng], 16)
+        mapMarker.setLatLng([lat, lng])
+    }
+    mapMarker.bindPopup(device.device_name ?? '').openPopup()
+    // Container bisa saja baru pertama kali kelihatan (habis v-else muncul) --
+    // Leaflet butuh ini supaya ukuran tile dihitung ulang, kalau tidak peta
+    // kadang kepotong/abu-abu sebagian sampai window di-resize manual.
+    requestAnimationFrame(() => mapInstance?.invalidateSize())
 }
+
+watch(selectedDevice, async (device) => {
+    if (device?.latitude == null) return
+    await nextTick()
+    renderMap(device)
+})
+
+onBeforeUnmount(() => {
+    mapInstance?.remove()
+    mapInstance = null
+})
 
 const RADAR_MAX_METERS = 200
 
@@ -201,30 +239,10 @@ onMounted(async () => {
                 </div>
             </BaseCard>
 
-            <BaseCard title="Peta Lokasi (Google Maps)" class="xl:col-span-3">
-                <template #actions>
-                    <button
-                        v-if="selectedDevice?.latitude != null"
-                        type="button"
-                        class="text-xs text-base-400 hover:text-accent-300"
-                        @click="mapReloadNonce += 1"
-                    >
-                        Muat ulang peta
-                    </button>
-                </template>
+            <BaseCard title="Peta Lokasi" class="xl:col-span-3">
                 <p v-if="!selectedDevice" class="py-6 text-center text-sm text-base-500">Klik satu kartu Device di atas untuk melihat lokasi.</p>
-                <template v-else>
-                    <p v-if="selectedDevice.latitude == null" class="py-6 text-center text-sm text-base-500">Device ini belum mengirim koordinat GPS.</p>
-                    <iframe
-                        v-else
-                        :key="`${selectedDevice.device_id}-${selectedDevice.latitude}-${selectedDevice.longitude}-${mapReloadNonce}`"
-                        :src="mapEmbedUrl(selectedDevice)"
-                        class="h-96 w-full rounded-xl border border-base-800"
-                        allowfullscreen
-                        loading="lazy"
-                        referrerpolicy="no-referrer-when-downgrade"
-                    />
-                </template>
+                <p v-else-if="selectedDevice.latitude == null" class="py-6 text-center text-sm text-base-500">Device ini belum mengirim koordinat GPS.</p>
+                <div v-show="selectedDevice?.latitude != null" ref="mapEl" class="h-96 w-full rounded-xl border border-base-800"></div>
             </BaseCard>
         </div>
     </div>
