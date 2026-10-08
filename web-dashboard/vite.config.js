@@ -14,5 +14,8 @@ export default defineConfig({
     },
     server: {
         port: 5173,
+        // Cloudflare Tunnel meneruskan Host: app.lacaksmbbot.com ke dev
+        // server ini — Vite 5+ menolak Host header asing secara default.
+        allowedHosts: ['app.lacaksmbbot.com'],
     },
 })
