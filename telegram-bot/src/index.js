@@ -61,9 +61,67 @@ bot.command('help', async (ctx) => {
             '/unlock <id> — buka kunci device',
             '/locate <id> — minta lokasi terbaru sekarang',
             '/status <id> — detail status satu device',
+            '/apk [tracker|master] — build & kirim APK untuk site ini (default: tracker)',
         ].join('\n'),
     )
 })
+
+const APK_POLL_INTERVAL_MS = 5_000
+const APK_POLL_MAX_TRIES = 36 // ~3 menit
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+bot.command(
+    'apk',
+    withOrganization(async (ctx, organizationId) => {
+        const requested = (ctx.match ?? '').trim().toLowerCase()
+        const apkType = requested === 'master' ? 'master' : 'tracker'
+        const label = apkType === 'master' ? 'APK Master' : 'APK Lacak'
+
+        let build
+        try {
+            build = await backend.generateApkBuild(organizationId, apkType, '1.0.0')
+        } catch (error) {
+            const message = error.response?.data?.message ?? 'Terjadi kesalahan, coba lagi.'
+            await ctx.reply(`Gagal memulai build ${label}: ${message}`)
+            return
+        }
+
+        await ctx.reply(
+            `Build ${label} dimulai untuk site ini (kode ${build.embedded_site_code}). Biasanya selesai 1-2 menit, saya kirim file-nya ke sini begitu jadi...`,
+        )
+
+        for (let attempt = 0; attempt < APK_POLL_MAX_TRIES; attempt += 1) {
+            await sleep(APK_POLL_INTERVAL_MS)
+
+            let current
+            try {
+                current = await backend.getApkBuild(build.id)
+            } catch {
+                continue
+            }
+
+            if (current.status === 'success') {
+                await bot.api.sendDocument({
+                    chat_id: ctx.chatId,
+                    document: current.download_url,
+                    caption: `${label} v${current.version} — site ${current.embedded_site_code}`,
+                })
+                return
+            }
+
+            if (current.status === 'failed') {
+                const logTail = (current.build_log ?? '').slice(-500)
+                await ctx.reply(`Build ${label} gagal.\n\n${logTail || 'Tidak ada detail error.'}`)
+                return
+            }
+        }
+
+        await ctx.reply(`Build ${label} masih berjalan setelah ${(APK_POLL_MAX_TRIES * APK_POLL_INTERVAL_MS) / 1000}s — cek lagi lewat dashboard (menu APK Builds).`)
+    }),
+)
 
 bot.command(
     'devices',

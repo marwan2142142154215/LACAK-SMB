@@ -79,6 +79,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'devices.unlock',
             'devices.locate',
             'devices.monitor',
+            // Bot Telegram bisa trigger build+download APK lewat perintah /apk
+            // (lihat telegram-bot/src/index.js) -- bukan cuma dashboard/APK master.
+            'apk-builds.manage',
         ]);
     }
 }

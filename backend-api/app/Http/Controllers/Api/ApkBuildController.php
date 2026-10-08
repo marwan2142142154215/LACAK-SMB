@@ -42,6 +42,17 @@ class ApkBuildController extends Controller
         ]);
     }
 
+    public function show(Request $request, ApkBuild $apkBuild)
+    {
+        $request->user()->can('apk-builds.manage') || abort(403);
+
+        if ($this->authorizedOrganizationId($request->user(), $apkBuild->organization_id) === null) {
+            return $this->fail('Anda tidak berwenang melihat APK build site ini', null, 403);
+        }
+
+        return $this->success('Detail APK build', new ApkBuildResource($apkBuild));
+    }
+
     public function store(StoreApkBuildRequest $request)
     {
         $organizationId = $this->authorizedOrganizationId($request->user(), (int) $request->validated('organization_id'));

@@ -47,9 +47,26 @@ async function issueCommand(deviceId, commandType, reasonNote) {
     return response.data
 }
 
+/** Memicu build APK sungguhan (tracker/master) untuk site chat ini -- lihat backend-api ApkBuildController::generate(). */
+async function generateApkBuild(organizationId, apkType, version) {
+    const response = await api.post('/apk-builds/generate', {
+        organization_id: organizationId,
+        apk_type: apkType,
+        version,
+    })
+    return response.data.data
+}
+
+async function getApkBuild(id) {
+    const response = await api.get(`/apk-builds/${id}`)
+    return response.data.data
+}
+
 module.exports = {
     resolveOrganizationId,
     listDevices,
     getDevice,
     issueCommand,
+    generateApkBuild,
+    getApkBuild,
 }
