@@ -22,6 +22,36 @@ class ApkBuilder
     {
         $organization = Organization::findOrFail($apkBuild->organization_id);
 
+        // Tipe 'server' tidak lewat Gradle -- langsung menyalin lacak-server.exe
+        // yang sudah jadi (bangunan server-gui).
+        if ($apkBuild->apk_type === 'server') {
+            $exePathWindows = config('lacaksmb.server_exe_path');
+
+            if (! is_file($exePathWindows)) {
+                $apkBuild->update([
+                    'status' => 'failed',
+                    'build_log' => "lacak-server.exe tidak ditemukan di: {$exePathWindows}\nBangun dulu dengan: python -m PyInstaller --onefile server-gui/lacak_server.py",
+                ]);
+
+                return;
+            }
+
+            $checksum = hash_file('sha256', $exePathWindows);
+            $storedPath = "apk-builds/{$organization->id}/server-{$apkBuild->id}.exe";
+            $disk = config('filesystems.documents_disk');
+            Storage::disk($disk)->put($storedPath, file_get_contents($exePathWindows));
+
+            $apkBuild->update([
+                'status' => 'success',
+                'file_path' => $storedPath,
+                'embedded_site_code' => $organization->unique_site_code,
+                'checksum_sha256' => $checksum,
+                'build_log' => "Server controller disalin sebagai artefak (tanpa build Gradle).\nSumber: {$exePathWindows}",
+            ]);
+
+            return;
+        }
+
         $projectPath = $apkBuild->apk_type === 'master'
             ? config('lacaksmb.master_project_path')
             : config('lacaksmb.tracker_project_path');

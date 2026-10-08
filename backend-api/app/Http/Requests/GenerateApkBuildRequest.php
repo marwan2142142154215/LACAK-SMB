@@ -16,7 +16,7 @@ class GenerateApkBuildRequest extends FormRequest
     {
         return [
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
-            'apk_type' => ['required', Rule::in(['tracker', 'master'])],
+            'apk_type' => ['required', Rule::in(['tracker', 'master', 'server'])],
             'version' => ['nullable', 'string', 'max:20'],
         ];
     }

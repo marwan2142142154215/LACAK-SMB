@@ -79,13 +79,19 @@ fun DownloadApkScreen(apiClient: ApiClient, sessionStore: SessionStore, navContr
                 FilterChip(
                     selected = apkType == "tracker",
                     onClick = { apkType = "tracker" },
-                    label = { Text("APK Lacak (device staf/anak)") },
+                    label = { Text("APK Pelacak (perangkat target)") },
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 FilterChip(
                     selected = apkType == "master",
                     onClick = { apkType = "master" },
-                    label = { Text("APK Master (admin)") },
+                    label = { Text("APK Master") },
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                FilterChip(
+                    selected = apkType == "server",
+                    onClick = { apkType = "server" },
+                    label = { Text("Server (.exe)") },
                 )
             }
 

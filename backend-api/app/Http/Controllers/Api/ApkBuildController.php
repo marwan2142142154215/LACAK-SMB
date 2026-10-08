@@ -131,7 +131,7 @@ class ApkBuildController extends Controller
             return $this->fail('Berkas APK tidak ditemukan', null, 404);
         }
 
-        $filename = "lacak-smb-{$apkBuild->embedded_site_code}-v{$apkBuild->version}.apk";
+        $filename = 'lacak-smb-'.$apkBuild->embedded_site_code.'-v'.$apkBuild->version.($apkBuild->apk_type === 'server' ? '.exe' : '.apk');
 
         return Storage::disk($disk)->download($apkBuild->file_path, $filename);
     }

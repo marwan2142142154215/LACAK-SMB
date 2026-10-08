@@ -21,3 +21,4 @@ server-gui/build/
 server-gui/dist/
 server-gui/lacak-server.spec
 lacak-server.exe
+server-gui/cloudflare_debug.log

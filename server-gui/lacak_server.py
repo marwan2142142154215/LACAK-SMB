@@ -60,6 +60,8 @@ SERVICES = [
      ["npm.cmd", "run", "dev"], 5173),
     ("telegram-bot", "Telegram Bot", "telegram-bot",
      ["npm.cmd", "start"], None),
+    ("tunnel", "Cloudflare Tunnel", ".",
+     ["cloudflared.exe", "tunnel", "--no-autoupdate", "run"], None),
 ]
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")

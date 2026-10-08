@@ -9,6 +9,7 @@ memantau log empat layanan dari satu jendela GUI:
 | Realtime Gateway | `npm start` (AdonisJS) | 3333 |
 | Web Dashboard | `npm run dev` (Vite) | 5173 |
 | Telegram Bot | `npm start` | — |
+| Cloudflare Tunnel | `cloudflared tunnel run` | — (ws/api/app via Cloudflare) |
 
 ## Cara pakai
 

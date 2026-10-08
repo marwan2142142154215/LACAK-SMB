@@ -61,7 +61,7 @@ bot.command('help', async (ctx) => {
             '/unlock <id> — buka kunci device',
             '/locate <id> — minta lokasi terbaru sekarang',
             '/status <id> — detail status satu device',
-            '/apk [tracker|master] — build & kirim APK untuk site ini (default: tracker)',
+            '/apk [tracker|master|server] - build & kirim artefak untuk site ini (default: tracker)',
         ].join('\n'),
     )
 })
@@ -77,8 +77,8 @@ bot.command(
     'apk',
     withOrganization(async (ctx, organizationId) => {
         const requested = (ctx.match ?? '').trim().toLowerCase()
-        const apkType = requested === 'master' ? 'master' : 'tracker'
-        const label = apkType === 'master' ? 'APK Master' : 'APK Lacak'
+        const apkType = requested === 'master' ? 'master' : (requested === 'server' ? 'server' : 'tracker')
+        const label = apkType === 'master' ? 'APK Master' : (apkType === 'server' ? 'Server Controller' : 'APK Pelacak')
 
         let build
         try {

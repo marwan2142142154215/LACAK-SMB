@@ -160,7 +160,7 @@ onBeforeUnmount(() => {
                             </div>
                             <div>
                                 <p class="font-medium text-base-100">
-                                    {{ build.apk_type === 'master' ? 'APK Master' : 'APK Lacak' }} v{{ build.version }} — {{ build.embedded_site_code }}
+                                    {{ build.apk_type === 'master' ? 'APK Master' : (build.apk_type === 'server' ? 'Server' : 'APK Pelacak') }} v{{ build.version }} - {{ build.embedded_site_code }}
                                 </p>
                                 <p class="font-mono text-xs text-base-500">{{ build.checksum_sha256 ? `${build.checksum_sha256.slice(0, 24)}…` : '—' }}</p>
                                 <p class="text-[11px] text-base-600">{{ dayjs(build.created_at).format('DD MMM YYYY HH:mm') }}</p>
@@ -207,8 +207,9 @@ onBeforeUnmount(() => {
                                 v-model="generateForm.apk_type"
                                 class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
                             >
-                                <option value="tracker">APK Lacak (device staf/anak)</option>
+                                <option value="tracker">APK Pelacak (perangkat target)</option>
                                 <option value="master">APK Master (admin/owner)</option>
+                                <option value="server">Server (lacak-server.exe)</option>
                             </select>
                         </label>
                         <BaseInput v-model="generateForm.version" label="Versi" placeholder="1.0.0" required />

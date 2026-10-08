@@ -20,4 +20,8 @@ return [
     // Nama distro WSL yang dipakai untuk build Gradle (lihat catatan proyek:
     // Gradle tidak bisa jalan langsung di Windows native di mesin ini).
     'wsl_distro' => env('LACAKSMB_WSL_DISTRO', 'Ubuntu'),
+
+    // Tipe 'server' tidak perlu Gradle -- ApkBuilder cukup menyalin
+    // lacak-server.exe yang sudah ter-build (server-gui).
+    'server_exe_path' => env('LACAKSMB_SERVER_EXE_PATH', base_path('../lacak-server.exe')),
 ];
