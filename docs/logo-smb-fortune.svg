@@ -1,0 +1,55 @@
+<svg width="900" height="900" viewBox="0 0 900 900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14a085"/>
+      <stop offset="100%" stop-color="#0a5a4c"/>
+    </linearGradient>
+    <linearGradient id="copperGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f0b060"/>
+      <stop offset="100%" stop-color="#c97b3f"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="900" height="900" fill="#05070a"/>
+
+  <g filter="url(#softShadow)">
+    <path d="M450 90
+             L690 175
+             C690 175 690 420 690 460
+             C690 610 585 730 450 800
+             C315 730 210 610 210 460
+             C210 420 210 175 210 175
+             Z"
+          fill="url(#shieldGrad)" stroke="#2bc4a4" stroke-width="4"/>
+  </g>
+
+  <path d="M450 150
+           L636 215
+           C636 215 636 425 636 458
+           C636 580 553 680 450 740
+           C347 680 264 580 264 458
+           C264 425 264 215 264 215
+           Z"
+        fill="none" stroke="#6fe0c6" stroke-width="2" opacity="0.4"/>
+
+  <circle cx="450" cy="430" r="118" fill="none" stroke="#f5f7fa" stroke-width="7" opacity="0.92"/>
+  <circle cx="450" cy="430" r="118" fill="none" stroke="url(#copperGrad)" stroke-width="7"
+          stroke-dasharray="46 320" stroke-linecap="round" transform="rotate(-54 450 430)"/>
+
+  <path d="M450 320
+           C500 320 540 362 540 412
+           C540 462 450 560 450 560
+           C450 560 360 462 360 412
+           C360 362 400 320 450 320 Z"
+        fill="#05070a"/>
+  <circle cx="450" cy="408" r="34" fill="url(#copperGrad)"/>
+
+  <text x="450" y="650" text-anchor="middle" font-family="'Segoe UI Semibold','Arial',sans-serif"
+        font-size="30" font-weight="700" fill="#f5f7fa" letter-spacing="6">FORTUNE</text>
+
+  <text x="450" y="860" text-anchor="middle" font-family="'Segoe UI Semibold','Arial',sans-serif"
+        font-size="76" font-weight="800" fill="#f5f7fa" letter-spacing="4">SMB</text>
+</svg>

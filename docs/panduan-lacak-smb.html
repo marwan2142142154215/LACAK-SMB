@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Panduan Sistem Lacak SMB</title>
+<style>
+  @page { size: A4; margin: 28mm 22mm 24mm 22mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Georgia', 'Cambria', serif;
+    color: #1b1f24;
+    font-size: 11.5pt;
+    line-height: 1.65;
+  }
+  .cover {
+    page-break-after: always;
+    height: 247mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: #05070a;
+    color: #f5f7fa;
+    margin: -28mm -22mm -24mm -22mm;
+    padding: 28mm 22mm 24mm 22mm;
+  }
+  .cover img { width: 150px; margin-bottom: 28px; }
+  .cover h1 {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 30pt;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin: 0 0 6px 0;
+  }
+  .cover .sub {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12.5pt;
+    color: #9aa4b6;
+    margin-bottom: 40px;
+  }
+  .cover .meta {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 10pt;
+    color: #6fe0c6;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  h2 {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 17pt;
+    color: #0e7a6b;
+    border-bottom: 2px solid #c97b3f;
+    padding-bottom: 6px;
+    margin-top: 0;
+    page-break-before: always;
+  }
+  h2.no-break { page-break-before: auto; }
+  h3 {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12.5pt;
+    color: #1b1f24;
+    margin-top: 22px;
+    margin-bottom: 6px;
+  }
+  p { text-align: justify; margin: 0 0 11px 0; }
+  .toc { page-break-after: always; }
+  .toc h2 { page-break-before: auto; }
+  .toc ol { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11pt; line-height: 2.1; padding-left: 20px; }
+  .steps { padding-left: 22px; margin: 10px 0 16px 0; }
+  .steps li { margin-bottom: 8px; text-align: justify; }
+  .note {
+    background: #f4f1e8;
+    border-left: 4px solid #c97b3f;
+    padding: 10px 14px;
+    margin: 14px 0;
+    font-size: 10.5pt;
+  }
+  .warn {
+    background: #fbeceb;
+    border-left: 4px solid #b3261e;
+    padding: 10px 14px;
+    margin: 14px 0;
+    font-size: 10.5pt;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 10.5pt;
+  }
+  table th, table td {
+    border: 1px solid #c4cbd8;
+    padding: 6px 9px;
+    text-align: left;
+    vertical-align: top;
+  }
+  table th { background: #e4e8ef; font-family: 'Segoe UI', Arial, sans-serif; }
+  .footer-note {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 9pt;
+    color: #4b5568;
+    margin-top: 30px;
+    border-top: 1px solid #c4cbd8;
+    padding-top: 10px;
+  }
+  figure {
+    margin: 16px 0;
+    page-break-inside: avoid;
+  }
+  figure img {
+    width: 100%;
+    border-radius: 6px;
+    border: 1px solid #c4cbd8;
+    display: block;
+  }
+  figcaption {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 9.5pt;
+    color: #4b5568;
+    text-align: center;
+    margin-top: 6px;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <img src="logo-smb-fortune.png" alt="Logo SMB Fortune">
+  <h1>LACAK SMB</h1>
+  <div class="sub">Panduan Penggunaan Sistem Pelacakan &amp; Pengamanan Aset Perusahaan</div>
+  <div class="meta">SMB Fortune &middot; Dokumen Internal</div>
+</div>
+
+<div class="toc">
+<h2>Daftar Isi</h2>
+<ol>
+  <li>Tentang Sistem Ini</li>
+  <li>Bagian-Bagian Sistem</li>
+  <li>Peran Pengguna dan Hak Aksesnya</li>
+  <li>Memulai: Login dan Verifikasi Dua Langkah</li>
+  <li>Dashboard Web &mdash; Panduan Lengkap</li>
+  <li>Memasang Device Baru (APK Pelacak)</li>
+  <li>APK Master &mdash; Mengelola Device dari HP</li>
+  <li>Cara Kerja Penguncian Otomatis (Geofence)</li>
+  <li>Menggunakan Bot Telegram</li>
+  <li>Hal yang Sering Ditanyakan</li>
+</ol>
+</div>
+
+<h2 class="no-break">1. Tentang Sistem Ini</h2>
+<p>Lacak SMB dibangun untuk satu keperluan yang jelas: perusahaan perlu tahu di mana aset HP-nya berada, dan perlu bisa mengunci HP itu dari jarak jauh kalau keluar dari area yang seharusnya. Ini bukan aplikasi mata-mata. Setiap device yang terdaftar di sistem ini harus melalui proses persetujuan (consent) terlebih dahulu, dan pemegang device selalu tahu bahwa HP-nya sedang dipantau &mdash; notifikasi tracking selalu tampil di layar, tidak disembunyikan.</p>
+<p>Sistem ini dipakai dalam konteks aset perusahaan: HP yang dipinjamkan ke staf untuk keperluan kerja, bukan HP pribadi karyawan. Setiap site (cabang atau unit kerja) punya kode uniknya sendiri, daftar device sendiri, dan aturan keamanannya sendiri yang bisa diatur lewat dashboard.</p>
+<p>Ada dua cara utama memantau dan mengendalikan device: lewat dashboard web dari komputer, atau lewat APK Master dari HP admin. Keduanya terhubung ke server yang sama, jadi perubahan yang dibuat di satu tempat langsung terlihat di tempat lain.</p>
+
+<h2>2. Bagian-Bagian Sistem</h2>
+<p>Ada enam bagian yang bekerja sama. Memahami perannya masing-masing akan memudahkan kalau suatu saat ada yang perlu diperiksa atau diperbaiki.</p>
+
+<h3>Backend API</h3>
+<p>Ini otak penyimpanan data: daftar site, daftar device, dokumen consent, aturan geofence, riwayat pelanggaran, akun staf. Semua permintaan dari dashboard web dan APK Master pada akhirnya singgah ke sini. Kalau backend ini mati, dashboard dan APK Master tidak akan bisa login atau memuat data, meskipun device yang sudah terhubung tetap bisa terus melapor ke gateway.</p>
+
+<h3>Realtime Gateway</h3>
+<p>Ini yang menjaga koneksi hidup dengan setiap device yang sedang online. Device mengirim posisi dan status baterainya ke sini setiap beberapa detik, dan gateway inilah yang memutuskan kapan sebuah device harus dikunci otomatis karena melanggar aturan geofence. Dashboard dan APK Master juga terhubung ke gateway ini supaya radar dan status device terasa langsung berubah tanpa perlu refresh.</p>
+
+<h3>Dashboard Web</h3>
+<p>Panel kontrol lengkap yang dibuka lewat browser. Dari sini admin bisa membuat site baru, mengatur siapa yang boleh akses site mana, menambah staf, mengunggah dokumen consent, mengatur aturan geofence, dan memicu pembuatan APK baru.</p>
+
+<h3>APK Pelacak</h3>
+<p>Ini yang dipasang di HP yang mau dilacak. Setelah di-enroll, aplikasi ini berjalan sebagai layanan latar belakang yang selalu aktif, mengirim posisi secara berkala, dan akan menampilkan layar kunci penuh kalau ada perintah lock dari admin atau kalau device melanggar aturan geofence.</p>
+
+<h3>APK Master</h3>
+<p>Ini aplikasi untuk admin atau staf yang berwenang, dipasang di HP mereka sendiri. Fungsinya mirip dashboard web tapi dalam bentuk yang lebih ringkas dan bisa dibawa ke mana-mana: lihat daftar device, kunci atau buka device, cari device secara fisik lewat radar Bluetooth, dan membuat kode OTP kalau pemegang device perlu membuka kuncinya sendiri.</p>
+
+<h3>Bot Telegram</h3>
+<p>Jalur cepat untuk perintah sehari-hari tanpa perlu buka dashboard: mengunci device, membuka device, minta lokasi terbaru, atau memicu pembuatan APK baru, semuanya lewat perintah singkat di Telegram.</p>
+
+<h2>3. Peran Pengguna dan Hak Aksesnya</h2>
+<p>Setiap akun yang login ke dashboard atau APK Master punya salah satu dari tiga peran berikut.</p>
+<table>
+  <tr><th>Peran</th><th>Yang bisa dilakukan</th></tr>
+  <tr><td>Super Admin</td><td>Akses penuh ke semua site, bisa membuat site baru, membuat akun super admin lain, dan melihat statistik gabungan seluruh perusahaan.</td></tr>
+  <tr><td>Admin</td><td>Hanya bisa melihat dan mengelola site yang secara eksplisit diberikan aksesnya oleh super admin. Bisa mengunci, membuka, dan mengatur aturan geofence untuk site tersebut.</td></tr>
+  <tr><td>Leader</td><td>Sama seperti admin dari sisi site yang bisa diakses, tapi sifatnya lebih ke melihat laporan dan status &mdash; cocok untuk pengawas lapangan yang perlu tahu kondisi device timnya.</td></tr>
+</table>
+<p>Site mana saja yang bisa diakses oleh seorang admin atau leader diatur oleh super admin lewat menu Staf di dashboard. Satu akun bisa diberi akses ke lebih dari satu site sekaligus.</p>
+
+<h2>4. Memulai: Login dan Verifikasi Dua Langkah</h2>
+<p>Baik dashboard web maupun APK Master memakai sistem login yang sama: username, password, dan verifikasi dua langkah (2FA) lewat aplikasi authenticator seperti Google Authenticator.</p>
+<ol class="steps">
+  <li>Masukkan username dan password yang sudah dibuatkan oleh super admin.</li>
+  <li>Kalau ini kali pertama login, layar akan menampilkan kode QR (di dashboard web) atau kode manual 16 karakter (di APK Master). Pindai atau salin kode itu ke aplikasi authenticator.</li>
+  <li>Masukkan kode 6 digit yang muncul di aplikasi authenticator. Kode ini berubah setiap 30 detik, jadi pastikan memasukkannya sebelum berganti.</li>
+  <li>Login berikutnya cukup masukkan username, password, dan kode 6 digit yang sedang aktif &mdash; tidak perlu memindai ulang kode QR.</li>
+</ol>
+<div class="note">Kalau HP yang terpasang authenticator-nya hilang atau ganti, hubungi super admin untuk mengatur ulang 2FA akun tersebut dari dashboard.</div>
+
+<figure>
+  <img src="shot-login.jpg" alt="Layar login dashboard web">
+  <figcaption>Layar login dashboard web &mdash; tampilan yang sama polanya dipakai di APK Master.</figcaption>
+</figure>
+
+<h2>5. Dashboard Web &mdash; Panduan Lengkap</h2>
+
+<h3>Mengelola Site</h3>
+<p>Site di sini berarti satu cabang, satu unit kerja, atau satu kelompok device yang diatur dengan aturan yang sama. Setiap site punya kode unik yang dibuat otomatis mengikuti nama site-nya saat pertama dibuat, dan kode inilah yang nanti tertanam di APK Pelacak yang dibangun untuk site tersebut. Hanya super admin yang bisa membuat site baru.</p>
+
+<h3>Mengelola Device</h3>
+<p>Halaman Device menampilkan semua HP yang terdaftar di site yang sedang dilihat, lengkap dengan status terkininya: online, offline, atau terkunci. Dari sini admin bisa mengunci atau membuka device secara manual, melihat posisi terakhirnya di peta, dan menghapus device yang sudah tidak dipakai.</p>
+
+<figure>
+  <img src="shot-device.jpg" alt="Halaman Device di dashboard web">
+  <figcaption>Halaman Device &mdash; tombol Lock, Unlock, Lokasi, Mulai Pantau, dan Buat OTP tersedia langsung per baris device.</figcaption>
+</figure>
+
+<h3>Dokumen Consent</h3>
+<p>Sebelum device bisa didaftarkan, harus ada dokumen consent yang masih berlaku untuk site tersebut. Dokumen ini bisa diunggah lewat menu Consent, dan setiap device yang didaftarkan akan dikaitkan dengan satu dokumen consent sebagai dasar persetujuannya. Kalau dokumen consent dicabut atau sudah lewat masa berlakunya, device yang terkait tidak akan bisa terhubung ke server lagi sampai ada dokumen consent baru.</p>
+
+<h3>Aturan Geofence</h3>
+<p>Di sinilah admin menentukan area aman untuk sebuah site. Ada beberapa jenis pemeriksaan yang bisa diaktifkan sekaligus pada satu aturan: whitelist nama WiFi, whitelist rentang IP, radius GPS dari titik pusat tertentu, dan yang paling presisi untuk jarak dekat, radius berbasis sinyal Bluetooth dari satu device yang dijadikan titik acuan (anchor). Penjelasan lengkap cara kerja bagian ini ada di bab 8.</p>
+
+<figure>
+  <img src="shot-geofence.jpg" alt="Halaman Aturan Geofence">
+  <figcaption>Aturan "smb groub" memakai mode BLE: radius 10 meter dari device anchor, berstatus Aktif.</figcaption>
+</figure>
+
+<h3>Staf</h3>
+<p>Menu ini khusus untuk super admin, dipakai untuk membuat akun baru, mengubah data akun yang sudah ada, mengganti password, menentukan perannya, dan mengatur site mana saja yang boleh diakses akun tersebut. Akun yang di-nonaktifkan dari sini langsung kehilangan akses ke dashboard maupun APK Master.</p>
+
+<figure>
+  <img src="shot-staff.jpg" alt="Halaman Staf">
+  <figcaption>Setiap akun punya tombol Edit, Ganti Password, Suspen, dan Hapus langsung di barisnya.</figcaption>
+</figure>
+
+<h3>APK Builds</h3>
+<p>Riwayat semua APK yang pernah dibangun untuk setiap site, baik APK Pelacak maupun APK Master. Dari sini admin bisa memicu pembuatan APK baru dan mengunduh hasil build yang sudah selesai begitu statusnya berubah menjadi sukses.</p>
+
+<figure>
+  <img src="shot-apkbuilds.jpg" alt="Halaman APK Builds">
+  <figcaption>Riwayat build, yang terbaru selalu tampil di paling atas, dengan status Berhasil atau Gagal.</figcaption>
+</figure>
+
+<h3>Binding Telegram</h3>
+<p>Supaya bot Telegram tahu site mana yang berhak diakses oleh sebuah akun Telegram, akun itu perlu dihubungkan (bind) lewat menu ini terlebih dahulu.</p>
+
+<h2>6. Memasang Device Baru (APK Pelacak)</h2>
+<p>Memasang device baru dilakukan dalam dua tahap: membangun APK untuk site yang dituju, lalu mendaftarkan device itu lewat aplikasi di HP-nya langsung.</p>
+<ol class="steps">
+  <li>Dari dashboard atau Telegram, minta build APK Pelacak untuk site yang dituju. Tunggu sampai statusnya sukses, lalu unduh file APK-nya.</li>
+  <li>Pasang APK itu di HP yang mau dilacak, lalu buka aplikasinya.</li>
+  <li>Layar pertama akan menampilkan ID device yang dibuat otomatis dan daftar izin yang perlu diberikan: lokasi, Bluetooth, notifikasi, kemampuan kunci jarak jauh, pengecualian optimasi baterai, dan izin tampil di atas aplikasi lain. Berikan semua izin ini satu per satu.</li>
+  <li>Setelah semua izin diberikan, device masih berstatus belum terdaftar di sisi server. Admin perlu mendaftarkan device ini lewat dashboard atau APK Master, memasukkan ID device yang tampil di layar tadi dan memilih dokumen consent yang berlaku.</li>
+  <li>Begitu terdaftar, aplikasi akan otomatis terhubung ke server dan mulai melapor. Layarnya akan berubah menjadi "Device ini sudah terdaftar dan sedang dipantau."</li>
+</ol>
+<div class="warn">Tanpa izin lokasi "selalu" dan pengecualian optimasi baterai, sebagian HP (terutama merek yang terkenal agresif mematikan aplikasi latar belakang) bisa menghentikan layanan pelacakan setelah layar HP mati beberapa saat. Pastikan kedua izin ini benar-benar diberikan, bukan cuma "saat digunakan".</div>
+
+<h2>7. APK Master &mdash; Mengelola Device dari HP</h2>
+<p>Setelah login, layar utama menampilkan daftar semua device yang bisa diakses akun tersebut, lengkap dengan status online atau offline-nya. Mengetuk salah satu device membuka halaman detailnya, tempat tombol kunci dan buka berada, serta tombol untuk meminta lokasi terbaru dan membuat kode OTP self-unlock.</p>
+<p>Di bagian atas ada beberapa ikon jalan pintas: radar untuk mencari device secara fisik lewat kekuatan sinyal Bluetooth-nya, aturan geofence untuk mengatur area aman, dokumen consent, dan unduh APK.</p>
+
+<h3>Radar Bluetooth</h3>
+<p>Fitur ini berguna kalau device yang dicari ada di ruangan yang sama tapi tidak kelihatan. APK Master akan memindai sinyal Bluetooth dari device-device yang sedang dilacak di sekitarnya, dan menampilkan perkiraan jaraknya &mdash; makin kuat sinyalnya, makin dekat device itu. Ini jauh lebih akurat untuk jarak dekat dibanding GPS, yang memang tidak dirancang untuk presisi di bawah sepuluh meter.</p>
+
+<h3>OTP Self-Unlock</h3>
+<p>Kalau device sedang terkunci dan pemegangnya perlu membukanya sendiri tanpa menunggu admin, admin bisa membuatkan kode OTP enam digit dari sini. Kode itu dimasukkan langsung di layar kunci HP yang bersangkutan, dan device akan terbuka begitu kodenya benar. Kode ini hanya berlaku sekali pakai dan dalam waktu terbatas.</p>
+
+<figure>
+  <img src="shot-radar.jpg" alt="Halaman Radar Pemantauan">
+  <figcaption>Radar Pemantauan &mdash; halaman pertama yang terbuka setelah login, menampilkan posisi device dan pelanggaran terbaru secara langsung.</figcaption>
+</figure>
+
+<h2>8. Cara Kerja Penguncian Otomatis (Geofence)</h2>
+<p>Bagian ini sering jadi yang paling membingungkan, jadi penjelasannya akan dibuat selengkap mungkin.</p>
+<p>Setiap device yang sedang online mengirim laporan posisi secara berkala, setiap lima belas detik. Laporan ini dicocokkan dengan aturan geofence yang aktif untuk site device itu. Ada empat jenis pemeriksaan yang bisa dipakai, dan sebuah aturan boleh memakai lebih dari satu sekaligus:</p>
+<table>
+  <tr><th>Jenis pemeriksaan</th><th>Cara kerja</th><th>Cocok untuk</th></tr>
+  <tr><td>Whitelist WiFi</td><td>Device harus terhubung ke salah satu nama WiFi yang diizinkan.</td><td>Kantor dengan jaringan WiFi tetap.</td></tr>
+  <tr><td>Whitelist IP</td><td>Device harus berada dalam rentang IP tertentu.</td><td>Jaringan dengan IP statis atau rentang DHCP yang konsisten.</td></tr>
+  <tr><td>Radius GPS</td><td>Jarak lurus dari titik pusat yang ditentukan, dihitung dari koordinat GPS device.</td><td>Area luas, radius puluhan meter ke atas. Tidak cocok untuk presisi dalam ruangan.</td></tr>
+  <tr><td>Radius BLE anchor</td><td>Satu device dijadikan titik acuan tetap (biasanya diam di satu tempat), device lain mengukur jaraknya dari kekuatan sinyal Bluetooth anchor itu.</td><td>Presisi jarak dekat, beberapa meter saja, termasuk dalam ruangan di mana GPS tidak bisa diandalkan.</td></tr>
+</table>
+<p>Begitu sebuah device terdeteksi melanggar salah satu aturan dua kali berturut-turut dalam rentang waktu singkat, sistem akan mengunci device itu secara otomatis, tanpa perlu admin menekan tombol apa pun. Syarat dua kali berturut-turut ini sengaja dipasang supaya satu pembacaan sinyal yang kebetulan meleset tidak langsung mengunci device yang sebenarnya masih di tempat yang benar.</p>
+<p>Membuka kembali device yang terkunci otomatis juga tidak instan begitu device kembali ke area aman. Sistem meminta beberapa laporan posisi berturut-turut yang semuanya menunjukkan device sudah jauh di dalam area aman, bukan sekadar pas di garis batasnya, sebelum benar-benar membuka kuncinya. Ini untuk mencegah device yang baru saja menyentuh tepi area aman langsung terbuka lalu terkunci lagi beberapa detik kemudian karena sinyalnya masih goyang di sekitar batas.</p>
+<div class="note">Kunci yang dipasang otomatis oleh sistem bisa terbuka otomatis juga. Tapi kunci yang dipasang manual oleh admin lewat dashboard, APK Master, atau Telegram tidak akan pernah terbuka sendiri walaupun device kembali ke area aman &mdash; itu harus dibuka manual juga oleh admin, atau lewat kode OTP self-unlock.</div>
+
+<h2>9. Menggunakan Bot Telegram</h2>
+<p>Sebelum bisa dipakai, akun Telegram perlu dihubungkan ke site tertentu lewat menu Binding Telegram di dashboard. Setelah terhubung, perintah-perintah berikut bisa dipakai langsung di chat dengan bot.</p>
+<table>
+  <tr><th>Perintah</th><th>Fungsi</th></tr>
+  <tr><td>/lock &lt;id&gt;</td><td>Mengunci satu device berdasarkan ID-nya.</td></tr>
+  <tr><td>/unlock &lt;id&gt;</td><td>Membuka kunci satu device.</td></tr>
+  <tr><td>/locate &lt;id&gt;</td><td>Meminta device mengirim posisi terbarunya sekarang juga, tanpa menunggu jadwal laporan berikutnya.</td></tr>
+  <tr><td>/status &lt;id&gt;</td><td>Menampilkan detail status satu device: online atau tidak, terkunci atau tidak, baterai, dan posisi terakhir.</td></tr>
+  <tr><td>/apk [tracker|master|server]</td><td>Memicu pembuatan APK baru untuk site yang terhubung dengan akun Telegram ini, lalu mengirimkan filenya begitu selesai dibangun.</td></tr>
+</table>
+
+<h2>10. Hal yang Sering Ditanyakan</h2>
+
+<h3>Kenapa device yang saya pasang tidak kelihatan online?</h3>
+<p>Periksa tiga hal: apakah device sudah benar-benar didaftarkan lewat dashboard atau APK Master dengan dokumen consent yang masih berlaku, apakah HP-nya terhubung ke internet, dan apakah izin lokasi "selalu" serta pengecualian baterai sudah diberikan. Kalau ketiganya sudah benar tapi tetap offline, coba buka aplikasi pelacaknya secara manual satu kali untuk memicu koneksi ulang.</p>
+
+<h3>Device sudah kembali ke area aman tapi belum terbuka juga, kenapa?</h3>
+<p>Ini wajar kalau baru beberapa belas detik. Sistem sengaja menunggu beberapa laporan posisi berturut-turut yang konsisten menunjukkan device aman sebelum membukanya, seperti dijelaskan di bab 8. Kalau sudah lebih dari semenit dan belum terbuka, periksa apakah kuncinya dipasang manual oleh admin &mdash; kalau iya, memang harus dibuka manual juga.</p>
+
+<h3>Apakah device yang terkunci bisa dipakai menelepon darurat?</h3>
+<p>Ya. Penguncian di sistem ini bersifat layar penuh di dalam aplikasi, bukan mematikan fungsi HP secara total, jadi panggilan darurat tetap bisa dilakukan sesuai standar Android.</p>
+
+<h3>Siapa yang bisa melihat lokasi device saya?</h3>
+<p>Hanya akun yang diberi akses ke site tempat device itu terdaftar, yaitu super admin dan akun admin atau leader yang secara eksplisit diberi akses ke site tersebut oleh super admin.</p>
+
+<h3>Apa bedanya APK Pelacak dan APK Master?</h3>
+<p>APK Pelacak dipasang di HP yang mau dilacak dan dipantau, sementara APK Master dipasang di HP admin untuk mengendalikan dan memantau semua device itu. Satu HP tidak boleh memasang keduanya untuk tujuan yang sama, meskipun secara teknis bisa dipasang bersamaan kalau HP itu dipakai admin sekaligus sebagai salah satu aset yang dilacak.</p>
+
+<div class="footer-note">Dokumen ini dibuat untuk keperluan internal SMB Fortune dan akan diperbarui mengikuti perubahan sistem.</div>
+
+</body>
+</html>

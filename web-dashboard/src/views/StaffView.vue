@@ -1,5 +1,5 @@
 <script setup>
-import { Ban, CheckCircle2, Trash2, UserPlus } from '@lucide/vue'
+import { Ban, CheckCircle2, KeyRound, Pencil, Trash2, UserPlus } from '@lucide/vue'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { computed, onMounted, ref } from 'vue'
 
@@ -18,6 +18,11 @@ const organizations = ref([])
 const loading = ref(true)
 const dialogOpen = ref(false)
 const submitting = ref(false)
+const editTarget = ref(null)
+const passwordTarget = ref(null)
+const passwordDialogOpen = ref(false)
+const newPassword = ref('')
+const changingPassword = ref(false)
 
 const ROLE_LABELS = {
     super_admin: 'Super Admin',
@@ -47,6 +52,49 @@ const form = ref({
 
 const needsSiteAccess = computed(() => form.value.role === 'admin' || form.value.role === 'leader')
 
+function resetForm() {
+    form.value = { name: '', username: '', email: '', password: '', role: 'admin', organization_id: null, site_access: [] }
+}
+
+function openCreate() {
+    editTarget.value = null
+    resetForm()
+    dialogOpen.value = true
+}
+
+function openEdit(user) {
+    editTarget.value = user
+    form.value = {
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        password: '',
+        role: user.role,
+        organization_id: user.organization_id ?? null,
+        site_access: (user.site_access ?? []).map((s) => s.id),
+    }
+    dialogOpen.value = true
+}
+
+function openPasswordDialog(user) {
+    passwordTarget.value = user
+    newPassword.value = ''
+    passwordDialogOpen.value = true
+}
+
+async function submitPassword() {
+    changingPassword.value = true
+    try {
+        await api.put(`/users/${passwordTarget.value.id}`, { password: newPassword.value })
+        toast.success(`Password ${passwordTarget.value.name} berhasil diganti`)
+        passwordDialogOpen.value = false
+    } catch (err) {
+        toast.error('Gagal mengganti password', err.response?.data?.message)
+    } finally {
+        changingPassword.value = false
+    }
+}
+
 async function loadStaff() {
     loading.value = true
     try {
@@ -71,13 +119,27 @@ function toggleSiteAccess(orgId) {
 async function submitForm() {
     submitting.value = true
     try {
-        await api.post('/users', form.value)
-        toast.success('Staf berhasil dibuat')
+        if (editTarget.value) {
+            await api.put(`/users/${editTarget.value.id}`, {
+                name: form.value.name,
+                email: form.value.email,
+                role: form.value.role,
+                organization_id: needsSiteAccess.value ? null : form.value.organization_id,
+            })
+            if (needsSiteAccess.value) {
+                await api.put(`/users/${editTarget.value.id}/site-access`, { organization_ids: form.value.site_access })
+            }
+            toast.success('Staf berhasil diperbarui')
+        } else {
+            await api.post('/users', form.value)
+            toast.success('Staf berhasil dibuat')
+        }
         dialogOpen.value = false
-        form.value = { name: '', username: '', email: '', password: '', role: 'admin', organization_id: null, site_access: [] }
+        editTarget.value = null
+        resetForm()
         await loadStaff()
     } catch (err) {
-        toast.error('Gagal membuat staf', err.response?.data?.message)
+        toast.error(editTarget.value ? 'Gagal memperbarui staf' : 'Gagal membuat staf', err.response?.data?.message)
     } finally {
         submitting.value = false
     }
@@ -123,7 +185,7 @@ onMounted(async () => {
     <div>
         <PageHeader title="Staf" subtitle="Kelola siapa yang bisa login ke web dashboard & APK master">
             <template #actions>
-                <BaseButton @click="dialogOpen = true"><UserPlus class="size-4" /> Tambah Staf</BaseButton>
+                <BaseButton @click="openCreate"><UserPlus class="size-4" /> Tambah Staf</BaseButton>
             </template>
         </PageHeader>
 
@@ -151,6 +213,20 @@ onMounted(async () => {
                             </p>
                         </div>
                         <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-accent-500/50 hover:text-accent-300"
+                                @click="openEdit(user)"
+                            >
+                                <Pencil class="size-3.5" /> Edit
+                            </button>
+                            <button
+                                type="button"
+                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-copper-500/50 hover:text-copper-300"
+                                @click="openPasswordDialog(user)"
+                            >
+                                <KeyRound class="size-3.5" /> Ganti Password
+                            </button>
                             <button
                                 v-if="user.is_active"
                                 type="button"
@@ -180,19 +256,20 @@ onMounted(async () => {
             </BaseCard>
         </div>
 
-        <DialogRoot :open="dialogOpen" @update:open="(v) => (dialogOpen = v)">
+        <DialogRoot :open="dialogOpen" @update:open="(v) => { dialogOpen = v; if (!v) editTarget = null }">
             <DialogPortal>
                 <DialogOverlay class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
                 <DialogContent
                     class="fixed top-1/2 left-1/2 z-50 max-h-[85vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
                 >
-                    <DialogTitle class="text-base font-semibold text-base-50">Tambah Staf Baru</DialogTitle>
-                    <DialogDescription class="sr-only">Formulir untuk menambah staf baru</DialogDescription>
+                    <DialogTitle class="text-base font-semibold text-base-50">{{ editTarget ? `Ubah Staf: ${editTarget.name}` : 'Tambah Staf Baru' }}</DialogTitle>
+                    <DialogDescription class="sr-only">Formulir untuk mengubah atau menambah staf</DialogDescription>
                     <form class="mt-5 space-y-4" @submit.prevent="submitForm">
                         <BaseInput v-model="form.name" label="Nama" required />
-                        <BaseInput v-model="form.username" label="Username" required />
+                        <BaseInput v-model="form.username" label="Username" required :disabled="!!editTarget" />
+                        <p v-if="editTarget" class="-mt-2.5 text-[11px] text-base-600">Username tidak bisa diubah setelah dibuat.</p>
                         <BaseInput v-model="form.email" label="Email" type="email" required />
-                        <BaseInput v-model="form.password" label="Password" type="password" required minlength="8" />
+                        <BaseInput v-if="!editTarget" v-model="form.password" label="Password" type="password" required minlength="8" />
 
                         <label class="block">
                             <span class="mb-1.5 block text-xs font-medium text-base-300">Peran</span>
@@ -236,7 +313,28 @@ onMounted(async () => {
 
                         <div class="flex justify-end gap-3 pt-2">
                             <BaseButton type="button" variant="ghost" @click="dialogOpen = false">Batal</BaseButton>
-                            <BaseButton type="submit" :loading="submitting">Buat Staf</BaseButton>
+                            <BaseButton type="submit" :loading="submitting">{{ editTarget ? 'Simpan Perubahan' : 'Buat Staf' }}</BaseButton>
+                        </div>
+                    </form>
+                </DialogContent>
+            </DialogPortal>
+        </DialogRoot>
+
+        <DialogRoot :open="passwordDialogOpen" @update:open="(v) => (passwordDialogOpen = v)">
+            <DialogPortal>
+                <DialogOverlay class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
+                <DialogContent
+                    class="fixed top-1/2 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
+                >
+                    <DialogTitle class="text-base font-semibold text-base-50">Ganti Password: {{ passwordTarget?.name }}</DialogTitle>
+                    <DialogDescription class="mt-2 text-sm text-base-400">
+                        Password baru berlaku langsung — semua sesi login akun ini sebaiknya diberi tahu.
+                    </DialogDescription>
+                    <form class="mt-5 space-y-4" @submit.prevent="submitPassword">
+                        <BaseInput v-model="newPassword" label="Password Baru" type="password" required minlength="8" autocomplete="new-password" />
+                        <div class="flex justify-end gap-3 pt-2">
+                            <BaseButton type="button" variant="ghost" @click="passwordDialogOpen = false">Batal</BaseButton>
+                            <BaseButton type="submit" :loading="changingPassword">Ganti Password</BaseButton>
                         </div>
                     </form>
                 </DialogContent>
