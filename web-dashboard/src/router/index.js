@@ -50,6 +50,12 @@ const routes = [
                 name: 'telegram-bindings',
                 component: () => import('@/views/TelegramBindingsView.vue'),
             },
+            {
+                path: 'staff',
+                name: 'staff',
+                component: () => import('@/views/StaffView.vue'),
+                meta: { requiresSuperAdmin: true },
+            },
         ],
     },
     {

@@ -1,5 +1,5 @@
 <script setup>
-import { Building2, FileSignature, LogOut, MapPinned, Menu, PackageOpen, Radar, Send, ShieldCheck, Smartphone, X } from '@lucide/vue'
+import { Building2, FileSignature, LogOut, MapPinned, Menu, PackageOpen, Radar, Send, ShieldCheck, Smartphone, Users, X } from '@lucide/vue'
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -101,6 +101,16 @@ async function handleLogout() {
                 >
                     <Building2 class="size-[18px]" />
                     Site / Organisasi
+                </router-link>
+
+                <router-link
+                    v-if="auth.isSuperAdmin"
+                    :to="{ name: 'staff' }"
+                    class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-base-400 transition-colors hover:bg-base-800 hover:text-base-100"
+                    exact-active-class="!bg-accent-500/10 !text-accent-300"
+                >
+                    <Users class="size-[18px]" />
+                    Staf
                 </router-link>
             </nav>
 
