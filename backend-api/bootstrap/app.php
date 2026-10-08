@@ -27,6 +27,14 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
         ]);
+
+        // Server ini diakses publik lewat Cloudflare Tunnel (TLS berhenti di
+        // edge Cloudflare, origin ini sendiri dihubungi plain HTTP) — tanpa
+        // percaya proxy, Laravel mengira semua request http:// dan
+        // menghasilkan signed URL (download APK dsb) berskema salah
+        // (http:// bukan https://). '*' aman di sini karena origin HANYA
+        // dihubungi oleh cloudflared, bukan internet langsung.
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
