@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.lacaksmb.master.BuildConfig
 import com.lacaksmb.master.data.ApiClient
 import com.lacaksmb.master.data.ApiResult
 import kotlinx.coroutines.launch
@@ -48,7 +49,12 @@ fun LoginScreen(apiClient: ApiClient, navController: NavHostController) {
             Text(
                 "Masuk untuk mengelola & mencari device",
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(bottom = 24.dp),
+            )
+            Text(
+                "Site: ${BuildConfig.SITE_NAME} (${BuildConfig.SITE_CODE})",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 24.dp, top = 4.dp),
             )
 
             OutlinedTextField(

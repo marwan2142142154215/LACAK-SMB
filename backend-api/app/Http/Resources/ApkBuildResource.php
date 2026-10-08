@@ -15,14 +15,17 @@ class ApkBuildResource extends JsonResource
         return [
             'id' => $this->id,
             'organization_id' => $this->organization_id,
+            'apk_type' => $this->apk_type,
             'version' => $this->version,
+            'status' => $this->status,
             'embedded_site_code' => $this->embedded_site_code,
             'checksum_sha256' => $this->checksum_sha256,
-            'download_url' => URL::temporarySignedRoute(
+            'build_log' => $this->build_log,
+            'download_url' => $this->status === 'success' ? URL::temporarySignedRoute(
                 'api.v1.apk-builds.download',
                 now()->addMinutes(30),
                 ['apkBuild' => $this->id]
-            ),
+            ) : null,
             'created_at' => $this->created_at,
         ];
     }

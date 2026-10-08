@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\GenerateApkBuildRequest;
 use App\Http\Requests\StoreApkBuildRequest;
 use App\Http\Resources\ApkBuildResource;
 use App\Http\Responses\ApiResponse;
+use App\Jobs\BuildApkJob;
 use App\Models\ApkBuild;
 use App\Models\Organization;
 use App\Support\ResolvesOrganizationScope;
@@ -66,6 +68,44 @@ class ApkBuildController extends Controller
         ]);
 
         return $this->success('APK berhasil diunggah dan didaftarkan', new ApkBuildResource($build), 201);
+    }
+
+    /**
+     * Memicu build APK sungguhan (tracker atau master) untuk satu site,
+     * lewat antrean (BuildApkJob -> App\Services\ApkBuilder, Gradle via
+     * WSL2). Dipakai dashboard web, bot Telegram, dan APK master -- ketiganya
+     * cukup panggil endpoint ini, tidak ada jalur upload manual yang perlu
+     * diikuti lagi. Mengembalikan baris 'pending' segera; klien polling
+     * GET /apk-builds (atau index per organization_id) sampai status
+     * berubah success/failed.
+     */
+    public function generate(GenerateApkBuildRequest $request)
+    {
+        $organizationId = $this->authorizedOrganizationId($request->user(), (int) $request->validated('organization_id'));
+
+        if ($organizationId === null) {
+            return $this->fail('Anda tidak berwenang membuat APK untuk site ini', null, 403);
+        }
+
+        $organization = Organization::findOrFail($organizationId);
+
+        $build = ApkBuild::create([
+            'organization_id' => $organizationId,
+            'apk_type' => $request->validated('apk_type'),
+            'version' => $request->validated('version') ?: '1.0.0',
+            'status' => 'pending',
+            'embedded_site_code' => $organization->unique_site_code,
+            'built_by' => $request->user()->id,
+            'created_at' => now(),
+        ]);
+
+        BuildApkJob::dispatch($build->id);
+
+        return $this->success(
+            'Build APK dimulai, biasanya selesai dalam 1-2 menit — cek status lewat daftar APK build',
+            new ApkBuildResource($build),
+            202,
+        );
     }
 
     public function download(Request $request, ApkBuild $apkBuild)

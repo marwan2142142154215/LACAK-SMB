@@ -28,6 +28,22 @@ android {
             "GATEWAY_URL",
             "\"${project.findProperty("gatewayUrl") ?: "http://10.0.2.2:3333"}\"",
         )
+
+        // Site yang APK ini ditujukan untuk (ditanam saat build, sama pola
+        // seperti tracker app) — APK master sebuah site hanya dibagikan ke
+        // admin/staf site itu; kode & nama site ditampilkan di layar login
+        // supaya pemegang APK tahu persis ini APK untuk site mana (lihat
+        // LoginScreen.kt). Default DEV-UNSET untuk build pengembangan lokal.
+        buildConfigField(
+            "String",
+            "SITE_CODE",
+            "\"${project.findProperty("siteCode") ?: "DEV-UNSET"}\"",
+        )
+        buildConfigField(
+            "String",
+            "SITE_NAME",
+            "\"${project.findProperty("siteName") ?: "Development"}\"",
+        )
     }
 
     buildTypes {

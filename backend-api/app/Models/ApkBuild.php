@@ -14,10 +14,13 @@ class ApkBuild extends Model
 
     protected $fillable = [
         'organization_id',
+        'apk_type',
         'version',
+        'status',
         'file_path',
         'embedded_site_code',
         'checksum_sha256',
+        'build_log',
         'built_by',
         'created_at',
     ];
