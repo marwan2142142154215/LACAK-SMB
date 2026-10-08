@@ -121,6 +121,25 @@ class ApiClient(private val sessionStore: SessionStore) {
     suspend fun generateOtp(deviceId: Int): ApiResult =
         execute(authedBuilder("/devices/$deviceId/otp").post("".toRequestBody()).build())
 
+    // ---- APK builds ----
+
+    /** Memicu build APK sungguhan (tracker/master) di server -- lihat backend-api ApkBuildController::generate(). */
+    suspend fun generateApkBuild(organizationId: Int, apkType: String, version: String): ApiResult = execute(
+        authedBuilder("/apk-builds/generate")
+            .post(
+                jsonBody(
+                    mapOf(
+                        "organization_id" to organizationId,
+                        "apk_type" to apkType,
+                        "version" to version,
+                    ),
+                ),
+            )
+            .build(),
+    )
+
+    suspend fun getApkBuild(id: Int): ApiResult = execute(authedBuilder("/apk-builds/$id").get().build())
+
     // ---- Geofence rules ----
 
     suspend fun listGeofenceRules(organizationId: Int? = null): ApiResult {

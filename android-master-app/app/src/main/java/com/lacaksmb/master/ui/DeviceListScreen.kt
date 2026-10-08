@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
@@ -74,6 +75,7 @@ fun DeviceListScreen(apiClient: ApiClient, sessionStore: SessionStore, navContro
                     IconButton(onClick = { navController.navigate(Routes.RADAR) }) { Icon(Icons.Filled.LocationOn, "Radar") }
                     IconButton(onClick = { navController.navigate(Routes.GEOFENCE) }) { Icon(Icons.Filled.Rule, "Geofence") }
                     IconButton(onClick = { navController.navigate(Routes.CONSENT) }) { Icon(Icons.Filled.VerifiedUser, "Consent") }
+                    IconButton(onClick = { navController.navigate(Routes.DOWNLOAD_APK) }) { Icon(Icons.Filled.Download, "Download APK") }
                     IconButton(onClick = {
                         scope.launch { apiClient.logout() }
                         sessionStore.clear()
