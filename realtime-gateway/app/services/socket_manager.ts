@@ -32,17 +32,23 @@ class SocketManager {
     return this.opsNamespace
   }
 
-  /** Broadcast update radar ke semua dashboard/master yang berlangganan satu organization. */
+  /**
+   * Broadcast ke dashboard/master yang berlangganan satu organization, DAN ke
+   * room `superadmins` — super_admin tidak pernah di-join ke `org:*` manapun
+   * (lintas site, tidak terikat satu organisasi), jadi tanpa ini radar &
+   * status device tidak pernah live-update untuk mereka (lihat registerOpsNamespace
+   * di start/socket.ts yang men-join super_admin ke room `superadmins`).
+   */
   broadcastRadarUpdate(organizationId: number, payload: unknown) {
-    this.opsNamespace?.to(`org:${organizationId}`).emit('radar:update', payload)
+    this.opsNamespace?.to([`org:${organizationId}`, 'superadmins']).emit('radar:update', payload)
   }
 
   broadcastViolation(organizationId: number, payload: unknown) {
-    this.opsNamespace?.to(`org:${organizationId}`).emit('violation:alert', payload)
+    this.opsNamespace?.to([`org:${organizationId}`, 'superadmins']).emit('violation:alert', payload)
   }
 
   broadcastDeviceStatus(organizationId: number, payload: unknown) {
-    this.opsNamespace?.to(`org:${organizationId}`).emit('device:status', payload)
+    this.opsNamespace?.to([`org:${organizationId}`, 'superadmins']).emit('device:status', payload)
   }
 }
 

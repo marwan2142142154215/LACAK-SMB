@@ -250,6 +250,15 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
       socket.join(`org:${user.organizationId}`)
     }
 
+    // super_admin lintas site — tidak terikat satu organizationId, jadi
+    // di-join ke room khusus yang ikut menerima semua broadcast org
+    // (lihat socket_manager.ts broadcastRadarUpdate/broadcastViolation/
+    // broadcastDeviceStatus). Tanpa ini radar super_admin cuma dapat
+    // snapshot awal lewat REST lalu tidak pernah live-update lagi.
+    if (isSuperAdmin) {
+      socket.join('superadmins')
+    }
+
     logger.info('ops client terhubung', { userId: user.id, username: user.username })
   })
 }

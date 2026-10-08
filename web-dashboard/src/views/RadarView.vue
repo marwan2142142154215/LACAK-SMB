@@ -26,10 +26,15 @@ const devicesForRadar = computed(() => {
     const list = Array.from(devices.values())
     return list.map((d, index) => {
         const angle = (index / Math.max(list.length, 1)) * 2 * Math.PI
-        const distance = Math.min(d.ble_distance_meters ?? 0, RADAR_MAX_METERS)
-        const radiusRatio = distance / RADAR_MAX_METERS
+        const hasSignal = d.ble_distance_meters != null
+        // Device yang belum pernah kirim jarak BLE (baru enroll / belum ada
+        // sinyal) SENGAJA ditaruh di cincin terluar, bukan radiusRatio=0 —
+        // kalau tidak, semua device tanpa sinyal akan menumpuk persis di
+        // titik tengah (anchor dot), jadi kelihatan seperti "tidak ada titik".
+        const radiusRatio = hasSignal ? Math.min(d.ble_distance_meters, RADAR_MAX_METERS) / RADAR_MAX_METERS : 0.95
         return {
             ...d,
+            hasSignal,
             x: 50 + radiusRatio * 42 * Math.cos(angle),
             y: 50 + radiusRatio * 42 * Math.sin(angle),
         }
@@ -46,7 +51,7 @@ const statusColor = {
 async function loadInitialDevices() {
     loading.value = true
     try {
-        const response = await api.get('/devices', { params: { per_page: 100 } })
+        const response = await api.get('/devices', { params: { per_page: 500 } })
         for (const d of response.data.data.items) {
             devices.set(d.id, {
                 device_id: d.id,
@@ -110,8 +115,16 @@ onMounted(async () => {
                         <circle cx="50" cy="50" r="2" fill="#2bc4a4" />
 
                         <g v-for="d in devicesForRadar" :key="d.device_id">
-                            <circle :cx="d.x" :cy="d.y" r="2.2" :fill="statusColor[d.status] ?? '#4b5568'">
-                                <title>{{ d.device_name }}</title>
+                            <circle
+                                :cx="d.x"
+                                :cy="d.y"
+                                r="2.2"
+                                :fill="d.hasSignal ? (statusColor[d.status] ?? '#4b5568') : 'transparent'"
+                                :stroke="statusColor[d.status] ?? '#4b5568'"
+                                :stroke-width="d.hasSignal ? 0 : 0.6"
+                                :stroke-dasharray="d.hasSignal ? undefined : '1,1'"
+                            >
+                                <title>{{ d.device_name }}{{ d.hasSignal ? '' : ' (belum ada sinyal BLE)' }}</title>
                             </circle>
                         </g>
                     </svg>
