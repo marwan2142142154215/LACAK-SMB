@@ -46,10 +46,10 @@
     <!-- Supaya tracking tetap jalan walau device masuk Doze/App Standby -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!-- Lapisan peringatan lock layar penuh (SYSTEM_ALERT_WINDOW): menutup
-         semua layar dengan peringatan "PERANGKAT DIKUNCI" saat dikunci admin.
-         Izin ini tidak bisa di-grant lewat dialog biasa — lewat halaman
-         Setelan (langkah enrollment DISPLAY_OVER_OTHER_APPS). -->
+    <!-- Legacy: tidak lagi dipakai oleh layar kunci (LockActivity sekarang
+         memakai startLockTask(), bukan lapisan overlay), tapi tetap diminta
+         di langkah enrollment DISPLAY_OVER_OTHER_APPS sebagai jaring
+         pengaman UI tambahan di perangkat yang tidak mengizinkan pinning. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
@@ -76,6 +76,18 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- Layar penuh wajib saat dikunci admin — screen pinning
+             (startLockTask) di dalamnya menonaktifkan Home & Recents.
+             excludeFromRecents + singleTask: tidak boleh ada cara swipe-away
+             atau membuka instance kedua. -->
+        <activity
+            android:name=".ui.LockActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:excludeFromRecents="true"
+            android:showOnLockScreen="true"
+            android:theme="@style/Theme.LacakTracker" />
+
         <receiver
             android:name=".admin.TrackerDeviceAdminReceiver"
             android:exported="true"
@@ -96,18 +108,13 @@
             </intent-filter>
         </receiver>
 
-        <!-- Pertahanan lock jarak jauh: kunci ulang seketika setiap kali
-             keyguard dilewati user saat status masih "dikunci admin"
-             (ACTION_USER_PRESENT) dan setiap layar menyala (ACTION_SCREEN_ON)
-             — membuka paksa tidak mungkin melewati lock. -->
-        <receiver
-            android:name=".service.LockDefenseReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.SCREEN_ON" />
-                <action android:name="android.intent.action.USER_PRESENT" />
-            </intent-filter>
-        </receiver>
+        <!-- LockDefenseReceiver TIDAK didaftarkan di sini dengan sengaja:
+             ACTION_SCREEN_ON dan ACTION_USER_PRESENT adalah broadcast
+             implisit yang DIABAIKAN Android kalau didaftarkan lewat manifest
+             sejak API 26 (pembatasan broadcast implisit) — registrasi di
+             sini tidak akan pernah terpanggil sama sekali. Receiver ini
+             didaftarkan secara DINAMIS di TrackerForegroundService.onCreate()
+             (service selalu hidup, jadi selalu bisa mendaftar ulang). -->
 
     </application>
 

@@ -7,24 +7,17 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.graphics.PixelFormat
+import android.content.IntentFilter
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
-import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.provider.Settings
 import android.util.Log
-import android.view.Gravity
-import android.view.View
-import android.view.WindowManager
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.lacaksmb.tracker.BuildConfig
@@ -32,6 +25,7 @@ import com.lacaksmb.tracker.R
 import com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver
 import com.lacaksmb.tracker.data.DeviceIdentityStore
 import com.lacaksmb.tracker.data.DeviceLockStore
+import com.lacaksmb.tracker.ui.LockActivity
 import com.lacaksmb.tracker.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -41,16 +35,20 @@ import kotlinx.coroutines.launch
 
 /**
  * Foreground service yang wajib selalu hidup ("selalu online") selama APK
- * terpasang & sudah di-enroll. Tahap fondasi ini mengerjakan:
+ * terpasang & sudah di-enroll. Mengerjakan:
  *  - Koneksi persisten ke gateway (auto-reconnect lewat socket.io-client)
  *  - Notifikasi persisten yang JUJUR (standar android-apk-pro bagian 4:
  *    jangan menyembunyikan diri dari pemilik device)
- *  - Menjalankan perintah 'lock' lewat Device Admin — kunci disimpan PERSISTEN,
- *    lapisan peringatan layar penuh dipasang, dan LockDefenseReceiver mengunci
- *    ulang saat user mencoba membuka paksa (tidak bisa di-skip)
+ *  - Menjalankan perintah 'lock': BUKAN mematikan/mem-brick device, tapi
+ *    membuka LockActivity layar penuh "SEGERA KEMBALI KE TEMPAT ANDA,
+ *    BOSKU" dengan kolom OTP self-unlock. LockActivity memakai
+ *    startLockTask() (screen pinning resmi Android) sehingga tombol Home
+ *    DAN Recents benar-benar DINONAKTIFKAN oleh sistem selama locked —
+ *    bukan cuma ditutupi tampilan. Status kunci disimpan PERSISTEN di
+ *    DeviceLockStore, dan watchdog di bawah + LockDefenseReceiver memasang
+ *    ulang LockActivity setiap kali ada upaya keluar (anti-skip).
  *  - Heartbeat tiap 30 detik berisi posisi GPS + level baterai + SSID WiFi
- *    (terpasang, bukan null) supaya radar dashboard & geofence WiFi/IP
- *    benar-benar berfungsi
+ *    supaya radar dashboard & geofence WiFi/IP benar-benar berfungsi
  */
 class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
 
@@ -58,20 +56,23 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     private lateinit var lockStore: DeviceLockStore
     private var socketClient: GatewaySocketClient? = null
 
-    // Lapisan peringatan layar penuh saat perangkat dikunci admin
-    // (SYSTEM_ALERT_WINDOW). Di-remove saat unlock / service berhenti.
-    private var lockedOverlayView: View? = null
-
-    // Kunci ulang TERTUNDA: setelah lapisan peringatan tampil (user melihat
-    // peringatan), layar dikunci lagi ~10 detik kemudian supaya device tidak
-    // bisa dipakai berlama-lama. Di-cancel saat unlock.
-    private val lockReapplyHandler = Handler(Looper.getMainLooper())
-    private val lockReapplyRunnable = Runnable {
-        serviceScope.launch {
-            val lock = lockStore.snapshot()
-            if (lock.adminLocked) {
-                Log.i(TAG, "Kunci ulang tertunda: perangkat masih locked, lockNow")
-                enforceLockNow()
+    // Watchdog kunci: selama status locked, pasang ulang LockActivity tiap
+    // beberapa detik (jaring pengaman kalau user berhasil pindah layar
+    // walau sudah dipin — mis. OEM yang membatasi screen pinning).
+    // SENGAJA TIDAK memanggil enforceLockNow() di sini — DevicePolicyManager
+    // .lockNow() benar-benar mematikan layar seperti tombol power (lalu
+    // minta PIN/pola device kalau ada), yang kalau dipanggil berulang
+    // bareng LockActivity (yang men-turnScreenOn lagi) menyebabkan layar
+    // hidup-mati-hidup-mati — lihat catatan di enforceLockAndWatch().
+    private val lockWatchdogHandler = Handler(Looper.getMainLooper())
+    private val lockWatchdogRunnable: Runnable = object : Runnable {
+        override fun run() {
+            serviceScope.launch {
+                val lock = lockStore.snapshot()
+                if (lock.adminLocked) {
+                    LockActivity.launch(applicationContext, lock.reason)
+                    lockWatchdogHandler.postDelayed(lockWatchdogRunnable, LOCK_WATCHDOG_MS)
+                }
             }
         }
     }
@@ -95,24 +96,46 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     }
     private var gpsUpdatesStarted = false
 
+    // Instance receiver anti-bypass, didaftarkan DINAMIS (bukan manifest —
+    // ACTION_SCREEN_ON/ACTION_USER_PRESENT adalah broadcast implisit yang
+    // diabaikan Android kalau didaftarkan lewat manifest sejak API 26).
+    // Service ini selalu hidup, jadi selalu bisa mendaftar ulang di onCreate.
+    private val lockDefenseReceiver = LockDefenseReceiver()
+    private var lockDefenseRegistered = false
+
     override fun onCreate() {
         super.onCreate()
         identityStore = DeviceIdentityStore(applicationContext)
         lockStore = DeviceLockStore(applicationContext)
         createNotificationChannel()
+        registerLockDefenseReceiver()
+    }
+
+    private fun registerLockDefenseReceiver() {
+        if (lockDefenseRegistered) return
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        ContextCompat.registerReceiver(
+            this,
+            lockDefenseReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        lockDefenseRegistered = true
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification(status = "Menghubungkan..."))
 
-        // Dipanggil LockDefenseReceiver saat keyguard dilewati user padahal
-        // status masih locked: pasang ulang lapisan peringatan + jadwalkan
-        // kunci ulang (tanpa mematikan layar dulu supaya peringatan terlihat).
-        if (intent?.action == ACTION_ENSURE_LOCKED_OVERLAY) {
+        // Dipanggil LockDefenseReceiver saat ada upaya keluar dari LockActivity
+        // padahal status masih locked: pasang ulang LockActivity + watchdog.
+        if (intent?.action == ACTION_ENSURE_LOCKED) {
             serviceScope.launch {
                 val lock = lockStore.snapshot()
                 if (lock.adminLocked) {
-                    ensureLockUiWithSchedule(lock.reason)
+                    enforceLockAndWatch(lock.reason)
                 }
             }
         }
@@ -133,12 +156,11 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
             )
 
             // Terapkan ulang status kunci kalau device sedang dikunci admin —
-            // berlaku setelah reboot / service di-restart sistem (mis. user
-            // mencoba "menghidupkan ulang" sebagai cara menyingkirkan kunci).
+            // berlaku setelah reboot / service di-restart (mis. user mencoba
+            // "menghidupkan ulang" sebagai cara menyingkirkan kunci).
             val lock = lockStore.snapshot()
             if (lock.adminLocked) {
-                ensureLockUiWithSchedule(lock.reason)
-                enforceLockNow()
+                enforceLockAndWatch(lock.reason)
             }
         }
 
@@ -149,10 +171,18 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
 
     override fun onDestroy() {
         heartbeatJob?.cancel()
+        lockWatchdogHandler.removeCallbacks(lockWatchdogRunnable)
         stopGpsUpdates()
         socketClient?.disconnect()
         serviceJob.cancel()
-        removeLockedOverlay()
+        if (lockDefenseRegistered) {
+            try {
+                unregisterReceiver(lockDefenseReceiver)
+            } catch (_: IllegalArgumentException) {
+                // Sudah ter-unregister — aman diabaikan.
+            }
+            lockDefenseRegistered = false
+        }
         super.onDestroy()
     }
 
@@ -188,24 +218,22 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     override fun onCommandPush(commandId: Int?, commandType: String, reasonNote: String?) {
         when (commandType) {
             "lock" -> {
-                // Kunci dapat di-ABA yang (hanya lockNow() sekali) — sekarang
-                // disimpan PERSISTEN + lapisan peringatan layar penuh muncul +
-                // kunci ulang tertunda menjaganya: user melihat peringatan
-                // "PERANGKAT DIKUNCI" dan tetap tidak bisa memakai device.
+                // BUKAN mematikan device — kunci disimpan PERSISTEN, LockActivity
+                // layar penuh "SEGERA KEMBALI KE TEMPAT ANDA, BOSKU" dibuka dengan
+                // screen pinning (Home & Recents nonaktif) + kolom OTP, dan
+                // watchdog menjaganya supaya tidak bisa di-skip.
                 serviceScope.launch {
                     lockStore.setLocked(reasonNote)
-                    enforceLockNow()
-                    ensureLockUiWithSchedule(reasonNote)
+                    enforceLockAndWatch(reasonNote)
                 }
             }
             "unlock" -> {
-                // Membuka kunci layar tidak bisa diprogram langsung (dilarang
-                // sistem Android, hanya lockNow() yang diizinkan Device Admin).
-                // "Unlock" di sini = cabut status kunci admin + lepas lapisan
-                // peringatan; user membuka keyguard dengan pola/PIN/swipe biasa.
+                // Unlock dari ADMIN (dashboard/bot Telegram) — LockActivity yang
+                // sedang tampil otomatis menutup diri lewat watchdog pollingnya
+                // sendiri begitu DeviceLockStore terbaca tidak locked lagi.
                 serviceScope.launch {
                     lockStore.clear()
-                    removeLockedOverlay()
+                    lockWatchdogHandler.removeCallbacks(lockWatchdogRunnable)
                     updateNotification("Perintah unlock diterima — perangkat bisa dipakai")
                 }
             }
@@ -216,155 +244,35 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         commandId?.let { socketClient?.acknowledgeCommand(it) }
     }
 
-    // ---- Lock jarak jauh (anti-skip) ----
+    // ---- Lock jarak jauh (anti-skip, dengan self-unlock OTP) ----
 
-    /** Kunci layar SEKARANG via Device Admin. */
-    private fun enforceLockNow() {
+    /**
+     * Kunci layar SEKARANG via Device Admin — HANYA dipakai sebagai jaring
+     * pengaman kalau LockActivity sama sekali gagal dibuka (mis. OEM yang
+     * memblokir activity dari background). JANGAN dipanggil rutin/berkala:
+     * dpm.lockNow() benar-benar mematikan layar seperti tombol power (lalu
+     * minta PIN/pola device kalau sudah di-set), jadi kalau dipanggil
+     * berulang bareng LockActivity yang menyalakan layar lagi, hasilnya
+     * layar hidup-mati-hidup-mati — persis bug yang pernah terjadi di sini.
+     */
+    private fun enforceLockNowFallback() {
         val ok = TrackerDeviceAdminReceiver.lockNow(applicationContext)
-        Log.i(TAG, "enforceLockNow -> $ok")
+        Log.i(TAG, "enforceLockNowFallback -> $ok")
     }
 
-    /**
-     * Tampilkan peringatan + pasang penegakan: notifikasi 🔒, lapisan layar
-     * penuh, lalu jadwalkan kunci ulang ~10 detik kemudian. Dipanggil saat
-     * perintah lock diterima, saat keyguard dilewati user padahal status
-     * masih locked, dan saat service di-restart dalam keadaan locked.
-     */
-    private fun ensureLockUiWithSchedule(reason: String?) {
-        ContextCompat.getMainExecutor(this).execute {
-            val overlayGranted = Settings.canDrawOverlays(applicationContext)
-            Log.i(TAG, "ensureLockUiWithSchedule reason=${reason.orEmpty()} overlayGranted=$overlayGranted")
-
-            updateNotification(
-                "🔒 DIKUNCI ADMIN" + (reason?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""),
-            )
-            if (overlayGranted) {
-                if (showLockedOverlay(reason)) {
-                    scheduleLockReapply()
-                }
-            } else {
-                // Izin lapisan belum diberikan — tampilkan halaman setelannya
-                // supaya user paham kenapa, dan kunci tetap dijaga lockNow.
-                try {
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName"),
-                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(intent)
-                } catch (_: Exception) {
-                    // Best-effort: penegakan lockNow tetap berjalan.
-                }
-            }
-        }
-    }
-
-    private fun scheduleLockReapply() {
-        lockReapplyHandler.removeCallbacks(lockReapplyRunnable)
-        lockReapplyHandler.postDelayed(lockReapplyRunnable, LOCK_REAPPLY_MS)
-    }
-
-    /**
-     * Lapisan full-screen gelap dengan peringatan lock. Bukan widget yang bisa
-     * ditutup — pengguna tidak punya tombol apa pun di atasnya; layar hanya
-     * bisa dipakai lagi setelah status unlock dari server. Mengembalikan true
-     * kalau berhasil tampil, false kalau tidak (penegakan lockNow tetap jalan).
-     */
-    private fun showLockedOverlay(reason: String?): Boolean {
-        if (lockedOverlayView != null) return true // sudah tampil
-
-        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        val density = resources.displayMetrics.density
-        val dp = { value: Int -> (value * density).toInt() }
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setBackgroundColor(0xE6000000.toInt())
-            setPadding(dp(32), dp(24), dp(32), dp(24))
-        }
-
-        fun textView(
-            text: String,
-            size: Float,
-            color: Int,
-            bold: Boolean = false,
-        ) = TextView(this).apply {
-            this.text = text
-            this.textSize = size
-            if (bold) typeface = android.graphics.Typeface.DEFAULT_BOLD
-            setTextColor(color)
-            gravity = Gravity.CENTER
-        }
-
-        val lockIcon = textView("\uD83D\uDD12", 64f, android.graphics.Color.WHITE)
-        val lockTitle = textView("PERANGKAT DIKUNCI", 24f, android.graphics.Color.WHITE, bold = true)
-        val lockReason = textView(
-            reason?.takeIf { it.isNotBlank() }?.let { "Alasan: $it" } ?: "Dikunci oleh admin Lacak SMB",
-            16f,
-            0xFFEF5350.toInt(),
-            bold = true,
+    /** Pasang LockActivity (screen pinning) + mulai watchdog pasang-ulang. */
+    private fun enforceLockAndWatch(reason: String?) {
+        updateNotification(
+            "Terkunci — segera kembali ke lokasi Anda" +
+                (reason?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""),
         )
-        val lockSub = textView(
-            "Perangkat ini dikunci jarak jauh melalui Lacak SMB.\n" +
-                "Anda tidak dapat memakai perangkat sampai admin\n" +
-                "membuka kunci dari dashboard / aplikasi master.",
-            14f,
-            android.graphics.Color.LTGRAY,
-        )
-
-        fun margins(top: Int) = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(top) }
-
-        root.addView(lockIcon)
-        root.addView(lockTitle, margins(12))
-        root.addView(lockReason, margins(16))
-        root.addView(lockSub, margins(24))
-
-        val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            flags,
-            PixelFormat.OPAQUE,
-        )
-        params.gravity = Gravity.TOP or Gravity.START
-        params.x = 0
-        params.y = 0
-        params.title = "LacakSMB Locked Screen"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            params.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
-
-        return try {
-            wm.addView(root, params)
-            lockedOverlayView = root
-            Log.i(TAG, "showLockedOverlay: tampil")
-            true
-        } catch (e: Exception) {
-            // BadTokenException dll. — kunci tetap dipertahankan oleh receiver.
-            Log.w(TAG, "showLockedOverlay gagal: ${e.javaClass.simpleName}: ${e.message}")
-            false
-        }
-    }
-
-    private fun removeLockedOverlay() {
-        lockReapplyHandler.removeCallbacks(lockReapplyRunnable)
-        val view = lockedOverlayView ?: return
-        lockedOverlayView = null
         try {
-            val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-            wm.removeView(view)
+            LockActivity.launch(applicationContext, reason)
         } catch (_: Exception) {
-            // Sudah di-remove / window manager berubah — aman diabaikan.
+            enforceLockNowFallback()
         }
+        lockWatchdogHandler.removeCallbacks(lockWatchdogRunnable)
+        lockWatchdogHandler.postDelayed(lockWatchdogRunnable, LOCK_WATCHDOG_MS)
     }
 
     // ---- Heartbeat ----
@@ -523,11 +431,10 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
 
         private const val TAG = "TrackerLock"
-        private const val LOCK_REAPPLY_MS = 10_000L
+        private const val LOCK_WATCHDOG_MS = 5_000L
 
-        /** Aksi start service dari LockDefenseReceiver: pasang ulang lapisan peringatan. */
-        const val ACTION_ENSURE_LOCKED_OVERLAY =
-            "com.lacaksmb.tracker.action.ENSURE_LOCKED_OVERLAY"
+        /** Aksi start service dari LockDefenseReceiver: pasang ulang LockActivity. */
+        const val ACTION_ENSURE_LOCKED = "com.lacaksmb.tracker.action.ENSURE_LOCKED"
 
         fun start(context: android.content.Context) {
             val intent = Intent(context, TrackerForegroundService::class.java)

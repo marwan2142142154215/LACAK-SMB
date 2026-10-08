@@ -37,7 +37,8 @@ echo "=== Building APK untuk site: $SITE_NAME ($SITE_CODE) v$VERSION ==="
     -PsiteCode="$SITE_CODE" \
     -PgatewayUrl="$GATEWAY_URL" \
     -PsiteName="$SITE_NAME" \
-    -PappVersionName="$VERSION"
+    -PappVersionName="$VERSION" \
+    -PbackendApiUrl="$BACKEND_API_URL"
 
 APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
 

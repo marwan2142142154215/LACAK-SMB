@@ -37,6 +37,16 @@ android {
             "SITE_NAME",
             "\"${project.findProperty("siteName") ?: "Development"}\"",
         )
+        // backend-api (Laravel) — beda port dari GATEWAY_URL (realtime-gateway
+        // AdonisJS). Dipakai LockOverlay untuk verifikasi OTP self-unlock
+        // lewat POST /api/v1/device-otp/verify (endpoint publik, lihat
+        // backend-api DeviceOtpController — tidak butuh login karena device
+        // yang terkunci tidak bisa login).
+        buildConfigField(
+            "String",
+            "BACKEND_API_URL",
+            "\"${project.findProperty("backendApiUrl") ?: "http://10.0.2.2:8010/api/v1"}\"",
+        )
     }
 
     buildTypes {
