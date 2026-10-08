@@ -21,6 +21,7 @@ class GeofenceRule extends Model
         'max_distance_meters',
         'center_latitude',
         'center_longitude',
+        'anchor_device_id',
         'is_active',
         'created_by',
     ];
@@ -37,6 +38,11 @@ class GeofenceRule extends Model
     public function violationLogs(): HasMany
     {
         return $this->hasMany(ViolationLog::class);
+    }
+
+    public function anchorDevice(): BelongsTo
+    {
+        return $this->belongsTo(Device::class, 'anchor_device_id');
     }
 
     public function getActivitylogOptions(): LogOptions

@@ -6,10 +6,15 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.InputFilter
 import android.text.InputType
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
@@ -17,6 +22,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
+import com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver
 import com.lacaksmb.tracker.data.DeviceIdentityStore
 import com.lacaksmb.tracker.data.DeviceLockStore
 import com.lacaksmb.tracker.network.DeviceOtpApi
@@ -77,12 +83,39 @@ class LockActivity : ComponentActivity() {
 
         setContentView(buildLockView(currentReason))
         requestLockTask()
+        applyImmersiveMode()
         startUnlockWatchdog()
     }
 
     override fun onResume() {
         super.onResume()
         requestLockTask()
+        applyImmersiveMode()
+    }
+
+    /** System bar (Back/Home/Recents + status bar) disembunyikan lagi setiap
+     *  kali activity kembali fokus, termasuk setelah user sempat menggeser
+     *  untuk memunculkannya sekejap — supaya tombol navigasi tidak bisa
+     *  dipakai sama sekali. */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyImmersiveMode()
+    }
+
+    /** Menahan tombol fisik/keras: Back, Recents (App Switch), Home, Menu,
+     *  Search. Home/Recents sendiri sudah dinonaktifkan SISTEM oleh
+     *  startLockTask(); ini lapisan tambahan untuk perangkat yang tetap
+     *  mengirimkan event tombol ke activity. */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        return when (keyCode) {
+            KeyEvent.KEYCODE_BACK,
+            KeyEvent.KEYCODE_APP_SWITCH,
+            KeyEvent.KEYCODE_HOME,
+            KeyEvent.KEYCODE_MENU,
+            KeyEvent.KEYCODE_SEARCH,
+            -> true
+            else -> super.onKeyDown(keyCode, event)
+        }
     }
 
     /** Dipanggil sistem saat ada upaya keluar (gesture Home/Recents dll). */
@@ -102,11 +135,43 @@ class LockActivity : ComponentActivity() {
 
     private fun requestLockTask() {
         try {
+            // Kalau jadi Device Owner: pakai lock-task penuh (gesture unpin
+            // dimatikan sistem). Kalau bukan: startLockTask() = screen pinning
+            // biasa; tombol navigasi sudah disembunyikan lewat immersive mode.
+            TrackerDeviceAdminReceiver.enableFullLockTaskIfDeviceOwner(this)
             startLockTask()
         } catch (_: Exception) {
             // Sebagian OEM membatasi screen pinning untuk app non-Device-Owner.
             // lockNow() dari Device Admin (dipanggil service) tetap jadi
             // jaring pengaman minimum kalau pinning gagal di perangkat itu.
+        }
+    }
+
+    /** Menyembunyikan status bar dan tombol navigasi (Back/Home/Recents)
+     *  secara "immersive sticky": bars hilang permanen, dan kalau user
+     *  menggeser dari tepi layar, bars hanya muncul sekejap lalu tersembunyi
+     *  lagi otomatis. Inilah yang membuat mode lock tidak bisa di-bypass lewat
+     *  kombinasi tombol navigasi. */
+    private fun applyImmersiveMode() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.let { controller ->
+                controller.hide(
+                    WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars(),
+                )
+                controller.systemBarsBehavior =
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility =
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         }
     }
 
@@ -116,6 +181,10 @@ class LockActivity : ComponentActivity() {
         watchdogJob = lifecycleScope.launch {
             while (true) {
                 delay(2_000L)
+                // Pasang ulang immersive tiap siklus: sebagian OEM menampilkan
+                // kembali system bar setelah beberapa detik / setelah ada
+                // interaksi; ini memaksa tombol navigasi tetap tersembunyi.
+                applyImmersiveMode()
                 if (!lockStore.snapshot().adminLocked) {
                     finishUnlocked(clearStore = false)
                     break

@@ -1,6 +1,6 @@
 <script setup>
 import { MapPinned, Pencil, Plus, Trash2 } from '@lucide/vue'
-import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
+import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { onMounted, ref } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
@@ -18,6 +18,7 @@ const toast = useToast()
 
 const rules = ref([])
 const organizations = ref([])
+const devices = ref([])
 const loading = ref(true)
 const dialogOpen = ref(false)
 const submitting = ref(false)
@@ -33,6 +34,7 @@ const emptyForm = () => ({
     max_distance_meters: 100,
     center_latitude: '',
     center_longitude: '',
+    anchor_device_id: '',
 })
 
 const form = ref(emptyForm())
@@ -53,6 +55,7 @@ function openEdit(rule) {
         max_distance_meters: rule.max_distance_meters ?? 100,
         center_latitude: rule.center_latitude ?? '',
         center_longitude: rule.center_longitude ?? '',
+        anchor_device_id: rule.anchor_device_id ?? '',
     }
     dialogOpen.value = true
 }
@@ -86,6 +89,11 @@ async function loadOrganizations() {
     }
 }
 
+async function loadDevices() {
+    const response = await api.get('/devices', { params: { per_page: 100 } })
+    devices.value = response.data.data.items
+}
+
 async function submitForm() {
     submitting.value = true
     try {
@@ -97,6 +105,7 @@ async function submitForm() {
                 max_distance_meters: form.value.max_distance_meters || null,
                 center_latitude: form.value.center_latitude || null,
                 center_longitude: form.value.center_longitude || null,
+                anchor_device_id: form.value.anchor_device_id || null,
             })
             toast.success('Aturan geofence diperbarui')
         } else {
@@ -104,6 +113,7 @@ async function submitForm() {
                 ...form.value,
                 center_latitude: form.value.center_latitude || null,
                 center_longitude: form.value.center_longitude || null,
+                anchor_device_id: form.value.anchor_device_id || null,
             })
             toast.success('Aturan geofence dibuat')
         }
@@ -131,7 +141,7 @@ async function confirmDelete() {
 }
 
 onMounted(async () => {
-    await Promise.all([loadRules(), loadOrganizations()])
+    await Promise.all([loadRules(), loadOrganizations(), loadDevices()])
 })
 </script>
 
@@ -172,8 +182,12 @@ onMounted(async () => {
                                 <dt class="inline text-base-600">IP:</dt>
                                 {{ rule.allowed_ip_cidr }}
                             </div>
-                            <div v-if="rule.max_distance_meters">
-                                <dt class="inline text-base-600">Radius aman:</dt>
+                            <div v-if="rule.max_distance_meters && rule.anchor_device_id">
+                                <dt class="inline text-base-600">Radius aman (BLE):</dt>
+                                {{ rule.max_distance_meters }}m dari {{ rule.anchor_device_name ?? 'device anchor' }}
+                            </div>
+                            <div v-else-if="rule.max_distance_meters">
+                                <dt class="inline text-base-600">Radius aman (GPS):</dt>
                                 {{ rule.max_distance_meters }}m
                                 <span v-if="rule.center_latitude == null" class="text-warning-400"> (titik pusat belum diatur — tidak aktif)</span>
                             </div>
@@ -197,6 +211,7 @@ onMounted(async () => {
                     <DialogTitle class="text-base font-semibold text-base-50">
                         {{ editTarget ? 'Ubah Aturan Geofence' : 'Tambah Aturan Geofence' }}
                     </DialogTitle>
+                    <DialogDescription class="sr-only">Formulir untuk mengubah atau menambah aturan geofence</DialogDescription>
                     <form class="mt-5 space-y-4" @submit.prevent="submitForm">
                         <label v-if="auth.isSuperAdmin && !editTarget" class="block">
                             <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>
@@ -214,11 +229,30 @@ onMounted(async () => {
                             <BaseInput v-model="form.center_latitude" type="number" step="any" label="Latitude Titik Pusat" placeholder="3.5946933" />
                             <BaseInput v-model="form.center_longitude" type="number" step="any" label="Longitude Titik Pusat" placeholder="98.6727733" />
                         </div>
-                        <BaseInput v-model="form.max_distance_meters" type="number" label="Radius Aman dari Titik Pusat (meter)" />
+                        <label class="block">
+                            <span class="mb-1.5 block text-xs font-medium text-base-300">Device Anchor BLE (opsional, presisi jarak dekat)</span>
+                            <select
+                                v-model="form.anchor_device_id"
+                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
+                            >
+                                <option value="">Tidak pakai BLE (GPS saja)</option>
+                                <option v-for="d in devices" :key="d.id" :value="d.id">{{ d.device_name }}</option>
+                            </select>
+                        </label>
+                        <BaseInput v-model="form.max_distance_meters" type="number" label="Radius Aman (meter)" />
                         <p class="text-xs text-base-500">
-                            Device dikunci otomatis kalau posisi GPS-nya keluar dari radius ini, dan dibuka otomatis
-                            lagi begitu kembali — isi latitude/longitude titik pusat (ambil dari Google Maps lokasi
-                            kantor/site) supaya aktif.
+                            <template v-if="form.anchor_device_id">
+                                Mode BLE: device lain di site ini men-scan sinyal BLE dari device anchor yang dipilih
+                                di atas dan mengunci otomatis kalau jaraknya (estimasi dari kekuatan sinyal) melewati
+                                radius, lalu membuka otomatis kalau kembali dekat — presisi jarak dekat (meteran), tidak
+                                butuh GPS/satelit sama sekali, cocok untuk dalam ruangan.
+                            </template>
+                            <template v-else>
+                                Device dikunci otomatis kalau posisi GPS-nya keluar dari radius ini, dan dibuka otomatis
+                                lagi begitu kembali — isi latitude/longitude titik pusat (ambil dari Google Maps lokasi
+                                kantor/site) supaya aktif. Untuk presisi jarak dekat (dalam ruangan), pilih Device Anchor
+                                BLE di atas sebagai gantinya.
+                            </template>
                         </p>
                         <div class="flex justify-end gap-3 pt-2">
                             <BaseButton type="button" variant="ghost" @click="dialogOpen = false">Batal</BaseButton>

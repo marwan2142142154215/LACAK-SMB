@@ -6,6 +6,7 @@ import Organization from '#models/organization'
 import ConsentDocument from '#models/consent_document'
 import ApkBuild from '#models/apk_build'
 import DeviceLocation from '#models/device_location'
+import GeofenceRule from '#models/geofence_rule'
 import socketManager from '#services/socket_manager'
 import { verifyBearerToken } from '#services/backend_api_client'
 import { evaluateGeofence } from '#services/geofence_evaluator'
@@ -121,7 +122,41 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
         device.lastSeenAt = DateTime.now()
         await device.save()
 
-        socket.emit('device:accepted', { deviceId: device.id, status: device.status })
+        // Mode BLE geofence: kalau site ini punya aturan dengan anchor_device_id
+        // (device referensi diam di lokasi), device yang baru connect ini
+        // (selama dia BUKAN si anchor itu sendiri) diberi tahu UUID device
+        // anchor yang harus di-scan terus-menerus -- APK Lacak lalu membaca
+        // RSSI sinyal BLE anchor itu dan melaporkannya tiap heartbeat
+        // (ble_distance_meters), dipakai evaluateGeofence untuk lock/unlock
+        // otomatis presisi jarak dekat (bukan GPS yang bisa meleset puluhan
+        // meter di dalam ruangan).
+        const bleRule = await GeofenceRule.query()
+          .where('organization_id', device.organizationId)
+          .where('is_active', true)
+          .whereNotNull('anchor_device_id')
+          .whereNot('anchor_device_id', device.id)
+          .first()
+
+        let bleAnchorUuid: string | null = null
+        let bleMaxDistanceMeters: number | null = null
+        if (bleRule?.anchorDeviceId && bleRule?.maxDistanceMeters) {
+          const anchorDevice = await Device.find(bleRule.anchorDeviceId)
+          bleAnchorUuid = anchorDevice?.deviceUuid ?? null
+          // Radius dikirim ke device supaya APK bisa MENGDETEKSI PERGANTIAN
+          // status (keluar/masuk radius) SECEPATNYA di sisi phone, di dalam
+          // callback scan BLE -- tanpa ini evaluasi geofence hanya jalan tiap
+          // heartbeat (30 detik) dan auto-lock/unlock selalu terlambat satu
+          // sampai dua periode. Nilai yang sama dipakai evaluateGeofence di
+          // server; device TIDAK mengunci sendiri, cuma melapor lebih cepat.
+          bleMaxDistanceMeters = bleRule.maxDistanceMeters
+        }
+
+        socket.emit('device:accepted', {
+          deviceId: device.id,
+          status: device.status,
+          bleAnchorUuid,
+          bleMaxDistanceMeters,
+        })
 
         socketManager.broadcastDeviceStatus(device.organizationId, {
           device_id: device.id,
@@ -195,6 +230,20 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
       if (boundDeviceId === null || boundOrganizationId === null) return
 
       try {
+        // Kalau device sudah punya socket LAIN yang masih terikat (reconnect
+        // cepat: koneksi baru sudah hello duluan sementara koneksi lama yang
+        // setengah mati baru sempat putus), JANGAN tandai offline -- device
+        // sebenarnya masih terhubung. Catatan: socket.io sudah melepas semua
+        // room sebelum event 'disconnect' ini dipancarkan, jadi ukuran room
+        // di sini = jumlah socket HIDUP milik device ini selain yang ini.
+        const livePeers = deviceNs.adapter.rooms.get(`device:${boundDeviceId}`)?.size ?? 0
+        if (livePeers > 0) {
+          logger.info('device masih punya koneksi lain, tidak ditandai offline', {
+            deviceId: boundDeviceId,
+          })
+          return
+        }
+
         const device = await Device.find(boundDeviceId)
         if (!device) return
 

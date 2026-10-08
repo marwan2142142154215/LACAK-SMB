@@ -15,7 +15,13 @@ class GatewaySocketClient(
     private val listener: Listener,
 ) {
     interface Listener {
-        fun onAccepted(deviceId: Int, status: String)
+        /** bleAnchorUuid non-null kalau site ini pakai mode geofence BLE -- lihat BleBeaconScanner. */
+        fun onAccepted(
+            deviceId: Int,
+            status: String,
+            bleAnchorUuid: String?,
+            bleMaxDistanceMeters: Double?,
+        )
         fun onRejected(message: String)
         fun onCommandPush(commandId: Int?, commandType: String, reasonNote: String?)
         fun onConnected()
@@ -53,7 +59,22 @@ class GatewaySocketClient(
 
         sock.on("device:accepted") { args ->
             val data = args.firstOrNull() as? JSONObject ?: return@on
-            listener.onAccepted(data.optInt("deviceId"), data.optString("status"))
+            val bleAnchorUuid = if (data.isNull("bleAnchorUuid") || !data.has("bleAnchorUuid")) {
+                null
+            } else {
+                data.getString("bleAnchorUuid")
+            }
+            val bleMaxDistanceMeters = if (data.isNull("bleMaxDistanceMeters") || !data.has("bleMaxDistanceMeters")) {
+                null
+            } else {
+                data.optDouble("bleMaxDistanceMeters").takeIf { !it.isNaN() }
+            }
+            listener.onAccepted(
+                data.optInt("deviceId"),
+                data.optString("status"),
+                bleAnchorUuid,
+                bleMaxDistanceMeters,
+            )
         }
 
         sock.on("device:rejected") { args ->

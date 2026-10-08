@@ -23,8 +23,8 @@ const emit = defineEmits(['update:open', 'confirm'])
                 class="fixed top-1/2 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl shadow-black/50 focus:outline-none"
             >
                 <DialogTitle class="text-base font-semibold text-base-50">{{ title }}</DialogTitle>
-                <DialogDescription v-if="description" class="mt-2 text-sm text-base-400">
-                    {{ description }}
+                <DialogDescription :class="description ? 'mt-2 text-sm text-base-400' : 'sr-only'">
+                    {{ description || title }}
                 </DialogDescription>
                 <div class="mt-6 flex justify-end gap-3">
                     <BaseButton variant="ghost" :disabled="loading" @click="emit('update:open', false)">Batal</BaseButton>

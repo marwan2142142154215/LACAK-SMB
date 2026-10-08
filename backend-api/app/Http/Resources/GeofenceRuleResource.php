@@ -20,6 +20,8 @@ class GeofenceRuleResource extends JsonResource
             'max_distance_meters' => $this->max_distance_meters,
             'center_latitude' => $this->center_latitude !== null ? (float) $this->center_latitude : null,
             'center_longitude' => $this->center_longitude !== null ? (float) $this->center_longitude : null,
+            'anchor_device_id' => $this->anchor_device_id,
+            'anchor_device_name' => $this->whenLoaded('anchorDevice', fn () => $this->anchorDevice?->device_name),
             'is_active' => $this->is_active,
             'created_at' => $this->created_at,
         ];

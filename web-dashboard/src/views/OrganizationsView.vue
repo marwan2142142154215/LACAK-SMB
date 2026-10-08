@@ -1,6 +1,6 @@
 <script setup>
 import { Copy, Pencil, Plus, Trash2 } from '@lucide/vue'
-import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
+import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { onMounted, ref } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
@@ -131,6 +131,7 @@ onMounted(loadOrganizations)
                     class="fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
                 >
                     <DialogTitle class="text-base font-semibold text-base-50">{{ editingOrg ? `Ubah Nama Site: ${editingOrg.name}` : 'Tambah Site Baru' }}</DialogTitle>
+                    <DialogDescription class="sr-only">Formulir untuk mengubah atau menambah data site</DialogDescription>
                     <form class="mt-5 space-y-4" @submit.prevent="submitForm">
                         <BaseInput v-model="form.name" label="Nama Site" placeholder="PT Contoh Logistik" required />
                         <p class="text-xs text-base-500">

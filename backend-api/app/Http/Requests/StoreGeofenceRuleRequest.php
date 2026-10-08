@@ -24,6 +24,9 @@ class StoreGeofenceRuleRequest extends FormRequest
             // yang dipakai, bukan jarak BLE (device tidak pernah bisa kirim itu).
             'center_latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'center_longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            // Mode BLE (presisi, butuh device anchor fisik di lokasi) --
+            // alternatif dari mode GPS (longgar, otomatis, tidak butuh setup).
+            'anchor_device_id' => ['nullable', 'integer', 'exists:devices,id'],
         ];
     }
 }

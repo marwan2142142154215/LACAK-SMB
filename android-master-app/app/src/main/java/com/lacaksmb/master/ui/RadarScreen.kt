@@ -10,16 +10,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
@@ -30,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,6 +34,12 @@ import com.lacaksmb.master.ble.BleRadarScanner
 import com.lacaksmb.master.data.ApiClient
 import com.lacaksmb.master.data.ApiResult
 import com.lacaksmb.master.data.Device
+import com.lacaksmb.master.ui.components.AppTopBar
+import com.lacaksmb.master.ui.components.SectionCard
+import com.lacaksmb.master.ui.theme.Base400
+import com.lacaksmb.master.ui.theme.Base50
+import com.lacaksmb.master.ui.theme.Base900
+import com.lacaksmb.master.ui.theme.Warning400
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
@@ -76,14 +77,7 @@ fun RadarScreen(apiClient: ApiClient, navController: NavHostController) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Radar Lokasi") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, "Kembali")
-                    }
-                },
-            )
+            AppTopBar(title = "Radar Lokasi", onBack = { navController.popBackStack() })
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
@@ -94,12 +88,15 @@ fun RadarScreen(apiClient: ApiClient, navController: NavHostController) {
             Text(
                 "Jarak dekat (BLE) — makin kuat sinyal, makin dekat device",
                 style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = Base50,
                 modifier = Modifier.padding(16.dp),
             )
 
             if (!bleGranted) {
                 Text(
                     "Izin Bluetooth belum diberikan — radar jarak dekat tidak aktif.",
+                    color = Warning400,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -108,15 +105,21 @@ fun RadarScreen(apiClient: ApiClient, navController: NavHostController) {
             LazyColumn {
                 items(sightings.values.toList(), key = { it.deviceUuid }) { sighting ->
                     val matchedDevice = devicesByUuid[sighting.deviceUuid]
-                    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(matchedDevice?.deviceName ?: "Device tidak dikenal (${sighting.deviceUuid.take(8)}...)")
-                            val distance = BleRadarScanner.estimateDistanceMeters(sighting.rssi)
-                            Text(
-                                "RSSI ${sighting.rssi} dBm · perkiraan ${"%.1f".format(distance)} meter",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
+                    SectionCard(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                    ) {
+                        Text(
+                            matchedDevice?.deviceName ?: "Device tidak dikenal (${sighting.deviceUuid.take(8)}...)",
+                            color = Base50,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        val distance = BleRadarScanner.estimateDistanceMeters(sighting.rssi)
+                        Text(
+                            "RSSI ${sighting.rssi} dBm · perkiraan ${"%.1f".format(distance)} meter",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Base400,
+                        )
                     }
                 }
             }
@@ -126,7 +129,6 @@ fun RadarScreen(apiClient: ApiClient, navController: NavHostController) {
 
 @Composable
 private fun DeviceMap(devices: List<Device>) {
-    val context = LocalContext.current
     AndroidView(
         factory = {
             MapView(it).apply {

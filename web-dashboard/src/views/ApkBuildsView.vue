@@ -1,7 +1,7 @@
 <script setup>
 import { Download, Hammer, Loader2, PackageOpen, Trash2, Upload } from '@lucide/vue'
 import dayjs from 'dayjs'
-import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
+import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
@@ -224,6 +224,7 @@ onBeforeUnmount(() => {
                     class="fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
                 >
                     <DialogTitle class="text-base font-semibold text-base-50">Build APK Baru</DialogTitle>
+                    <DialogDescription class="sr-only">Formulir untuk memulai build APK baru</DialogDescription>
                     <form class="mt-5 space-y-4" @submit.prevent="submitGenerate">
                         <label v-if="auth.isSuperAdmin && generateForm.apk_type !== 'master'" class="block">
                             <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>
@@ -270,6 +271,7 @@ onBeforeUnmount(() => {
                     class="fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
                 >
                     <DialogTitle class="text-base font-semibold text-base-50">Unggah APK Manual</DialogTitle>
+                    <DialogDescription class="sr-only">Formulir untuk mengunggah file APK secara manual</DialogDescription>
                     <form class="mt-5 space-y-4" @submit.prevent="submitUpload">
                         <label v-if="auth.isSuperAdmin" class="block">
                             <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>

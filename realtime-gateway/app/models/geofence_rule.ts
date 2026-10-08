@@ -28,5 +28,8 @@ export default class GeofenceRule extends BaseModel {
   declare centerLongitude: number | null
 
   @column()
+  declare anchorDeviceId: number | null
+
+  @column()
   declare isActive: boolean
 }

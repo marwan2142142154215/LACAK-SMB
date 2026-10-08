@@ -25,14 +25,23 @@ class BleRadarScanner(private val context: Context) {
     private val _sightings = MutableStateFlow<Map<String, BleSighting>>(emptyMap())
     val sightings: StateFlow<Map<String, BleSighting>> = _sightings
 
+    // RSSI halus per device -- lihat komentar EMA di BleBeaconScanner (tracker
+    // app): tanpa ini radar menampilkan jarak yang melompat liar antar paket
+    // scan (bisa beda puluhan meter dalam hitungan milidetik) walau device
+    // diam, karena RSSI mentah satu paket BLE sangat berisik.
+    private val smoothedRssiByUuid = mutableMapOf<String, Double>()
+
     private var scanner: BluetoothLeScanner? = null
     private var isScanning = false
 
     private val callback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val uuid = result.scanRecord?.serviceUuids?.firstOrNull()?.uuid?.toString() ?: return
+            val raw = result.rssi.toDouble()
+            val smoothed = smoothedRssiByUuid[uuid]?.let { prev -> EMA_ALPHA * raw + (1 - EMA_ALPHA) * prev } ?: raw
+            smoothedRssiByUuid[uuid] = smoothed
             _sightings.update { current ->
-                current + (uuid to BleSighting(uuid, result.rssi, System.currentTimeMillis()))
+                current + (uuid to BleSighting(uuid, smoothed.toInt(), System.currentTimeMillis()))
             }
         }
 
@@ -75,11 +84,13 @@ class BleRadarScanner(private val context: Context) {
         }
         isScanning = false
         scanner = null
+        smoothedRssiByUuid.clear()
     }
 
     /** Perkiraan jarak meter dari RSSI (model log-distance umum, bukan presisi tinggi). */
     companion object {
         private const val TAG = "MasterBle"
+        private const val EMA_ALPHA = 0.2
 
         fun estimateDistanceMeters(rssi: Int, txPowerAt1m: Int = -59): Double {
             if (rssi == 0) return -1.0

@@ -1,11 +1,14 @@
 package com.lacaksmb.master.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,7 +20,6 @@ import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.VerifiedUser
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -25,7 +27,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,12 +36,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.lacaksmb.master.data.ApiClient
 import com.lacaksmb.master.data.ApiResult
 import com.lacaksmb.master.data.Device
 import com.lacaksmb.master.data.SessionStore
+import com.lacaksmb.master.ui.components.AppTopBar
+import com.lacaksmb.master.ui.components.BadgeVariant
+import com.lacaksmb.master.ui.components.SectionCard
+import com.lacaksmb.master.ui.components.StatusBadge
+import com.lacaksmb.master.ui.components.deviceStatusBadgeVariant
+import com.lacaksmb.master.ui.theme.Base300
+import com.lacaksmb.master.ui.theme.Base400
+import com.lacaksmb.master.ui.theme.Base50
+import com.lacaksmb.master.ui.theme.Danger400
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,19 +79,19 @@ fun DeviceListScreen(apiClient: ApiClient, sessionStore: SessionStore, navContro
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Device (${devices.size})") },
+            AppTopBar(
+                title = "Device (${devices.size})",
                 actions = {
-                    IconButton(onClick = { refreshTick++ }) { Icon(Icons.Filled.Refresh, "Refresh") }
-                    IconButton(onClick = { navController.navigate(Routes.RADAR) }) { Icon(Icons.Filled.LocationOn, "Radar") }
-                    IconButton(onClick = { navController.navigate(Routes.GEOFENCE) }) { Icon(Icons.Filled.Rule, "Geofence") }
-                    IconButton(onClick = { navController.navigate(Routes.CONSENT) }) { Icon(Icons.Filled.VerifiedUser, "Consent") }
-                    IconButton(onClick = { navController.navigate(Routes.DOWNLOAD_APK) }) { Icon(Icons.Filled.Download, "Download APK") }
+                    IconButton(onClick = { refreshTick++ }) { Icon(Icons.Filled.Refresh, "Refresh", tint = Base300) }
+                    IconButton(onClick = { navController.navigate(Routes.RADAR) }) { Icon(Icons.Filled.LocationOn, "Radar", tint = Base300) }
+                    IconButton(onClick = { navController.navigate(Routes.GEOFENCE) }) { Icon(Icons.Filled.Rule, "Geofence", tint = Base300) }
+                    IconButton(onClick = { navController.navigate(Routes.CONSENT) }) { Icon(Icons.Filled.VerifiedUser, "Consent", tint = Base300) }
+                    IconButton(onClick = { navController.navigate(Routes.DOWNLOAD_APK) }) { Icon(Icons.Filled.Download, "Download APK", tint = Base300) }
                     IconButton(onClick = {
                         scope.launch { apiClient.logout() }
                         sessionStore.clear()
                         navController.navigate(Routes.LOGIN) { popUpTo(0) }
-                    }) { Icon(Icons.Filled.Logout, "Keluar") }
+                    }) { Icon(Icons.Filled.Logout, "Keluar", tint = Base300) }
                 },
             )
         },
@@ -94,11 +105,15 @@ fun DeviceListScreen(apiClient: ApiClient, sessionStore: SessionStore, navContro
 
                 errorText != null -> Text(
                     errorText!!,
-                    color = MaterialTheme.colorScheme.error,
+                    color = Danger400,
                     modifier = Modifier.padding(16.dp),
                 )
 
-                devices.isEmpty() -> Text("Belum ada device terdaftar", modifier = Modifier.padding(16.dp))
+                devices.isEmpty() -> Text(
+                    "Belum ada device terdaftar",
+                    color = Base400,
+                    modifier = Modifier.padding(16.dp),
+                )
 
                 else -> LazyColumn {
                     items(devices, key = { it.id }) { device ->
@@ -112,43 +127,34 @@ fun DeviceListScreen(apiClient: ApiClient, sessionStore: SessionStore, navContro
 
 @Composable
 private fun DeviceCard(device: Device, onClick: () -> Unit) {
-    Card(
+    SectionCard(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        onClick = onClick,
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clickable(onClick = onClick),
+        contentPadding = PaddingValues(16.dp),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(device.deviceName, style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.width(8.dp))
-                StatusBadge(device.status)
-            }
-            Spacer(modifier = Modifier.width(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(device.deviceName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Base50)
+            Spacer(modifier = Modifier.width(8.dp))
+            StatusBadge(device.status, deviceStatusBadgeVariant(device.status))
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            "Baterai: ${device.batteryLevel ?: "-"}%  ·  Android ${device.androidVersion}",
+            style = MaterialTheme.typography.bodySmall,
+            color = Base400,
+        )
+        device.latestLocation?.let {
             Text(
-                "Baterai: ${device.batteryLevel ?: "-"}%  ·  Android ${device.androidVersion}",
+                "Posisi terakhir: ${it.latitude ?: "-"}, ${it.longitude ?: "-"}",
                 style = MaterialTheme.typography.bodySmall,
-            )
-            device.latestLocation?.let {
-                Text(
-                    "Posisi terakhir: ${it.latitude ?: "-"}, ${it.longitude ?: "-"}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Text(
-                "Terakhir online: ${device.lastSeenAt ?: "belum pernah"}",
-                style = MaterialTheme.typography.bodySmall,
+                color = Base400,
             )
         }
+        Text(
+            "Terakhir online: ${device.lastSeenAt ?: "belum pernah"}",
+            style = MaterialTheme.typography.bodySmall,
+            color = Base400,
+        )
     }
-}
-
-@Composable
-fun StatusBadge(status: String) {
-    val color = when (status) {
-        "online" -> MaterialTheme.colorScheme.primary
-        "locked" -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.secondary
-    }
-    Text(status, color = color, style = MaterialTheme.typography.labelMedium)
 }

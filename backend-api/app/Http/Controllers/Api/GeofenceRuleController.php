@@ -24,7 +24,7 @@ class GeofenceRuleController extends Controller
             return $this->fail('Anda tidak berwenang melihat aturan geofence site ini', null, 403);
         }
 
-        $rules = $query->orderBy('rule_name')->paginate($request->integer('per_page', 20));
+        $rules = $query->with('anchorDevice')->orderBy('rule_name')->paginate($request->integer('per_page', 20));
 
         return $this->success('Daftar aturan geofence', [
             'items' => GeofenceRuleResource::collection($rules),
@@ -48,6 +48,7 @@ class GeofenceRuleController extends Controller
             'max_distance_meters' => $request->validated('max_distance_meters'),
             'center_latitude' => $request->validated('center_latitude'),
             'center_longitude' => $request->validated('center_longitude'),
+            'anchor_device_id' => $request->validated('anchor_device_id'),
             'is_active' => true,
             'created_by' => $request->user()->id,
         ]);
@@ -70,6 +71,7 @@ class GeofenceRuleController extends Controller
             'max_distance_meters' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'center_latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
             'center_longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
+            'anchor_device_id' => ['sometimes', 'nullable', 'integer', 'exists:devices,id'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
 

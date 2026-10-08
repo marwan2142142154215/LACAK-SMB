@@ -1,6 +1,6 @@
 <script setup>
 import { Plus, Send, Trash2 } from '@lucide/vue'
-import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
+import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { onMounted, ref } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
@@ -129,6 +129,7 @@ onMounted(async () => {
                     class="fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
                 >
                     <DialogTitle class="text-base font-semibold text-base-50">Tambah Binding Telegram</DialogTitle>
+                    <DialogDescription class="sr-only">Formulir untuk menambah binding Telegram baru</DialogDescription>
                     <form class="mt-5 space-y-4" @submit.prevent="submitForm">
                         <label v-if="auth.isSuperAdmin" class="block">
                             <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>

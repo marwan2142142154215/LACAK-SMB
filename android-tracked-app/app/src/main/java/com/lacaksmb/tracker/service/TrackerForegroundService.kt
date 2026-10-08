@@ -56,6 +56,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     private lateinit var lockStore: DeviceLockStore
     private var socketClient: GatewaySocketClient? = null
     private val bleAdvertiser by lazy { BleBeaconAdvertiser(applicationContext) }
+    private val bleScanner by lazy { BleBeaconScanner(applicationContext) }
 
     // Watchdog kunci: selama status locked, pasang ulang LockActivity tiap
     // beberapa detik (jaring pengaman kalau user berhasil pindah layar
@@ -103,6 +104,80 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     // Service ini selalu hidup, jadi selalu bisa mendaftar ulang di onCreate.
     private val lockDefenseReceiver = LockDefenseReceiver()
     private var lockDefenseRegistered = false
+
+    /**
+     * Laporan cepat saat jarak BLE melewati radius. Server tetap SATU-SATUNYA
+     * pihak yang memutuskan lock/unlock (lihat geofence_evaluator) -- di sini
+     * kita hanya mengirim laporan posisi LEBIH CEPAT daripada heartbeat 30
+     * detik, supaya deteksi keluar/masuk radius jadi nyaris real-time.
+     *
+     * Jeda antar laporan dibatasi (BIAS_REPORT_MIN_INTERVAL_MS) supaya noise
+     * RSSI yang bolak-balik di ambang tidak membanjiri server. Saat jeda ini
+     * dilewati, laporan terakhir yang sempat tertahan ikut terkirim -- jadi
+     * bukti "keluar radius" tidak hilang cuma karena sempat ada satu paket
+     * yang menyimpang.
+     */
+    private var pendingCrossingReport: Pair<Boolean, Double?>? = null
+    private var lastCrossingReportAt = 0L
+
+    private val bleCrossingListener = object : BleBeaconScanner.CrossingListener {
+        @Synchronized
+        override fun onCrossingChanged(isInsideRadius: Boolean, distanceMeters: Double?) {
+            pendingCrossingReport = isInsideRadius to distanceMeters
+            flushCrossingReport(System.currentTimeMillis())
+        }
+    }
+
+    private val crossingFlushHandler = Handler(Looper.getMainLooper())
+    private val crossingFlushRunnable = Runnable { flushCrossingReport(System.currentTimeMillis()) }
+
+    /**
+     * Kirim laporan posisi yang tertahan (kalau ada). Dipanggil dari callback
+     * scan BLE (thread scanner) maupun dari handler (main thread), jadi
+     * seluruh akses ke pendingCrossingReport & lastCrossingReportAt dijaga
+     * lock yang sama. Saat laporan masih ditahan karena jeda minimum,
+     * jadwalkan flush ulang tepat setelah jeda itu berlalu -- bukti keluar/
+     * masuk radius tidak pernah hilang, cuma tertunda sebentar saat noise.
+     */
+    @Synchronized
+    private fun flushCrossingReport(now: Long) {
+        crossingFlushHandler.removeCallbacks(crossingFlushRunnable)
+        if (pendingCrossingReport == null) return
+
+        val elapsed = now - lastCrossingReportAt
+        if (elapsed < BIAS_REPORT_MIN_INTERVAL_MS) {
+            crossingFlushHandler.postDelayed(
+                crossingFlushRunnable,
+                BIAS_REPORT_MIN_INTERVAL_MS - elapsed,
+            )
+            return
+        }
+
+        pendingCrossingReport = null
+        lastCrossingReportAt = now
+
+        val position = currentPosition()
+        // SENGAJA TIDAK fallback ke pending.second (jarak di SAAT zona
+        // berubah) kalau bleReading sekarang null -- itu bug yang sempat
+        // menyebabkan unlock palsu di produksi: pending.second bisa berupa
+        // nilai "dekat" yang sudah basi (tertahan sampai BIAS_REPORT_MIN_
+        // INTERVAL_MS, bisa beberapa detik), padahal bleReading() null
+        // berarti scanner SEKARANG tidak punya data sama sekali (anchor baru
+        // hilang lagi). Melaporkan null di sini (bukan nilai basi) membuat
+        // server menganggapnya "anchor tidak terdeteksi" -- default aman,
+        // bukan bukti palsu "masih dekat".
+        val bleReading = bleScanner.latestReading()
+        socketClient?.sendLocation(
+            source = if (bleReading != null) "ble" else "gps",
+            latitude = position.first,
+            longitude = position.second,
+            bleDistanceMeters = bleReading?.second,
+            bleRssi = bleReading?.first,
+            batteryLevel = currentBatteryLevel(),
+            ssid = currentSsid(),
+            ip = null,
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -173,8 +248,11 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     override fun onDestroy() {
         heartbeatJob?.cancel()
         lockWatchdogHandler.removeCallbacks(lockWatchdogRunnable)
+        crossingFlushHandler.removeCallbacks(crossingFlushRunnable)
+        pendingCrossingReport = null
         stopGpsUpdates()
         bleAdvertiser.stop()
+        bleScanner.stop()
         socketClient?.disconnect()
         serviceJob.cancel()
         if (lockDefenseRegistered) {
@@ -200,16 +278,32 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         updateNotification("Terputus, mencoba menyambung ulang...")
     }
 
-    override fun onAccepted(deviceId: Int, status: String) {
+    override fun onAccepted(deviceId: Int, status: String, bleAnchorUuid: String?, bleMaxDistanceMeters: Double?) {
         updateNotification("Aktif memantau (status: $status)")
         startHeartbeat()
         startGpsUpdates()
         serviceScope.launch {
             bleAdvertiser.start(identityStore.snapshot().deviceUuid)
         }
-        // Kirim satu laporan segera supaya radar tidak menunggu interval
-        // heartbeat pertama; posisi GPS mungkin tetap null sampai fix pertama.
-        serviceScope.launch { sendHeartbeatOnce() }
+        // Mode BLE geofence: server cuma mengirim bleAnchorUuid kalau site ini
+        // punya aturan dengan anchor device dikonfigurasi (lihat socket.ts
+        // device:hello) -- device ini lalu scan terus RSSI sinyal anchor itu
+        // dan melaporkannya tiap heartbeat sebagai ble_distance_meters.
+        if (!bleAnchorUuid.isNullOrBlank()) {
+            bleScanner.setRadiusMeters(bleMaxDistanceMeters)
+            bleScanner.setCrossingListener(bleCrossingListener)
+            bleScanner.startScanningFor(bleAnchorUuid)
+        } else {
+            bleScanner.setRadiusMeters(null)
+            bleScanner.setCrossingListener(null)
+            bleScanner.stop()
+        }
+        // TIDAK perlu kirim heartbeat manual di sini: startHeartbeat() di atas
+        // sudah mengirim laporan pertama secepatnya (loop mengirim SEBELUM
+        // delay pertama). Dulu ada launch { sendHeartbeatOnce() } tambahan di
+        // titik ini -- setiap (re)connect menghasilkan DUA device:location pada
+        // detik yang sama: dua log pelanggaran kembar kalau anchor belum
+        // terdeteksi (2 pesan Telegram + bisa memicu lock dobel).
     }
 
     override fun onRejected(message: String) {
@@ -294,12 +388,13 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
 
     private fun sendHeartbeatOnce() {
         val position = currentPosition()
+        val bleReading = bleScanner.latestReading()
         socketClient?.sendLocation(
-            source = "gps",
+            source = if (bleReading != null) "ble" else "gps",
             latitude = position.first,
             longitude = position.second,
-            bleDistanceMeters = null,
-            bleRssi = null,
+            bleDistanceMeters = bleReading?.second,
+            bleRssi = bleReading?.first,
             batteryLevel = currentBatteryLevel(),
             ssid = currentSsid(),
             ip = null,
@@ -433,7 +528,22 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     companion object {
         private const val CHANNEL_ID = "tracker_active"
         private const val NOTIFICATION_ID = 1001
-        private const val HEARTBEAT_INTERVAL_MS = 30_000L
+        // 15 detik (dulu 30) -- auto-unlock butuh beberapa heartbeat berturut
+        // yang semuanya aman (lihat UNLOCK_SAFE_STREAK_REQUIRED di
+        // geofence_evaluator.ts); dengan heartbeat 30 detik, waktu tunggu
+        // unlock setelah benar-benar kembali bisa sampai ~90 detik, terasa
+        // "macet"/tidak pernah terbuka buat user yang menunggu di depan HP --
+        // 15 detik memangkas itu jadi ~30 detik tanpa mengorbankan konfirmasi
+        // berulang (masih bukan auto-unlock dari satu bacaan saja).
+        private const val HEARTBEAT_INTERVAL_MS = 15_000L
+
+        /**
+         * Jeda minimum antar laporan cepat dari perubahan zona BLE. Melindungi
+         * dari noise RSSI yang bolak-balik di ambang (bisa berpuluh kali per
+         * menit) supaya tidak membanjiri server tanpa mengorbankan deteksi
+         * keluar/masuk radius yang nyaris real-time.
+         */
+        private const val BIAS_REPORT_MIN_INTERVAL_MS = 3_000L
 
         private const val TAG = "TrackerLock"
         private const val LOCK_WATCHDOG_MS = 5_000L
