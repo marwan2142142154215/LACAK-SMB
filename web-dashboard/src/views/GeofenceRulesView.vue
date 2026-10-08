@@ -1,5 +1,5 @@
 <script setup>
-import { MapPinned, Plus, Trash2 } from '@lucide/vue'
+import { MapPinned, Pencil, Plus, Trash2 } from '@lucide/vue'
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { onMounted, ref } from 'vue'
 
@@ -23,14 +23,45 @@ const dialogOpen = ref(false)
 const submitting = ref(false)
 const deleteTarget = ref(null)
 const deleting = ref(false)
+const editTarget = ref(null)
 
-const form = ref({
+const emptyForm = () => ({
     organization_id: auth.user?.organization_id ?? null,
     rule_name: '',
     allowed_ssid: '',
     allowed_ip_cidr: '',
     max_distance_meters: 100,
 })
+
+const form = ref(emptyForm())
+
+function openCreate() {
+    editTarget.value = null
+    form.value = emptyForm()
+    dialogOpen.value = true
+}
+
+function openEdit(rule) {
+    editTarget.value = rule
+    form.value = {
+        organization_id: rule.organization_id,
+        rule_name: rule.rule_name,
+        allowed_ssid: rule.allowed_ssid ?? '',
+        allowed_ip_cidr: rule.allowed_ip_cidr ?? '',
+        max_distance_meters: rule.max_distance_meters ?? 100,
+    }
+    dialogOpen.value = true
+}
+
+async function toggleActive(rule) {
+    try {
+        await api.put(`/geofence-rules/${rule.id}`, { is_active: !rule.is_active })
+        toast.success(rule.is_active ? 'Aturan dinonaktifkan' : 'Aturan diaktifkan')
+        await loadRules()
+    } catch (err) {
+        toast.error('Gagal mengubah status', err.response?.data?.message)
+    }
+}
 
 async function loadRules() {
     loading.value = true
@@ -54,12 +85,22 @@ async function loadOrganizations() {
 async function submitForm() {
     submitting.value = true
     try {
-        await api.post('/geofence-rules', form.value)
-        toast.success('Aturan geofence dibuat')
+        if (editTarget.value) {
+            await api.put(`/geofence-rules/${editTarget.value.id}`, {
+                rule_name: form.value.rule_name,
+                allowed_ssid: form.value.allowed_ssid || null,
+                allowed_ip_cidr: form.value.allowed_ip_cidr || null,
+                max_distance_meters: form.value.max_distance_meters || null,
+            })
+            toast.success('Aturan geofence diperbarui')
+        } else {
+            await api.post('/geofence-rules', form.value)
+            toast.success('Aturan geofence dibuat')
+        }
         dialogOpen.value = false
         await loadRules()
     } catch (err) {
-        toast.error('Gagal membuat aturan', err.response?.data?.message)
+        toast.error(editTarget.value ? 'Gagal memperbarui aturan' : 'Gagal membuat aturan', err.response?.data?.message)
     } finally {
         submitting.value = false
     }
@@ -88,7 +129,7 @@ onMounted(async () => {
     <div>
         <PageHeader title="Aturan Geofence" subtitle="Whitelist WiFi/IP dan jarak maksimum BLE per site">
             <template #actions>
-                <BaseButton @click="dialogOpen = true"><Plus class="size-4" /> Tambah Aturan</BaseButton>
+                <BaseButton @click="openCreate"><Plus class="size-4" /> Tambah Aturan</BaseButton>
             </template>
         </PageHeader>
 
@@ -103,9 +144,14 @@ onMounted(async () => {
                                 <MapPinned class="size-4 text-copper-400" />
                                 <p class="font-medium text-base-100">{{ rule.rule_name }}</p>
                             </div>
-                            <button type="button" class="text-base-500 hover:text-danger-400" @click="deleteTarget = rule">
-                                <Trash2 class="size-4" />
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <button type="button" class="text-base-500 hover:text-accent-400" @click="openEdit(rule)">
+                                    <Pencil class="size-4" />
+                                </button>
+                                <button type="button" class="text-base-500 hover:text-danger-400" @click="deleteTarget = rule">
+                                    <Trash2 class="size-4" />
+                                </button>
+                            </div>
                         </div>
                         <dl class="mt-3 space-y-1 text-xs text-base-400">
                             <div v-if="rule.allowed_ssid">
@@ -121,23 +167,27 @@ onMounted(async () => {
                                 {{ rule.max_distance_meters }}m
                             </div>
                         </dl>
-                        <BaseBadge class="mt-3" :variant="rule.is_active ? 'success' : 'neutral'">
-                            {{ rule.is_active ? 'Aktif' : 'Nonaktif' }}
-                        </BaseBadge>
+                        <button type="button" @click="toggleActive(rule)">
+                            <BaseBadge class="mt-3" :variant="rule.is_active ? 'success' : 'neutral'">
+                                {{ rule.is_active ? 'Aktif' : 'Nonaktif' }}
+                            </BaseBadge>
+                        </button>
                     </div>
                 </div>
             </BaseCard>
         </div>
 
-        <DialogRoot :open="dialogOpen" @update:open="(v) => (dialogOpen = v)">
+        <DialogRoot :open="dialogOpen" @update:open="(v) => { dialogOpen = v; if (!v) editTarget = null }">
             <DialogPortal>
                 <DialogOverlay class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
                 <DialogContent
                     class="fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
                 >
-                    <DialogTitle class="text-base font-semibold text-base-50">Tambah Aturan Geofence</DialogTitle>
+                    <DialogTitle class="text-base font-semibold text-base-50">
+                        {{ editTarget ? 'Ubah Aturan Geofence' : 'Tambah Aturan Geofence' }}
+                    </DialogTitle>
                     <form class="mt-5 space-y-4" @submit.prevent="submitForm">
-                        <label v-if="auth.isSuperAdmin" class="block">
+                        <label v-if="auth.isSuperAdmin && !editTarget" class="block">
                             <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>
                             <select
                                 v-model="form.organization_id"

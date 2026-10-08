@@ -49,15 +49,31 @@ def _find_repo_root() -> Path:
 REPO_ROOT = _find_repo_root()
 
 CREATE_NEW_PROCESS_GROUP = 0x00000200
+# TANPA ini, setiap child process (php/npm.cmd/cloudflared) membuka jendela
+# cmd sendiri-sendiri -- CREATE_NEW_PROCESS_GROUP saja cuma bikin grup proses
+# baru (buat kirim CTRL_BREAK), TIDAK menyembunyikan window. CREATE_NO_WINDOW
+# yang benar-benar mencegah window konsol muncul sama sekali; stdout/stderr
+# tetap mengalir ke panel log lewat PIPE seperti biasa, tidak ada yang hilang.
+CREATE_NO_WINDOW = 0x08000000
+POPEN_FLAGS = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
 
 SERVICES = [
     # (id, label, cwd(repos), command, port_or_None)
-    ("backend", "Backend API (Laravel :8010)", "backend-api",
-     ["php", "artisan", "serve", "--host=127.0.0.1", "--port=8010"], 8010),
+    # Port 8000/8080 WAJIB sama persis dengan yang ditunggu Cloudflare Tunnel
+    # (lihat config remote tunnel LACAKSMB: api.->* :8000, app.->*:8080) --
+    # jangan diubah sendiri-sendiri tanpa mengubah tunnel-nya juga.
+    ("backend", "Backend API (Laravel :8000)", "backend-api",
+     ["php", "artisan", "serve", "--host=127.0.0.1", "--port=8000"], 8000),
+    ("queue", "Antrean Build APK (queue:work)", "backend-api",
+     ["php", "artisan", "queue:work", "--tries=1", "--timeout=310"], None),
+    # "npm start" -> node bin/server.js yang TIDAK ADA (proyek ini TypeScript
+    # murni, belum pernah di-build) -- "npm run dev" yang menjalankan
+    # bin/server.ts via AdonisJS ace serve, sama seperti dipakai sepanjang
+    # pengembangan proyek ini.
     ("gateway", "Realtime Gateway (:3333)", "realtime-gateway",
-     ["npm.cmd", "start"], 3333),
-    ("dashboard", "Web Dashboard (Vite)", "web-dashboard",
-     ["npm.cmd", "run", "dev"], 5173),
+     ["npm.cmd", "run", "dev"], 3333),
+    ("dashboard", "Web Dashboard (Vite :8080)", "web-dashboard",
+     ["npm.cmd", "run", "dev", "--", "--port", "8080", "--host", "127.0.0.1"], 8080),
     ("telegram-bot", "Telegram Bot", "telegram-bot",
      ["npm.cmd", "start"], None),
     ("tunnel", "Cloudflare Tunnel", ".",
@@ -153,9 +169,11 @@ class ServerController(tk.Tk):
         scroll.pack(side="right", fill="y")
         self.log.config(yscrollcommand=scroll.set)
         self.log.tag_config("backend", foreground="#60a5fa")
+        self.log.tag_config("queue", foreground="#38bdf8")
         self.log.tag_config("gateway", foreground="#a78bfa")
         self.log.tag_config("dashboard", foreground="#34d399")
         self.log.tag_config("telegram-bot", foreground="#fbbf24")
+        self.log.tag_config("tunnel", foreground="#f472b6")
         self.log.tag_config("sys", foreground="#f87171")
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -167,7 +185,7 @@ class ServerController(tk.Tk):
         lines = ANSI.sub("", text).splitlines() or [""]
         self.log.config(state="normal")
         for line in lines:
-            self.log.insert("end", f"[{sid:>7}] " + line + "\n", sid if sid in ("backend", "gateway", "dashboard", "telegram-bot") else "sys")
+            self.log.insert("end", f"[{sid:>7}] " + line + "\n", sid if sid in ("backend", "queue", "gateway", "dashboard", "telegram-bot", "tunnel") else "sys")
         self.log.see("end")
         self.log.config(state="disabled")
 
@@ -195,7 +213,7 @@ class ServerController(tk.Tk):
                 cmd, cwd=str(cwd),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, errors="replace", bufsize=1,
-                creationflags=CREATE_NEW_PROCESS_GROUP,
+                creationflags=POPEN_FLAGS,
             )
         except FileNotFoundError as exc:
             self.println(sid, f"Gagal start: {exc}")
