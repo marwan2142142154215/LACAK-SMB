@@ -19,6 +19,11 @@ class StoreGeofenceRuleRequest extends FormRequest
             'allowed_ssid' => ['nullable', 'string', 'max:255'],
             'allowed_ip_cidr' => ['nullable', 'string', 'max:50'],
             'max_distance_meters' => ['nullable', 'integer', 'min:1'],
+            // Radius GPS dari titik pusat -- lihat migrasi
+            // add_gps_center_to_geofence_rules_table untuk alasan kenapa ini
+            // yang dipakai, bukan jarak BLE (device tidak pernah bisa kirim itu).
+            'center_latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'center_longitude' => ['nullable', 'numeric', 'between:-180,180'],
         ];
     }
 }

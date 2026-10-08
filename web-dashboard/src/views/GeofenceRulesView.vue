@@ -31,6 +31,8 @@ const emptyForm = () => ({
     allowed_ssid: '',
     allowed_ip_cidr: '',
     max_distance_meters: 100,
+    center_latitude: '',
+    center_longitude: '',
 })
 
 const form = ref(emptyForm())
@@ -49,6 +51,8 @@ function openEdit(rule) {
         allowed_ssid: rule.allowed_ssid ?? '',
         allowed_ip_cidr: rule.allowed_ip_cidr ?? '',
         max_distance_meters: rule.max_distance_meters ?? 100,
+        center_latitude: rule.center_latitude ?? '',
+        center_longitude: rule.center_longitude ?? '',
     }
     dialogOpen.value = true
 }
@@ -91,10 +95,16 @@ async function submitForm() {
                 allowed_ssid: form.value.allowed_ssid || null,
                 allowed_ip_cidr: form.value.allowed_ip_cidr || null,
                 max_distance_meters: form.value.max_distance_meters || null,
+                center_latitude: form.value.center_latitude || null,
+                center_longitude: form.value.center_longitude || null,
             })
             toast.success('Aturan geofence diperbarui')
         } else {
-            await api.post('/geofence-rules', form.value)
+            await api.post('/geofence-rules', {
+                ...form.value,
+                center_latitude: form.value.center_latitude || null,
+                center_longitude: form.value.center_longitude || null,
+            })
             toast.success('Aturan geofence dibuat')
         }
         dialogOpen.value = false
@@ -127,7 +137,7 @@ onMounted(async () => {
 
 <template>
     <div>
-        <PageHeader title="Aturan Geofence" subtitle="Whitelist WiFi/IP dan jarak maksimum BLE per site">
+        <PageHeader title="Aturan Geofence" subtitle="Whitelist WiFi/IP dan radius GPS aman per site — kunci/buka otomatis">
             <template #actions>
                 <BaseButton @click="openCreate"><Plus class="size-4" /> Tambah Aturan</BaseButton>
             </template>
@@ -163,8 +173,9 @@ onMounted(async () => {
                                 {{ rule.allowed_ip_cidr }}
                             </div>
                             <div v-if="rule.max_distance_meters">
-                                <dt class="inline text-base-600">Jarak maks:</dt>
+                                <dt class="inline text-base-600">Radius aman:</dt>
                                 {{ rule.max_distance_meters }}m
+                                <span v-if="rule.center_latitude == null" class="text-warning-400"> (titik pusat belum diatur — tidak aktif)</span>
                             </div>
                         </dl>
                         <button type="button" @click="toggleActive(rule)">
@@ -199,7 +210,16 @@ onMounted(async () => {
                         <BaseInput v-model="form.rule_name" label="Nama Aturan" placeholder="Kantor Pusat" required />
                         <BaseInput v-model="form.allowed_ssid" label="SSID WiFi yang Diizinkan" placeholder="WIFI-KANTOR" />
                         <BaseInput v-model="form.allowed_ip_cidr" label="IP/CIDR yang Diizinkan" placeholder="192.168.1.0/24" />
-                        <BaseInput v-model="form.max_distance_meters" type="number" label="Jarak BLE Maksimum (meter)" />
+                        <div class="grid grid-cols-2 gap-3">
+                            <BaseInput v-model="form.center_latitude" type="number" step="any" label="Latitude Titik Pusat" placeholder="3.5946933" />
+                            <BaseInput v-model="form.center_longitude" type="number" step="any" label="Longitude Titik Pusat" placeholder="98.6727733" />
+                        </div>
+                        <BaseInput v-model="form.max_distance_meters" type="number" label="Radius Aman dari Titik Pusat (meter)" />
+                        <p class="text-xs text-base-500">
+                            Device dikunci otomatis kalau posisi GPS-nya keluar dari radius ini, dan dibuka otomatis
+                            lagi begitu kembali — isi latitude/longitude titik pusat (ambil dari Google Maps lokasi
+                            kantor/site) supaya aktif.
+                        </p>
                         <div class="flex justify-end gap-3 pt-2">
                             <BaseButton type="button" variant="ghost" @click="dialogOpen = false">Batal</BaseButton>
                             <BaseButton type="submit" :loading="submitting">Simpan</BaseButton>

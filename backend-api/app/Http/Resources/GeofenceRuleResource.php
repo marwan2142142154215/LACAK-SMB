@@ -18,6 +18,8 @@ class GeofenceRuleResource extends JsonResource
             'allowed_ssid' => $this->allowed_ssid,
             'allowed_ip_cidr' => $this->allowed_ip_cidr,
             'max_distance_meters' => $this->max_distance_meters,
+            'center_latitude' => $this->center_latitude !== null ? (float) $this->center_latitude : null,
+            'center_longitude' => $this->center_longitude !== null ? (float) $this->center_longitude : null,
             'is_active' => $this->is_active,
             'created_at' => $this->created_at,
         ];

@@ -19,6 +19,8 @@ class GeofenceRule extends Model
         'allowed_ssid',
         'allowed_ip_cidr',
         'max_distance_meters',
+        'center_latitude',
+        'center_longitude',
         'is_active',
         'created_by',
     ];
@@ -40,7 +42,7 @@ class GeofenceRule extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['rule_name', 'allowed_ssid', 'allowed_ip_cidr', 'max_distance_meters', 'is_active'])
+            ->logOnly(['rule_name', 'allowed_ssid', 'allowed_ip_cidr', 'max_distance_meters', 'center_latitude', 'center_longitude', 'is_active'])
             ->logOnlyDirty();
     }
 }

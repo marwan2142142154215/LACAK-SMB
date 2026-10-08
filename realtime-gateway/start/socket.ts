@@ -63,6 +63,11 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
         const device = await Device.query()
           .where('device_uuid', payload.deviceUuid)
           .where('is_active', true)
+          // Soft-delete Laravel (SoftDeletes trait) cuma menandai deleted_at --
+          // Lucid di sini tidak tahu konsep itu dan sebelumnya tetap menerima
+          // koneksi dari device yang sudah "dihapus" dari dashboard, karena
+          // is_active tidak otomatis ikut false saat soft-delete.
+          .whereNull('deleted_at')
           .first()
 
         if (!device) {
@@ -172,6 +177,8 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
           ssid: payload.ssid,
           ip: payload.ip,
           bleDistanceMeters: payload.bleDistanceMeters,
+          latitude: payload.latitude,
+          longitude: payload.longitude,
         })
       } catch (error) {
         logger.error('device:location gagal diproses', { error })

@@ -22,5 +22,11 @@ export default class GeofenceRule extends BaseModel {
   declare maxDistanceMeters: number | null
 
   @column()
+  declare centerLatitude: number | null
+
+  @column()
+  declare centerLongitude: number | null
+
+  @column()
   declare isActive: boolean
 }

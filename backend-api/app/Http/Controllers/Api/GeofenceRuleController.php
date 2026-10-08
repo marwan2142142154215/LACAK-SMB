@@ -46,6 +46,8 @@ class GeofenceRuleController extends Controller
             'allowed_ssid' => $request->validated('allowed_ssid'),
             'allowed_ip_cidr' => $request->validated('allowed_ip_cidr'),
             'max_distance_meters' => $request->validated('max_distance_meters'),
+            'center_latitude' => $request->validated('center_latitude'),
+            'center_longitude' => $request->validated('center_longitude'),
             'is_active' => true,
             'created_by' => $request->user()->id,
         ]);
@@ -66,6 +68,8 @@ class GeofenceRuleController extends Controller
             'allowed_ssid' => ['sometimes', 'nullable', 'string', 'max:255'],
             'allowed_ip_cidr' => ['sometimes', 'nullable', 'string', 'max:50'],
             'max_distance_meters' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'center_latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
+            'center_longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
 

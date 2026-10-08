@@ -14,9 +14,15 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(router)
 
-// Interceptor di sini (bukan di lib/api.js) karena butuh akses ke Pinia
-// store, yang baru tersedia setelah app.use(pinia) dipanggil.
-const auth = useAuthStore()
+// useAuthStore(pinia) -- instance pinia dioper EKSPLISIT, bukan
+// useAuthStore() biasa. Dipanggil di sini, di luar context component Vue
+// manapun (cuma lewat setup()/computed component biasanya "tahu" pinia aktif
+// yang mana secara otomatis) -- tanpa argumen ini gagal dengan
+// "getActivePinia() called but there was no active Pinia" di kombinasi
+// pinia@4 + vue-router@5 yang dipakai proyek ini, walau app.use(pinia) sudah
+// dipanggil duluan. Ini pola resmi Pinia untuk pemakaian di luar component,
+// lihat https://pinia.vuejs.org/core-concepts/outside-component-usage.html
+const auth = useAuthStore(pinia)
 
 api.interceptors.request.use((config) => {
     if (auth.token) {
