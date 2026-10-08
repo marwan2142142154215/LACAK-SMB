@@ -15,6 +15,7 @@ class ApkBuildResource extends JsonResource
         return [
             'id' => $this->id,
             'organization_id' => $this->organization_id,
+            'organization_name' => $this->organization?->name,
             'apk_type' => $this->apk_type,
             'version' => $this->version,
             'status' => $this->status,

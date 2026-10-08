@@ -19,6 +19,13 @@ const { connect } = useGatewaySocket()
 const devices = reactive(new Map())
 const violations = ref([])
 const loading = ref(true)
+const selectedDeviceId = ref(null)
+const selectedDevice = computed(() => (selectedDeviceId.value != null ? devices.get(selectedDeviceId.value) : null))
+
+function mapEmbedUrl(device) {
+    if (device?.latitude == null || device?.longitude == null) return null
+    return `https://maps.google.com/maps?q=${device.latitude},${device.longitude}&z=16&output=embed`
+}
 
 const RADAR_MAX_METERS = 200
 
@@ -151,7 +158,9 @@ onMounted(async () => {
                     <div
                         v-for="d in Array.from(devices.values())"
                         :key="d.device_id"
-                        class="rounded-xl border border-base-800 bg-base-850/60 p-4"
+                        class="cursor-pointer rounded-xl border border-base-800 bg-base-850/60 p-4 transition-all hover:border-accent-500/50"
+                        :class="{ 'border-accent-500/80': selectedDeviceId === d.device_id }"
+                        @click="selectedDeviceId = d.device_id"
                     >
                         <div class="flex items-start justify-between">
                             <p class="text-sm font-medium text-base-100">{{ d.device_name }}</p>
@@ -175,6 +184,21 @@ onMounted(async () => {
                         </div>
                     </div>
                 </div>
+            </BaseCard>
+
+            <BaseCard title="Peta Lokasi (Google Maps)" class="xl:col-span-3">
+                <p v-if="!selectedDevice" class="py-6 text-center text-sm text-base-500">Klik satu kartu Device di atas untuk melihat lokasi.</p>
+                <template v-else>
+                    <p v-if="selectedDevice.latitude == null" class="py-6 text-center text-sm text-base-500">Device ini belum mengirim koordinat GPS.</p>
+                    <iframe
+                        v-else
+                        :src="mapEmbedUrl(selectedDevice)"
+                        class="h-96 w-full rounded-xl border border-base-800"
+                        allowfullscreen
+                        loading="lazy"
+                        referrerpolicy="no-referrer-when-downgrade"
+                    />
+                </template>
             </BaseCard>
         </div>
     </div>

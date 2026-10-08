@@ -34,7 +34,7 @@ class ApkBuildController extends Controller
             return $this->fail('Anda tidak berwenang melihat APK build site ini', null, 403);
         }
 
-        $builds = $query->latest('id')->paginate($request->integer('per_page', 20));
+        $builds = $query->with('organization')->latest('id')->paginate($request->integer('per_page', 20));
 
         return $this->success('Daftar APK build', [
             'items' => ApkBuildResource::collection($builds),
@@ -119,6 +119,34 @@ class ApkBuildController extends Controller
         );
     }
 
+    /**
+     * Hapus APK build terdaftar (berdasarkan request user). File di storage
+     * ikut dihapus; device yang sudah ter-download & ter-install tidak terdampak
+     * karena di APK sudah tertanam site_code & gateway URL yang dipakai runtime.
+     */
+    public function destroy(ApkBuild $apkBuild)
+    {
+        $request = request();
+
+        if (! $request->user()->can('apk-builds.manage')) {
+            abort(403);
+        }
+
+        if ($this->authorizedOrganizationId($request->user(), $apkBuild->organization_id) === null) {
+            return $this->fail('Anda tidak berwenang menghapus APK build site ini', null, 403);
+        }
+
+        $disk = config('filesystems.documents_disk');
+
+        if ($apkBuild->file_path && Storage::disk($disk)->exists($apkBuild->file_path)) {
+            Storage::disk($disk)->delete($apkBuild->file_path);
+        }
+
+        $apkBuild->delete();
+
+        return $this->success('APK build dihapus dan tempat penyimpanannya dibersihkan', null);
+    }
+
     public function download(Request $request, ApkBuild $apkBuild)
     {
         if (! $request->hasValidSignature()) {
@@ -131,7 +159,10 @@ class ApkBuildController extends Controller
             return $this->fail('Berkas APK tidak ditemukan', null, 404);
         }
 
-        $filename = 'lacak-smb-'.$apkBuild->embedded_site_code.'-v'.$apkBuild->version.($apkBuild->apk_type === 'server' ? '.exe' : '.apk');
+        $slugName = str($apkBuild->organization?->name ?? 'site')->slug()->value();
+        $ext = $apkBuild->apk_type === 'server' ? '.exe' : '.apk';
+        $typeLabel = $apkBuild->apk_type === 'master' ? 'apk-master' : ($apkBuild->apk_type === 'server' ? 'lacak-server' : 'apk-pelacak');
+        $filename = "{$typeLabel}-{$slugName}-v{$apkBuild->version}{$ext}";
 
         return Storage::disk($disk)->download($apkBuild->file_path, $filename);
     }

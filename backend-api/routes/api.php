@@ -72,7 +72,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
         Route::apiResource('geofence-rules', GeofenceRuleController::class)->except(['show']);
 
-        Route::apiResource('apk-builds', ApkBuildController::class)->only(['index', 'store', 'show']);
+        Route::apiResource('apk-builds', ApkBuildController::class)->only(['index', 'store', 'show', 'destroy']);
         Route::post('/apk-builds/generate', [ApkBuildController::class, 'generate'])->name('apk-builds.generate');
 
         Route::apiResource('telegram-bindings', TelegramBindingController::class)->only(['index', 'store', 'destroy']);

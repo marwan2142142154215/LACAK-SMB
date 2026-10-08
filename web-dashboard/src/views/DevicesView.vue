@@ -1,11 +1,12 @@
 <script setup>
-import { KeyRound, Lock, MapPin, PlayCircle, StopCircle, Unlock } from '@lucide/vue'
+import { KeyRound, Lock, MapPin, Pencil, PlayCircle, StopCircle, Unlock } from '@lucide/vue'
 import dayjs from 'dayjs'
 import { onMounted, ref } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
+import BaseInput from '@/components/ui/BaseInput.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
@@ -15,6 +16,10 @@ const loading = ref(true)
 const actingDeviceId = ref(null)
 const otpResult = ref(null)
 const toast = useToast()
+const renameTarget = ref(null)
+const renameValue = ref('')
+const renaming = ref(false)
+const editDialogOpen = ref(false)
 
 const statusVariant = { online: 'success', offline: 'neutral', locked: 'danger', pending_enrollment: 'warning' }
 
@@ -56,6 +61,32 @@ async function generateOtp(device) {
         toast.error('Gagal membuat OTP', err.response?.data?.message)
     } finally {
         actingDeviceId.value = null
+    }
+}
+
+function openRename(device) {
+    renameTarget.value = device
+    renameValue.value = device.device_name
+    editDialogOpen.value = true
+}
+
+async function saveRename() {
+    if (!renameTarget.value) return
+    const trimmed = renameValue.value.trim()
+    if (!trimmed) {
+        toast.error('Nama tidak boleh kosong')
+        return
+    }
+    renaming.value = true
+    try {
+        await api.put(`/devices/${renameTarget.value.id}`, { device_name: trimmed })
+        toast.success('Nama device diubah', trimmed)
+        editDialogOpen.value = false
+        await loadDevices()
+    } catch (err) {
+        toast.error('Gagal mengganti nama device', err.response?.data?.message)
+    } finally {
+        renaming.value = false
     }
 }
 
@@ -129,6 +160,9 @@ onMounted(loadDevices)
                                         >
                                             <PlayCircle class="size-3.5" /> Mulai Pantau
                                         </BaseButton>
+                                        <BaseButton size="sm" variant="ghost" @click="openRename(d)">
+                                            <Pencil class="size-3.5" /> Ubah Nama
+                                        </BaseButton>
                                         <BaseButton
                                             size="sm"
                                             variant="ghost"
@@ -147,6 +181,22 @@ onMounted(loadDevices)
                     </table>
                 </div>
             </BaseCard>
+        </div>
+
+        <div
+            v-if="editDialogOpen"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            @click.self="editDialogOpen = false"
+        >
+            <div class="w-full max-w-sm rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl">
+                <p class="text-base font-semibold text-base-50">Ubah Nama Device</p>
+                <p class="mt-1 text-xs text-base-500">{{ renameTarget?.device_name }}</p>
+                <BaseInput v-model="renameValue" class="mt-4" label="Nama baru" placeholder="Contoh: HP CS Line - Asep" />
+                <div class="mt-5 flex justify-end gap-3">
+                    <BaseButton variant="ghost" @click="editDialogOpen = false">Batal</BaseButton>
+                    <BaseButton :loading="renaming" @click="saveRename">Simpan</BaseButton>
+                </div>
+            </div>
         </div>
 
         <div

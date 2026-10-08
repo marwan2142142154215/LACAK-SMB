@@ -1,5 +1,5 @@
 <script setup>
-import { Download, Hammer, Loader2, PackageOpen, Upload } from '@lucide/vue'
+import { Download, Hammer, Loader2, PackageOpen, Trash2, Upload } from '@lucide/vue'
 import dayjs from 'dayjs'
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -38,6 +38,20 @@ const uploadForm = ref({
 })
 
 const hasActiveBuild = computed(() => builds.value.some((b) => b.status === 'pending' || b.status === 'building'))
+
+async function removeBuild(build) {
+    const label = build.apk_type === 'master' ? 'APK Master' : (build.apk_type === 'server' ? 'Server' : 'APK Pelacak')
+    if (!confirm(`Hapus ${label} (v${build.version})? File di server juga ikut dibersihkan.`)) {
+        return
+    }
+    try {
+        await api.delete(`/apk-builds/${build.id}`)
+        toast.success('Arsip APK dihapus')
+        await loadBuilds()
+    } catch (err) {
+        toast.error('Gagal menghapus APK build', err.response?.data?.message)
+    }
+}
 
 const statusLabel = {
     pending: 'Menunggu antrean',
@@ -160,7 +174,7 @@ onBeforeUnmount(() => {
                             </div>
                             <div>
                                 <p class="font-medium text-base-100">
-                                    {{ build.apk_type === 'master' ? 'APK Master' : (build.apk_type === 'server' ? 'Server' : 'APK Pelacak') }} v{{ build.version }} - {{ build.embedded_site_code }}
+                                    {{ build.apk_type === 'master' ? 'APK Master' : (build.apk_type === 'server' ? 'Server' : 'APK Pelacak') }} v{{ build.version }} - {{ build.organization_name ?? build.embedded_site_code }}
                                 </p>
                                 <p class="font-mono text-xs text-base-500">{{ build.checksum_sha256 ? `${build.checksum_sha256.slice(0, 24)}…` : '—' }}</p>
                                 <p class="text-[11px] text-base-600">{{ dayjs(build.created_at).format('DD MMM YYYY HH:mm') }}</p>
@@ -178,6 +192,13 @@ onBeforeUnmount(() => {
                             >
                                 <Download class="size-3.5" /> Unduh
                             </a>
+                            <button
+                                type="button"
+                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-danger-500/50 hover:text-danger-300"
+                                @click="removeBuild(build)"
+                            >
+                                <Trash2 class="size-3.5" /> Hapus
+                            </button>
                         </div>
                     </div>
                 </div>
