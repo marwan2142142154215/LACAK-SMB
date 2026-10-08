@@ -13,7 +13,8 @@ return new class extends Migration
             $table->foreignId('organization_id')->constrained('organizations')->cascadeOnDelete();
             $table->string('subject_name');
             $table->string('signer_name');
-            $table->enum('signer_role', ['parent', 'hr_staff', 'device_owner']);
+            // Peran struktural (hrd/leader/asisten_manager/manager/cs_line) -- divalidasi di StoreConsentDocumentRequest.
+            $table->string('signer_role', 20);
             // Path relatif di DigitalOcean Spaces, bukan URL lengkap (standar 6.3).
             $table->string('document_file_path');
             $table->date('signed_at');

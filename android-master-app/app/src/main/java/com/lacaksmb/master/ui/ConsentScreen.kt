@@ -53,7 +53,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-private val SIGNER_ROLES = listOf("parent", "hr_staff", "device_owner")
+private val SIGNER_ROLES = listOf("hrd", "leader", "asisten_manager", "manager", "cs_line")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

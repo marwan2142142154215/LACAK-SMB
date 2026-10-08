@@ -12,8 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             // company_asset: pelacakan aset/kendaraan perusahaan & MDM staf.
-            // family_parental: parental control untuk anak di bawah umur.
-            $table->enum('type', ['company_asset', 'family_parental']);
+            $table->string('type', 20)->default('company_asset');
             $table->string('unique_site_code', 32)->unique();
             $table->boolean('is_active')->default(true);
             $table->unsignedBigInteger('created_by')->nullable();

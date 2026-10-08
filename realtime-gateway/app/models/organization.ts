@@ -10,7 +10,7 @@ export default class Organization extends BaseModel {
   declare name: string
 
   @column()
-  declare type: 'company_asset' | 'family_parental'
+  declare type: 'company_asset'
 
   @column()
   declare uniqueSiteCode: string

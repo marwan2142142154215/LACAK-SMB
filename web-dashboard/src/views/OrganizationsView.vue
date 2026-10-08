@@ -71,9 +71,7 @@ onMounted(loadOrganizations)
                                 {{ org.is_active ? 'Aktif' : 'Nonaktif' }}
                             </BaseBadge>
                         </div>
-                        <p class="mt-1 text-xs text-base-500">
-                            {{ org.type === 'company_asset' ? 'Aset Perusahaan' : 'Parental Control' }} · {{ org.devices_count }} device
-                        </p>
+                        <p class="mt-1 text-xs text-base-500">{{ org.devices_count }} device</p>
                         <button
                             type="button"
                             class="mt-3 flex items-center gap-1.5 rounded-lg bg-base-800 px-2.5 py-1.5 font-mono text-xs text-base-300 hover:text-accent-300"
@@ -95,18 +93,8 @@ onMounted(loadOrganizations)
                     <DialogTitle class="text-base font-semibold text-base-50">Tambah Site Baru</DialogTitle>
                     <form class="mt-5 space-y-4" @submit.prevent="submitForm">
                         <BaseInput v-model="form.name" label="Nama Site" placeholder="PT Contoh Logistik" required />
-                        <label class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Jenis</span>
-                            <select
-                                v-model="form.type"
-                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                            >
-                                <option value="company_asset">Aset Perusahaan</option>
-                                <option value="family_parental">Parental Control (Keluarga)</option>
-                            </select>
-                        </label>
                         <p class="text-xs text-base-500">
-                            Kode unik site akan dibuat otomatis oleh sistem dan ditanam ke APK yang didownload untuk site ini.
+                            Kode unik site akan dibuat otomatis oleh sistem (mengikuti nama site) dan ditanam ke APK yang didownload untuk site ini.
                         </p>
                         <div class="flex justify-end gap-3 pt-2">
                             <BaseButton type="button" variant="ghost" @click="dialogOpen = false">Batal</BaseButton>

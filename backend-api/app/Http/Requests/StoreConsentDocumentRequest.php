@@ -18,7 +18,7 @@ class StoreConsentDocumentRequest extends FormRequest
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
             'subject_name' => ['required', 'string', 'max:255'],
             'signer_name' => ['required', 'string', 'max:255'],
-            'signer_role' => ['required', Rule::in(['parent', 'hr_staff', 'device_owner'])],
+            'signer_role' => ['required', Rule::in(['hrd', 'leader', 'asisten_manager', 'manager', 'cs_line'])],
             // File dokumen bertanda tangan: PDF atau foto scan, maks 10MB (standar 6.3).
             'document_file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
             'signed_at' => ['required', 'date'],

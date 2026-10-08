@@ -29,7 +29,7 @@ const form = ref({
     organization_id: auth.user?.organization_id ?? null,
     subject_name: '',
     signer_name: '',
-    signer_role: 'hr_staff',
+    signer_role: 'hrd',
     signed_at: dayjs().format('YYYY-MM-DD'),
     valid_until: '',
     document_file: null,
@@ -171,9 +171,11 @@ onMounted(async () => {
                                 v-model="form.signer_role"
                                 class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
                             >
-                                <option value="parent">Orang Tua</option>
-                                <option value="hr_staff">Staf HRD</option>
-                                <option value="device_owner">Pemilik Device</option>
+                                <option value="hrd">HRD</option>
+                                <option value="leader">Leader</option>
+                                <option value="asisten_manager">Asisten Manager</option>
+                                <option value="manager">Manager</option>
+                                <option value="cs_line">CS Line</option>
                             </select>
                         </label>
                         <BaseInput v-model="form.signed_at" type="date" label="Tanggal Tanda Tangan" required />
