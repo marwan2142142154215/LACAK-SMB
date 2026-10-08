@@ -1,4 +1,4 @@
-# IDE (JetBrains/Android Studio/IntelliJ) — konfigurasi lokal, bukan bagian proyek.
+﻿# IDE (JetBrains/Android Studio/IntelliJ) â€” konfigurasi lokal, bukan bagian proyek.
 .idea/
 *.iml
 
@@ -15,3 +15,9 @@ Thumbs.db
 # android-tracked-app, telegram-bot) punya .gitignore sendiri untuk
 # .env, node_modules, vendor, build, dsb. File ini hanya menutup celah
 # di level root monorepo.
+
+# server-gui build artefacts
+server-gui/build/
+server-gui/dist/
+server-gui/lacak-server.spec
+lacak-server.exe
