@@ -20,6 +20,12 @@ const devices = reactive(new Map())
 const violations = ref([])
 const loading = ref(true)
 const selectedDeviceId = ref(null)
+// Dipaksa naik tiap klik "Muat ulang peta", dipakai di :key iframe supaya
+// Vue benar-benar membongkar & membuat elemen iframe baru (bukan cuma
+// menimpa atribut src pada elemen yang sama) -- iframe Google Maps embed
+// kadang gagal re-init kalau cuma src-nya yang diganti di elemen yang sama,
+// sebelumnya ini cuma bisa diatasi dengan refresh seluruh halaman.
+const mapReloadNonce = ref(0)
 const selectedDevice = computed(() => (selectedDeviceId.value != null ? devices.get(selectedDeviceId.value) : null))
 
 function mapEmbedUrl(device) {
@@ -83,13 +89,22 @@ onMounted(async () => {
     const socket = connect(organizationId)
 
     socket.on('radar:update', (payload) => {
-        const existing = devices.get(Number(payload.device_id)) ?? {}
-        devices.set(Number(payload.device_id), { ...existing, ...payload })
+        // SENGAJA menimpa device_id dari payload dengan versi number-nya --
+        // gateway (Lucid/node-postgres) bisa mengirim bigint sebagai string,
+        // beda dengan REST backend-api (Laravel) yang selalu number. Kalau
+        // field device_id di value object ikut jadi string, klik kartu device
+        // menyimpan id string ke selectedDeviceId sementara key Map ini tetap
+        // number -- devices.get() gagal nemu, peta tidak pernah tampil sampai
+        // reload (device_id object itu kebetulan ketimpa ulang jadi number).
+        const id = Number(payload.device_id)
+        const existing = devices.get(id) ?? {}
+        devices.set(id, { ...existing, ...payload, device_id: id })
     })
 
     socket.on('device:status', (payload) => {
-        const existing = devices.get(Number(payload.device_id)) ?? {}
-        devices.set(Number(payload.device_id), { ...existing, ...payload })
+        const id = Number(payload.device_id)
+        const existing = devices.get(id) ?? {}
+        devices.set(id, { ...existing, ...payload, device_id: id })
     })
 
     socket.on('violation:alert', (payload) => {
@@ -187,11 +202,22 @@ onMounted(async () => {
             </BaseCard>
 
             <BaseCard title="Peta Lokasi (Google Maps)" class="xl:col-span-3">
+                <template #actions>
+                    <button
+                        v-if="selectedDevice?.latitude != null"
+                        type="button"
+                        class="text-xs text-base-400 hover:text-accent-300"
+                        @click="mapReloadNonce += 1"
+                    >
+                        Muat ulang peta
+                    </button>
+                </template>
                 <p v-if="!selectedDevice" class="py-6 text-center text-sm text-base-500">Klik satu kartu Device di atas untuk melihat lokasi.</p>
                 <template v-else>
                     <p v-if="selectedDevice.latitude == null" class="py-6 text-center text-sm text-base-500">Device ini belum mengirim koordinat GPS.</p>
                     <iframe
                         v-else
+                        :key="`${selectedDevice.device_id}-${selectedDevice.latitude}-${selectedDevice.longitude}-${mapReloadNonce}`"
                         :src="mapEmbedUrl(selectedDevice)"
                         class="h-96 w-full rounded-xl border border-base-800"
                         allowfullscreen

@@ -9,6 +9,22 @@
 |
 */
 
+// PALING ATAS, sebelum koneksi DB manapun dibuat: driver node-postgres (dipakai
+// Lucid) secara default mengembalikan kolom BIGINT (OID 20 -- id() Laravel di
+// backend-api memakai BIGSERIAL) sebagai STRING, bukan number, untuk
+// menghindari potensi presisi hilang pada integer 64-bit. Laravel/PHP sisi
+// backend-api TIDAK punya masalah ini, jadi device.id yang sama bisa berupa
+// number (lewat REST backend-api) atau string (lewat payload socket gateway
+// ini) tergantung jalurnya -- itu sumber bug nyata yang teramati: klik device
+// di Radar dashboard kadang gagal menampilkan peta (Map.get(number) tidak
+// ketemu kalau key tersimpan number tapi value.device_id string), dan hanya
+// "sembuh" sendiri kebetulan kalau urutan event membuatnya konsisten. Baris
+// ini memaksa semua kolom bigint di-parse sebagai JS number di satu tempat,
+// konsisten dengan apa yang dikirim backend-api, bukan ditambal di tiap
+// pemakai belakangan.
+const pg = (await import('pg')).default
+pg.types.setTypeParser(20, (value: string) => Number.parseInt(value, 10))
+
 await import('reflect-metadata')
 const { Ignitor, prettyPrintError } = await import('@adonisjs/core/ignitor')
 const { createServer } = await import('node:http')
