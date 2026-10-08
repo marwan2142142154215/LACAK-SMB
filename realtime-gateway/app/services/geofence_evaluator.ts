@@ -81,13 +81,27 @@ export async function evaluateGeofence(device: Device, report: LocationReport) {
 
       if (distance > rule.maxDistanceMeters) {
         anyViolated = true
-        await recordViolation(
-          device,
-          rule,
-          'distance_exceeded',
-          `${Math.round(distance)}m dari titik pusat (maks ${rule.maxDistanceMeters}m)`
-        )
-        await autoLock(device, rule)
+        const detail = `${Math.round(distance)}m dari titik pusat (maks ${rule.maxDistanceMeters}m)`
+
+        // GPS HP TIDAK presisi sampai hitungan meter -- satu pembacaan yang
+        // melenceng jauh (umum terjadi pas GPS baru dapat sinyal ulang
+        // setelah idle/di dalam ruangan) sendirian TIDAK memicu lock. Baru
+        // mengunci kalau laporan SEBELUMNYA untuk aturan yang sama juga
+        // sudah melanggar -- dua kali berturut-turut (~kurang dari 1 menit)
+        // jauh lebih kecil kemungkinan cuma noise GPS sesaat.
+        const previousViolation = await ViolationLog.query()
+          .where('device_id', device.id)
+          .where('geofence_rule_id', rule.id)
+          .where('violation_type', 'distance_exceeded')
+          .where('detected_at', '>=', DateTime.now().minus({ seconds: 90 }).toJSDate())
+          .orderBy('detected_at', 'desc')
+          .first()
+
+        await recordViolation(device, rule, 'distance_exceeded', detail)
+
+        if (previousViolation) {
+          await autoLock(device, rule)
+        }
       }
     }
   }
