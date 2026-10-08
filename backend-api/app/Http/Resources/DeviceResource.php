@@ -14,6 +14,7 @@ class DeviceResource extends JsonResource
         return [
             'id' => $this->id,
             'organization_id' => $this->organization_id,
+            'organization_name' => $this->whenLoaded('organization', fn () => $this->organization->name),
             'consent_document_id' => $this->consent_document_id,
             'device_name' => $this->device_name,
             'device_uuid' => $this->device_uuid,

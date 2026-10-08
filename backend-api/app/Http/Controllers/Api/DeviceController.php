@@ -21,7 +21,7 @@ class DeviceController extends Controller
         $request->user()->can('devices.view') || abort(403);
 
         $query = $this->scopeToOrganization(
-            Device::query()->with(['locations' => fn ($q) => $q->latest('recorded_at')->limit(1)]),
+            Device::query()->with(['organization', 'locations' => fn ($q) => $q->latest('recorded_at')->limit(1)]),
             $request->user(),
             $request->integer('organization_id') ?: null
         );

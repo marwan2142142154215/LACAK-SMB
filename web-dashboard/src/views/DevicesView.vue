@@ -118,6 +118,7 @@ onMounted(loadDevices)
                         <thead>
                             <tr class="border-b border-base-800 text-xs text-base-500">
                                 <th class="pb-3 font-medium">Nama Device</th>
+                                <th class="pb-3 font-medium">Site</th>
                                 <th class="pb-3 font-medium">Status</th>
                                 <th class="pb-3 font-medium">Baterai</th>
                                 <th class="pb-3 font-medium">Terakhir Terlihat</th>
@@ -129,6 +130,9 @@ onMounted(loadDevices)
                                 <td class="py-3">
                                     <p class="font-medium text-base-100">{{ d.device_name }}</p>
                                     <p class="text-xs text-base-500">{{ d.device_uuid }}</p>
+                                </td>
+                                <td class="py-3">
+                                    <BaseBadge variant="accent">{{ d.organization_name ?? '—' }}</BaseBadge>
                                 </td>
                                 <td class="py-3">
                                     <BaseBadge :variant="statusVariant[d.status] ?? 'neutral'">{{ d.status }}</BaseBadge>
