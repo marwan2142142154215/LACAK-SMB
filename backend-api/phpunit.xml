@@ -23,8 +23,20 @@
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
+        <!-- SENGAJA Postgres asli (database terpisah lacak_master_test),
+        BUKAN sqlite default Laravel: aplikasi ini pakai fitur khusus
+        Postgres (CHECK constraint di device_otps.purpose, dll, lihat
+        standar 1.1 "PostgreSQL menolak data yang tidak sesuai dengan tipe
+        kolomnya"). Test yang jalan di sqlite tidak benar-benar menguji
+        batasan itu, bisa lolos di sqlite tapi gagal di production. -->
+        <!-- DB_USERNAME/DB_PASSWORD SENGAJA tidak diisi di sini (standar
+        6.1: kredensial dilarang ditulis di kode/berkas yang masuk
+        repository), ikut dari .env biasa (user/password Postgres sama
+        dengan development, cuma nama database-nya beda). -->
+        <env name="DB_CONNECTION" value="pgsql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="5432"/>
+        <env name="DB_DATABASE" value="lacak_master_test"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
