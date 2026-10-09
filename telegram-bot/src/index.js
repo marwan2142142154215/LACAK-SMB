@@ -135,16 +135,36 @@ bot.command(
     }),
 )
 
+// Token akun layanan bot ini sengaja lintas-organisasi penuh di backend
+// (lihat ResolvesOrganizationScope::hasCrossOrganizationAccess) -- satu bot
+// token melayani banyak chat yang masing-masing terikat ke site berbeda,
+// dan desain itu MEMANG mengandalkan bot sendiri yang mencocokkan device ke
+// organization_id chat sebelum bertindak (dicatat eksplisit di komentar
+// trait itu). Sebelumnya pencocokan ini tidak pernah benar-benar dilakukan
+// -- device ID tinggal diketik manual, jadi siapa pun di satu grup Telegram
+// bisa lock/unlock/lihat status device MILIK SITE LAIN. assertDeviceInOrg
+// menutup celah itu: ambil device dulu, tolak kalau organization_id-nya
+// tidak cocok dengan organisasi chat ini.
+async function assertDeviceInOrg(deviceId, organizationId) {
+    const device = await backend.getDevice(deviceId)
+    if (device.organization_id !== organizationId) {
+        const err = new Error('Device bukan milik site ini')
+        err.isWrongOrg = true
+        throw err
+    }
+    return device
+}
+
 bot.command(
     'status',
-    withOrganization(async (ctx) => {
+    withOrganization(async (ctx, organizationId) => {
         const [deviceId] = (ctx.match ?? '').trim().split(/\s+/)
         if (!deviceId) {
             await ctx.reply('Pakai format: /status <id_device>')
             return
         }
         try {
-            const device = await backend.getDevice(deviceId)
+            const device = await assertDeviceInOrg(deviceId, organizationId)
             const loc = device.latest_location
             const locationText = loc
                 ? `Lokasi terakhir: ${loc.source}, jarak BLE ${loc.ble_distance_meters ?? '-'}m, dicatat ${loc.recorded_at}`
@@ -156,16 +176,21 @@ bot.command(
     }),
 )
 
-async function handleCommandAction(ctx, commandType, label) {
+async function handleCommandAction(ctx, organizationId, commandType, label) {
     const [deviceId, ...reasonParts] = (ctx.match ?? '').trim().split(/\s+/)
     if (!deviceId) {
         await ctx.reply(`Pakai format: /${label.toLowerCase()} <id_device> [alasan]`)
         return
     }
     try {
+        await assertDeviceInOrg(deviceId, organizationId)
         await backend.issueCommand(deviceId, commandType, reasonParts.join(' ') || null)
         await ctx.reply(`Perintah ${label} berhasil dikirim ke device #${deviceId}.`)
     } catch (error) {
+        if (error.isWrongOrg) {
+            await ctx.reply(`Device #${deviceId} tidak ditemukan atau bukan milik site Anda.`)
+            return
+        }
         const message = error.response?.data?.message ?? 'Terjadi kesalahan, coba lagi.'
         await ctx.reply(`Gagal: ${message}`)
     }
@@ -173,17 +198,17 @@ async function handleCommandAction(ctx, commandType, label) {
 
 bot.command(
     'lock',
-    withOrganization(async (ctx) => handleCommandAction(ctx, 'lock', 'Lock')),
+    withOrganization(async (ctx, organizationId) => handleCommandAction(ctx, organizationId, 'lock', 'Lock')),
 )
 
 bot.command(
     'unlock',
-    withOrganization(async (ctx) => handleCommandAction(ctx, 'unlock', 'Unlock')),
+    withOrganization(async (ctx, organizationId) => handleCommandAction(ctx, organizationId, 'unlock', 'Unlock')),
 )
 
 bot.command(
     'locate',
-    withOrganization(async (ctx) => handleCommandAction(ctx, 'locate_now', 'Locate')),
+    withOrganization(async (ctx, organizationId) => handleCommandAction(ctx, organizationId, 'locate_now', 'Locate')),
 )
 
 bot.catch((err, ctx) => {
