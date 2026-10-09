@@ -10,6 +10,7 @@ import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useGatewaySocket } from '@/composables/useGatewaySocket'
+import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 
@@ -17,6 +18,7 @@ dayjs.extend(relativeTime)
 
 const auth = useAuthStore()
 const { connect } = useGatewaySocket()
+const toast = useToast()
 
 const devices = reactive(new Map())
 const violations = ref([])
@@ -115,13 +117,24 @@ async function loadInitialDevices() {
                 recorded_at: d.latest_location?.recorded_at ?? null,
             })
         }
+        return true
+    } catch (err) {
+        // Interceptor global (main.js) sudah menangani 401 (hapus sesi +
+        // redirect ke login) -- di sini cukup cegah "Uncaught (in promise)"
+        // di console dan beri tahu caller supaya tidak lanjut buka koneksi
+        // socket pakai sesi yang sudah tidak valid.
+        if (err.response?.status !== 401) {
+            toast.error('Gagal memuat daftar device', err.response?.data?.message)
+        }
+        return false
     } finally {
         loading.value = false
     }
 }
 
 onMounted(async () => {
-    await loadInitialDevices()
+    const ok = await loadInitialDevices()
+    if (!ok) return
 
     const organizationId = auth.isSuperAdmin ? null : auth.user?.organization_id
     const socket = connect(organizationId)
