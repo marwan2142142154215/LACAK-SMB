@@ -336,6 +336,27 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
       socket.join('superadmins')
     }
 
+    // Idle session timeout (standar 6.4) ditegakkan di backend-api lewat
+    // expires_at token yang digeser maju tiap request REST (lihat
+    // ExtendTokenExpiry) -- tapi socket.io cuma memverifikasi token SEKALI
+    // di awal koneksi (middleware opsNs.use di atas). Dashboard yang dibuka
+    // lalu didiamkan (tidak ada request REST apa pun, cuma terima siaran
+    // radar) bisa tetap connect selamanya walau tokennya sudah lewat 2 jam
+    // idle di sisi Laravel -- polling ulang berkala di sini yang menutup
+    // celah itu, bukan andalkan REST call yang mungkin tidak pernah terjadi.
+    const token = socket.handshake.auth?.token as string
+    const revalidate = setInterval(
+      async () => {
+        const stillValid = await verifyBearerToken(token)
+        if (!stillValid) {
+          socket.emit('session:expired', { message: 'Sesi berakhir, silakan login ulang' })
+          socket.disconnect(true)
+        }
+      },
+      5 * 60 * 1000,
+    )
+    socket.on('disconnect', () => clearInterval(revalidate))
+
     logger.info('ops client terhubung', { userId: user.id, username: user.username })
   })
 }

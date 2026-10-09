@@ -32,6 +32,23 @@ class AuthController extends Controller
 
     private const CHALLENGE_TTL_MINUTES = 5;
 
+    // Standar keamanan perusahaan (bagian 6.4): "token dan sesi memiliki
+    // masa berlaku, tidak berlaku selamanya" -- diterapkan sebagai sesi
+    // IDLE TIMEOUT (seperti sesi login biasa), bukan batas absolut dari
+    // waktu login: tiap request yang diautentikasi memperpanjang expires_at
+    // 2 jam ke depan lagi (lihat middleware ExtendTokenExpiry di
+    // bootstrap/app.php), jadi staf yang aktif terus tidak pernah ke-logout
+    // paksa, tapi yang diam/menutup tab 2 jam otomatis perlu login ulang.
+    //
+    // SENGAJA per-token lewat createToken($name, $abilities, $expiresAt),
+    // BUKAN lewat config('sanctum.expiration') global -- itu akan ikut
+    // memotong token akun layanan (telegram-bot, dkk, lihat
+    // App\Console\Commands\IssueTelegramBotToken) yang memang harus hidup
+    // terus tanpa ada yang login ulang untuk memperbaruinya. Token service
+    // account dibuat TANPA expires_at (null) dan ExtendTokenExpiry sengaja
+    // membiarkan token null tetap null, tidak pernah memberinya expiry.
+    public const TOKEN_IDLE_HOURS = 2;
+
     public function login(Request $request)
     {
         $credentials = $request->validate([
@@ -124,7 +141,7 @@ class AuthController extends Controller
 
         Cache::forget("auth:2fa_setup:{$data['setup_token']}");
 
-        $token = $user->createToken($this->tokenNameFor($request))->plainTextToken;
+        $token = $user->createToken($this->tokenNameFor($request), ['*'], now()->addHours(self::TOKEN_IDLE_HOURS))->plainTextToken;
 
         return $this->success('2FA aktif, Anda berhasil login', [
             'access_token' => $token,
@@ -159,7 +176,7 @@ class AuthController extends Controller
 
         Cache::forget("auth:2fa_challenge:{$data['challenge_token']}");
 
-        $token = $user->createToken($this->tokenNameFor($request))->plainTextToken;
+        $token = $user->createToken($this->tokenNameFor($request), ['*'], now()->addHours(self::TOKEN_IDLE_HOURS))->plainTextToken;
 
         return $this->success('Login berhasil', [
             'access_token' => $token,

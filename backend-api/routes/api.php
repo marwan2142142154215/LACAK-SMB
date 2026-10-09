@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\DeviceOtpController;
 use App\Http\Controllers\Api\GeofenceRuleController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\TelegramBindingController;
+use App\Http\Controllers\Api\TelegramUserLinkController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ViolationLogController;
 use Illuminate\Support\Facades\Route;
@@ -29,7 +30,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('/2fa/setup/confirm', [AuthController::class, 'confirmTwoFactorSetup']);
         Route::post('/2fa/verify', [AuthController::class, 'verifyTwoFactor']);
 
-        Route::middleware('auth:sanctum')->group(function () {
+        Route::middleware(['auth:sanctum', 'extend-token'])->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);
             Route::get('/me', [AuthController::class, 'me']);
         });
@@ -56,7 +57,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         ->name('apk-builds.download')
         ->middleware('signed');
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'extend-token'])->group(function () {
         Route::apiResource('organizations', OrganizationController::class);
 
         Route::get('/dashboard-summary', [DashboardSummaryController::class, 'show']);
@@ -84,5 +85,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
         Route::apiResource('telegram-bindings', TelegramBindingController::class)->only(['index', 'store', 'destroy']);
         Route::get('/telegram-bindings-lookup', [TelegramBindingController::class, 'lookup']);
+
+        Route::apiResource('telegram-user-links', TelegramUserLinkController::class)->only(['index', 'store', 'destroy']);
+        Route::get('/telegram-user-links-lookup', [TelegramUserLinkController::class, 'lookup']);
     });
 });
