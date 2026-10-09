@@ -86,8 +86,17 @@ SERVICES = [
     # pengembangan proyek ini.
     ("gateway", "Realtime Gateway (:3333)", "realtime-gateway",
      ["npm.cmd", "run", "dev"], 3333),
-    ("dashboard", "Web Dashboard (Vite :8080)", "web-dashboard",
-     ["npm.cmd", "run", "dev", "--", "--port", "8080", "--host", "127.0.0.1"], 8080),
+    # SENGAJA "vite preview" (serve dist/ hasil build) BUKAN "vite dev" --
+    # dev server itu kirim ratusan modul JS mentah belum di-bundle/minify ke
+    # browser satu-satu, lewat Cloudflare Tunnel itu jadi lag parah waktu
+    # pertama buka web (diukur langsung: HMR websocket-nya pun sempat
+    # "connection lost, polling for restart" di console produksi). "preview"
+    # cuma serve beberapa file dist/ yang sudah di-bundle+minify -- jauh
+    # lebih cepat & stabil untuk dipakai publik. Konsekuensinya: perubahan
+    # kode BARU terlihat di web setelah `npm run build` dijalankan ulang di
+    # web-dashboard/ (tidak live-reload otomatis lagi seperti dev server).
+    ("dashboard", "Web Dashboard (Vite preview :8080)", "web-dashboard",
+     ["npm.cmd", "run", "preview", "--", "--port", "8080", "--host", "127.0.0.1"], 8080),
     ("telegram-bot", "Telegram Bot", "telegram-bot",
      ["npm.cmd", "start"], None),
     ("tunnel", "Cloudflare Tunnel", ".",
