@@ -24,9 +24,12 @@ class TelegramBindingController extends Controller
             return $this->fail('Anda tidak berwenang melihat binding Telegram site ini', null, 403);
         }
 
-        $bindings = $query->latest('id')->get();
+        $bindings = $query->latest('id')->paginate($request->integer('per_page', 20));
 
-        return $this->success('Daftar binding Telegram', TelegramBindingResource::collection($bindings));
+        return $this->success('Daftar binding Telegram', [
+            'items' => TelegramBindingResource::collection($bindings),
+            'total' => $bindings->total(),
+        ]);
     }
 
     public function store(StoreTelegramBindingRequest $request)
@@ -42,6 +45,8 @@ class TelegramBindingController extends Controller
             'telegram_chat_id' => $request->validated('telegram_chat_id'),
             'bot_token_ref' => $request->validated('bot_token_ref'),
             'is_active' => true,
+            'created_by' => $request->user()->id,
+            'updated_by' => $request->user()->id,
         ]);
 
         return $this->success('Binding Telegram berhasil dibuat', new TelegramBindingResource($binding), 201);

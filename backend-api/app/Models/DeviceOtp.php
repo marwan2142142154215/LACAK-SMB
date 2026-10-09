@@ -11,8 +11,6 @@ class DeviceOtp extends Model
 {
     use HasFactory;
 
-    public $timestamps = false;
-
     protected $fillable = [
         'device_id',
         'otp_code_hash',

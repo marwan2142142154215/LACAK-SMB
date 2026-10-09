@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use PragmaRX\Google2FAQRCode\Google2FA;
@@ -116,15 +117,17 @@ class AuthController extends Controller
             ->map(fn () => Str::random(10))
             ->values();
 
-        $user->forceFill([
-            'two_factor_secret' => Crypt::encryptString($payload['secret']),
-            'two_factor_recovery_codes' => Crypt::encryptString($recoveryCodes->toJson()),
-            'two_factor_confirmed_at' => now(),
-        ])->save();
+        $token = DB::transaction(function () use ($user, $payload, $recoveryCodes, $request): string {
+            $user->forceFill([
+                'two_factor_secret' => Crypt::encryptString($payload['secret']),
+                'two_factor_recovery_codes' => Crypt::encryptString($recoveryCodes->toJson()),
+                'two_factor_confirmed_at' => now(),
+            ])->save();
+
+            return $user->createToken($this->tokenNameFor($request))->plainTextToken;
+        });
 
         Cache::forget("auth:2fa_setup:{$data['setup_token']}");
-
-        $token = $user->createToken($this->tokenNameFor($request))->plainTextToken;
 
         return $this->success('2FA aktif, Anda berhasil login', [
             'access_token' => $token,

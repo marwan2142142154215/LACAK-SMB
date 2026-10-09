@@ -11,8 +11,9 @@ use App\Jobs\BuildApkJob;
 use App\Models\ApkBuild;
 use App\Models\Organization;
 use App\Support\ResolvesOrganizationScope;
+use App\Support\ServesDocumentsDiskFiles;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Registry APK pelacak per site. embedded_site_code + checksum dipakai APK
@@ -22,7 +23,7 @@ use Illuminate\Support\Facades\Storage;
  */
 class ApkBuildController extends Controller
 {
-    use ApiResponse, ResolvesOrganizationScope;
+    use ApiResponse, ResolvesOrganizationScope, ServesDocumentsDiskFiles;
 
     public function index(Request $request)
     {
@@ -100,17 +101,24 @@ class ApkBuildController extends Controller
 
         $organization = Organization::findOrFail($organizationId);
 
-        $build = ApkBuild::create([
-            'organization_id' => $organizationId,
-            'apk_type' => $request->validated('apk_type'),
-            'version' => $request->validated('version') ?: '1.0.0',
-            'status' => 'pending',
-            'embedded_site_code' => $organization->unique_site_code,
-            'built_by' => $request->user()->id,
-            'created_at' => now(),
-        ]);
+        $build = DB::transaction(function () use ($request, $organizationId, $organization): ApkBuild {
+            $build = ApkBuild::create([
+                'organization_id' => $organizationId,
+                'apk_type' => $request->validated('apk_type'),
+                'version' => $request->validated('version') ?: '1.0.0',
+                'status' => 'pending',
+                'embedded_site_code' => $organization->unique_site_code,
+                'built_by' => $request->user()->id,
+                'created_at' => now(),
+            ]);
 
-        BuildApkJob::dispatch($build->id);
+            // Antrean berbasis PostgreSQL (QUEUE_CONNECTION=database): baris job
+            // ikut transaksi yang sama, jadi batal bersama bila insert gagal dan
+            // tidak terlihat worker sebelum commit (standar: antrean transaksional).
+            BuildApkJob::dispatch($build->id);
+
+            return $build;
+        });
 
         return $this->success(
             'Build APK dimulai, biasanya selesai dalam 1-2 menit — cek status lewat daftar APK build',
@@ -136,10 +144,8 @@ class ApkBuildController extends Controller
             return $this->fail('Anda tidak berwenang menghapus APK build site ini', null, 403);
         }
 
-        $disk = config('filesystems.documents_disk');
-
-        if ($apkBuild->file_path && Storage::disk($disk)->exists($apkBuild->file_path)) {
-            Storage::disk($disk)->delete($apkBuild->file_path);
+        if ($this->documentsDiskFileExists($apkBuild->file_path)) {
+            $this->documentsDisk()->delete($apkBuild->file_path);
         }
 
         $apkBuild->delete();
@@ -153,9 +159,7 @@ class ApkBuildController extends Controller
             return $this->fail('Tautan kedaluwarsa atau tidak valid', null, 403);
         }
 
-        $disk = config('filesystems.documents_disk');
-
-        if (! Storage::disk($disk)->exists($apkBuild->file_path)) {
+        if (! $this->documentsDiskFileExists($apkBuild->file_path)) {
             return $this->fail('Berkas APK tidak ditemukan', null, 404);
         }
 
@@ -171,6 +175,6 @@ class ApkBuildController extends Controller
             $filename = "{$typeLabel}-{$slugName}-v{$apkBuild->version}{$ext}";
         }
 
-        return Storage::disk($disk)->download($apkBuild->file_path, $filename);
+        return $this->serveDocumentsDiskFile($apkBuild->file_path, $filename);
     }
 }

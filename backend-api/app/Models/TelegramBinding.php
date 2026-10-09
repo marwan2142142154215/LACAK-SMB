@@ -15,6 +15,8 @@ class TelegramBinding extends Model
         'telegram_chat_id',
         'bot_token_ref',
         'is_active',
+        'created_by',
+        'updated_by',
     ];
 
     protected $casts = [

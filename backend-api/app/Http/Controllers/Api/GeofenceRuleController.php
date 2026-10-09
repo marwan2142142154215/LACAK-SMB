@@ -51,6 +51,7 @@ class GeofenceRuleController extends Controller
             'anchor_device_id' => $request->validated('anchor_device_id'),
             'is_active' => true,
             'created_by' => $request->user()->id,
+            'updated_by' => $request->user()->id,
         ]);
 
         return $this->success('Aturan geofence berhasil dibuat', new GeofenceRuleResource($rule), 201);
@@ -75,7 +76,10 @@ class GeofenceRuleController extends Controller
             'is_active' => ['sometimes', 'boolean'],
         ]);
 
-        $geofenceRule->update($data);
+        $geofenceRule->update([
+            ...$data,
+            'updated_by' => $request->user()->id,
+        ]);
 
         return $this->success('Aturan geofence berhasil diperbarui', new GeofenceRuleResource($geofenceRule));
     }

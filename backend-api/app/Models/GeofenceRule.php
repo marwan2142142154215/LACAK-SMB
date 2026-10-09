@@ -24,6 +24,7 @@ class GeofenceRule extends Model
         'anchor_device_id',
         'is_active',
         'created_by',
+        'updated_by',
     ];
 
     protected $casts = [

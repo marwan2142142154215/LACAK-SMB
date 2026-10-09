@@ -9,6 +9,7 @@ use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Support\ResolvesOrganizationScope;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
@@ -76,21 +77,25 @@ class DeviceCommandController extends Controller
             return $this->fail('Device dinonaktifkan, tidak bisa menerima perintah', null, 422);
         }
 
-        $command = DeviceCommand::create([
-            'device_id' => $device->id,
-            'command_type' => $data['command_type'],
-            'issued_by' => $request->user()->id,
-            'issued_via' => $data['issued_via'],
-            'status' => 'pending',
-            'reason_note' => $data['reason_note'] ?? null,
-            'created_at' => now(),
-        ]);
+        $command = DB::transaction(function () use ($request, $device, $data): DeviceCommand {
+            $command = DeviceCommand::create([
+                'device_id' => $device->id,
+                'command_type' => $data['command_type'],
+                'issued_by' => $request->user()->id,
+                'issued_via' => $data['issued_via'],
+                'status' => 'pending',
+                'reason_note' => $data['reason_note'] ?? null,
+                'created_at' => now(),
+            ]);
 
-        if ($data['command_type'] === 'lock') {
-            $device->update(['status' => 'locked', 'updated_by' => $request->user()->id]);
-        } elseif ($data['command_type'] === 'unlock') {
-            $device->update(['status' => 'online', 'updated_by' => $request->user()->id]);
-        }
+            if ($data['command_type'] === 'lock') {
+                $device->update(['status' => 'locked', 'updated_by' => $request->user()->id]);
+            } elseif ($data['command_type'] === 'unlock') {
+                $device->update(['status' => 'online', 'updated_by' => $request->user()->id]);
+            }
+
+            return $command;
+        });
 
         return $this->success('Perintah berhasil dikirim, menunggu diterima device', new DeviceCommandResource($command), 201);
     }

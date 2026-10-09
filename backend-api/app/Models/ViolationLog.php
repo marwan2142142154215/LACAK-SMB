@@ -10,8 +10,6 @@ class ViolationLog extends Model
 {
     use HasFactory;
 
-    public $timestamps = false;
-
     protected $fillable = [
         'device_id',
         'geofence_rule_id',

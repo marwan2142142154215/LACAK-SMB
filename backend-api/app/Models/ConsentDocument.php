@@ -23,6 +23,7 @@ class ConsentDocument extends Model
         'valid_until',
         'revoked_at',
         'created_by',
+        'updated_by',
     ];
 
     protected $casts = [

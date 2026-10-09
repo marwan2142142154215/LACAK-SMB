@@ -10,8 +10,6 @@ class DeviceCommand extends Model
 {
     use HasFactory;
 
-    public $timestamps = false;
-
     protected $fillable = [
         'device_id',
         'command_type',

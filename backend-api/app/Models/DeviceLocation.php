@@ -10,8 +10,6 @@ class DeviceLocation extends Model
 {
     use HasFactory;
 
-    public $timestamps = false;
-
     protected $fillable = [
         'device_id',
         'source',

@@ -10,8 +10,6 @@ class ApkBuild extends Model
 {
     use HasFactory;
 
-    public $timestamps = false;
-
     protected $fillable = [
         'organization_id',
         'apk_type',

@@ -9,6 +9,7 @@ use App\Http\Resources\UserResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 /**
@@ -41,27 +42,31 @@ class UserController extends Controller
 
     public function store(StoreUserRequest $request)
     {
-        $user = User::create([
-            'name' => $request->validated('name'),
-            'username' => $request->validated('username'),
-            'email' => $request->validated('email'),
-            'password' => Hash::make($request->validated('password')),
-            'organization_id' => $request->validated('organization_id'),
-            'is_active' => true,
-            // Akun staf langsung aktif tanpa paksaan setup 2FA di login pertama
-            // sengaja TIDAK dilakukan di sini -- login pertama tetap memicu
-            // enrollment 2FA lewat AuthController, sama seperti akun lain.
-        ]);
+        $user = DB::transaction(function () use ($request): User {
+            $user = User::create([
+                'name' => $request->validated('name'),
+                'username' => $request->validated('username'),
+                'email' => $request->validated('email'),
+                'password' => Hash::make($request->validated('password')),
+                'organization_id' => $request->validated('organization_id'),
+                'is_active' => true,
+                // Akun staf langsung aktif tanpa paksaan setup 2FA di login pertama
+                // sengaja TIDAK dilakukan di sini -- login pertama tetap memicu
+                // enrollment 2FA lewat AuthController, sama seperti akun lain.
+            ]);
 
-        $user->assignRole($request->validated('role'));
+            $user->assignRole($request->validated('role'));
 
-        if ($request->validated('site_access')) {
-            $user->siteAccess()->sync(
-                collect($request->validated('site_access'))->mapWithKeys(
-                    fn ($orgId) => [$orgId => ['granted_by' => $request->user()->id]]
-                )
-            );
-        }
+            if ($request->validated('site_access')) {
+                $user->siteAccess()->sync(
+                    collect($request->validated('site_access'))->mapWithKeys(
+                        fn ($orgId) => [$orgId => ['granted_by' => $request->user()->id]]
+                    )
+                );
+            }
+
+            return $user;
+        });
 
         return $this->success('Staf berhasil dibuat', new UserResource($user->load(['roles', 'siteAccess'])), 201);
     }
@@ -75,16 +80,18 @@ class UserController extends Controller
 
     public function update(UpdateUserRequest $request, User $user)
     {
-        $user->update(array_filter([
-            'name' => $request->validated('name'),
-            'email' => $request->validated('email'),
-            'organization_id' => $request->validated('organization_id'),
-            'password' => $request->filled('password') ? Hash::make($request->validated('password')) : null,
-        ], fn ($v) => $v !== null));
+        DB::transaction(function () use ($request, $user): void {
+            $user->update(array_filter([
+                'name' => $request->validated('name'),
+                'email' => $request->validated('email'),
+                'organization_id' => $request->validated('organization_id'),
+                'password' => $request->filled('password') ? Hash::make($request->validated('password')) : null,
+            ], fn ($v) => $v !== null));
 
-        if ($request->filled('role')) {
-            $user->syncRoles([$request->validated('role')]);
-        }
+            if ($request->filled('role')) {
+                $user->syncRoles([$request->validated('role')]);
+            }
+        });
 
         return $this->success('Staf berhasil diperbarui', new UserResource($user->fresh(['roles', 'siteAccess'])));
     }
@@ -110,8 +117,10 @@ class UserController extends Controller
             return $this->fail('Tidak bisa men-suspend akun sendiri', null, 422);
         }
 
-        $user->update(['is_active' => false]);
-        $user->tokens()->delete();
+        DB::transaction(function () use ($user): void {
+            $user->update(['is_active' => false]);
+            $user->tokens()->delete();
+        });
 
         return $this->success('Staf disuspen — semua sesi login dicabut', new UserResource($user->fresh(['roles', 'siteAccess'])));
     }
@@ -143,11 +152,13 @@ class UserController extends Controller
         // biasa), jadi update(['two_factor_secret' => null, ...]) diam-diam
         // tidak melakukan apa-apa untuk kolom itu tanpa error apa pun. Assignment
         // properti langsung selalu diizinkan terlepas dari $fillable/#[Fillable].
-        $user->two_factor_secret = null;
-        $user->two_factor_recovery_codes = null;
-        $user->two_factor_confirmed_at = null;
-        $user->save();
-        $user->tokens()->delete();
+        DB::transaction(function () use ($user): void {
+            $user->two_factor_secret = null;
+            $user->two_factor_recovery_codes = null;
+            $user->two_factor_confirmed_at = null;
+            $user->save();
+            $user->tokens()->delete();
+        });
 
         return $this->success("2FA {$user->name} direset — login berikutnya akan diminta setup ulang", new UserResource($user->fresh(['roles', 'siteAccess'])));
     }

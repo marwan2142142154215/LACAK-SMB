@@ -8,6 +8,7 @@ use App\Models\Device;
 use App\Models\DeviceOtp;
 use App\Support\ResolvesOrganizationScope;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * OTP per-device untuk buka mandiri saat HP kena mode lock. Generate OTP
@@ -60,8 +61,10 @@ class DeviceOtpController extends Controller
             return $this->fail('Kode OTP salah atau sudah kedaluwarsa', null, 422);
         }
 
-        $otp->update(['used_at' => now()]);
-        $device->update(['status' => 'online']);
+        DB::transaction(function () use ($otp, $device): void {
+            $otp->update(['used_at' => now()]);
+            $device->update(['status' => 'online']);
+        });
 
         return $this->success('OTP benar, device dibuka');
     }

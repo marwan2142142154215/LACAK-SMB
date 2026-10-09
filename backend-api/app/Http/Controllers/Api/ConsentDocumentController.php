@@ -8,13 +8,13 @@ use App\Http\Resources\ConsentDocumentResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\ConsentDocument;
 use App\Support\ResolvesOrganizationScope;
+use App\Support\ServesDocumentsDiskFiles;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ConsentDocumentController extends Controller
 {
-    use ApiResponse, ResolvesOrganizationScope;
+    use ApiResponse, ResolvesOrganizationScope, ServesDocumentsDiskFiles;
 
     public function index(Request $request)
     {
@@ -58,6 +58,7 @@ class ConsentDocumentController extends Controller
             'signed_at' => $request->validated('signed_at'),
             'valid_until' => $request->validated('valid_until'),
             'created_by' => $request->user()->id,
+            'updated_by' => $request->user()->id,
         ]);
 
         return $this->success('Dokumen consent berhasil disimpan', new ConsentDocumentResource($document), 201);
@@ -87,13 +88,18 @@ class ConsentDocumentController extends Controller
             return $this->fail('Anda tidak berwenang mencabut dokumen ini', null, 403);
         }
 
-        $consentDocument->update(['revoked_at' => now()]);
+        $consentDocument->update([
+            'revoked_at' => now(),
+            'updated_by' => $request->user()->id,
+        ]);
 
         return $this->success('Consent dicabut. Device terkait tidak lagi bisa menerima perintah.', new ConsentDocumentResource($consentDocument));
     }
 
     /**
      * Download lewat signed URL sementara (standar 6.3), bukan akses publik langsung.
+     * Route ini sendiri bertanda tangan; berkasnya lalu dibuka lewat tautan
+     * bertanda waktu Spaces (lihat ServesDocumentsDiskFiles).
      */
     public function download(Request $request, ConsentDocument $consentDocument)
     {
@@ -101,14 +107,12 @@ class ConsentDocumentController extends Controller
             return $this->fail('Tautan kedaluwarsa atau tidak valid', null, 403);
         }
 
-        $disk = config('filesystems.documents_disk');
-
-        if (! Storage::disk($disk)->exists($consentDocument->document_file_path)) {
+        if (! $this->documentsDiskFileExists($consentDocument->document_file_path)) {
             return $this->fail('Berkas tidak ditemukan', null, 404);
         }
 
         $filename = Str::slug($consentDocument->subject_name).'-consent.'.pathinfo($consentDocument->document_file_path, PATHINFO_EXTENSION);
 
-        return Storage::disk($disk)->download($consentDocument->document_file_path, $filename);
+        return $this->serveDocumentsDiskFile($consentDocument->document_file_path, $filename);
     }
 }
