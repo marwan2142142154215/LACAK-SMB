@@ -59,6 +59,20 @@ POPEN_FLAGS = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
 
 SERVICES = [
     # (id, label, cwd(repos), command, port_or_None)
+    # WAJIB paling atas & paling duluan start: Postgres (dan Redis) untuk
+    # proyek ini jalan DI DALAM WSL2 (distro Ubuntu), bukan service Windows
+    # asli. WSL2 TERNYATA mematikan VM-nya sendiri begitu tidak ada proses
+    # wsl.exe yang masih "nempel" ke distro itu -- ditemukan lewat
+    # pengamatan langsung: PID postgres berganti-ganti dalam hitungan detik,
+    # `wsl -l -v` sempat menunjukkan Ubuntu "Stopped" cuma beberapa detik
+    # setelah sebelumnya "Running". vmIdleTimeout=-1 di .wslconfig semestinya
+    # mematikan perilaku ini, tapi butuh service WSLService di-restart
+    # (perlu admin) atau Windows di-restart penuh supaya kebaca -- "sleep
+    # infinity" di sini jauh lebih sederhana: proses wsl.exe yang sengaja
+    # tidak pernah selesai, jadi distro-nya selalu "nempel"/hidup selama
+    # service ini jalan, tanpa perlu ubah apa pun di level Windows.
+    ("wsl-keepalive", "WSL2 Keep-Alive (Postgres/Redis host)", ".",
+     ["wsl.exe", "-d", "Ubuntu", "sleep", "infinity"], None),
     # Port 8000/8080 WAJIB sama persis dengan yang ditunggu Cloudflare Tunnel
     # (lihat config remote tunnel LACAKSMB: api.->* :8000, app.->*:8080) --
     # jangan diubah sendiri-sendiri tanpa mengubah tunnel-nya juga.
@@ -81,6 +95,24 @@ SERVICES = [
 ]
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+# backend, queue, dan gateway semua butuh Postgres (WSL2) hidup duluan --
+# WSL2 TIDAK auto-start bareng Windows, dan port forwarding-nya ke Windows
+# baru siap beberapa detik setelah WSL2 sendiri bangun. Tanpa menunggu ini,
+# ketiga layanan itu selalu race ke port 5432 yang masih "connection refused"
+# tepat setelah PC baru nyala -- persis yang berulang kali teramati (backend
+# gagal konek DB, queue:work crash exit 1 "connection refused"). Menunggu di
+# sini sekali di awal jauh lebih murah/jelas daripada menambal tiap layanan.
+POSTGRES_PORT = 5432
+DB_DEPENDENT_SERVICES = {"backend", "queue", "gateway"}
+
+# Berapa kali boleh auto-restart sendiri sebelum menyerah (anggap error
+# menetap, bukan sekadar koneksi WSL2 yang sempat putus sesaat -- pernah
+# teramati juga: queue:work crash di tengah jalan karena "SSL SYSCALL error:
+# Software caused connection abort", semata blip jaringan WSL2<->Windows,
+# bukan bug di kode). Reset terhitung ulang tiap kali Start ditekan manual.
+MAX_AUTO_RESTARTS = 5
+AUTO_RESTART_DELAY_MS = 3000
 
 
 def port_in_use(port: int) -> bool:
@@ -131,6 +163,12 @@ class ServerController(tk.Tk):
         self.configure(bg="#0f172a")
         self._procs: dict[str, subprocess.Popen | None] = {}
         self._queue: queue.Queue[tuple[str, str]] = queue.Queue()
+        # Ditandai SEBELUM stop_service mematikan proses, supaya _pump tahu
+        # "proses berhenti" ini sengaja (jangan auto-restart) vs crash sendiri
+        # (boleh auto-restart). Dibersihkan lagi oleh stop_service setelah
+        # taskkill selesai supaya start manual berikutnya tidak ikut ketandai.
+        self._user_stopped: set[str] = set()
+        self._restart_count: dict[str, int] = {}
 
         style = ttk.Style(self)
         style.theme_use("clam")
@@ -168,6 +206,7 @@ class ServerController(tk.Tk):
         scroll = ttk.Scrollbar(log_frame, command=self.log.yview)
         scroll.pack(side="right", fill="y")
         self.log.config(yscrollcommand=scroll.set)
+        self.log.tag_config("wsl-keepalive", foreground="#94a3b8")
         self.log.tag_config("backend", foreground="#60a5fa")
         self.log.tag_config("queue", foreground="#38bdf8")
         self.log.tag_config("gateway", foreground="#a78bfa")
@@ -185,7 +224,7 @@ class ServerController(tk.Tk):
         lines = ANSI.sub("", text).splitlines() or [""]
         self.log.config(state="normal")
         for line in lines:
-            self.log.insert("end", f"[{sid:>7}] " + line + "\n", sid if sid in ("backend", "queue", "gateway", "dashboard", "telegram-bot", "tunnel") else "sys")
+            self.log.insert("end", f"[{sid:>7}] " + line + "\n", sid if sid in ("wsl-keepalive", "backend", "queue", "gateway", "dashboard", "telegram-bot", "tunnel") else "sys")
         self.log.see("end")
         self.log.config(state="disabled")
 
@@ -199,15 +238,46 @@ class ServerController(tk.Tk):
                 return (sid2, label, REPO_ROOT / subdir, cmd, port)
         raise KeyError(sid)
 
-    def start_service(self, sid: str):
+    def start_service(self, sid: str, _is_auto_restart: bool = False):
         if self._procs.get(sid) and self._procs[sid].poll() is None:
             self.println(sid, "Sudah berjalan.")
             return
+        self._user_stopped.discard(sid)
+        if not _is_auto_restart:
+            # Start manual (tombol/"Mulai Semua") = niat baru, bukan lanjutan
+            # dari rangkaian crash sebelumnya -- hitung ulang dari nol supaya
+            # auto-restart tidak kehabisan jatah gara-gara kegagalan lama.
+            self._restart_count[sid] = 0
         _, label, cwd, cmd, port = self._svc(sid)
         if port and port_in_use(port):
             self.println(sid, f"Port {port} sudah terpakai — asumsi layanan sudah jalan di luar panel.")
             self.rows[[r.sid for r in self.rows].index(sid)].set_state("running")
             return
+        self.rows[[r.sid for r in self.rows].index(sid)].set_state("starting")
+        if sid in DB_DEPENDENT_SERVICES:
+            # Jangan langsung Popen -- tunggu dulu Postgres (WSL2) benar-benar
+            # bisa dihubungi. WSL2 perlu waktu beberapa detik untuk bangun dan
+            # port-forward-nya ke Windows siap; tanpa menunggu ini, backend/
+            # queue/gateway selalu race dan gagal connect di percobaan
+            # pertama tepat setelah PC baru nyala.
+            self.println(sid, "-> menunggu Postgres (WSL2) siap...")
+            threading.Thread(target=self._wait_then_launch, args=(sid, label, cwd, cmd, port), daemon=True).start()
+            return
+        self._launch(sid, label, cwd, cmd, port)
+
+    def _wait_then_launch(self, sid: str, label: str, cwd, cmd, port):
+        import time
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if port_in_use(POSTGRES_PORT):
+                self._println_threadsafe(sid, "-> Postgres siap, melanjutkan start.")
+                self.after(0, lambda: self._launch(sid, label, cwd, cmd, port))
+                return
+            time.sleep(1)
+        self._println_threadsafe(sid, "-> Postgres tidak kunjung siap dalam 30 detik, tetap mencoba start...")
+        self.after(0, lambda: self._launch(sid, label, cwd, cmd, port))
+
+    def _launch(self, sid: str, label: str, cwd, cmd, port):
         try:
             proc = subprocess.Popen(
                 cmd, cwd=str(cwd),
@@ -244,6 +314,9 @@ class ServerController(tk.Tk):
         if not proc or proc.poll() is not None:
             self.println(sid, "Tidak ada proses aktif.")
             return
+        # Ditandai SEBELUM taskkill supaya _pump/_drain_queue tahu proses ini
+        # berhenti karena memang diminta, bukan crash -- jangan auto-restart.
+        self._user_stopped.add(sid)
         try:
             subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
                            check=False, capture_output=True)
@@ -271,14 +344,29 @@ class ServerController(tk.Tk):
         while not self._queue.empty():
             sid, text = self._queue.get_nowait()
             if sid == "__state__":
-                try:
-                    row = self.rows[[r.sid for r in self.rows].index(text)]
-                    row.set_state("stopped")
-                except ValueError:
-                    pass
+                self._handle_process_exit(text)
             else:
                 self.println(sid, text)
         self.after(150, self._drain_queue)
+
+    def _handle_process_exit(self, sid: str):
+        try:
+            row = self.rows[[r.sid for r in self.rows].index(sid)]
+        except ValueError:
+            return
+        if sid in self._user_stopped:
+            # Sudah ditandai stopped oleh stop_service sendiri -- ini cuma
+            # event _pump yang menyusul belakangan, jangan ditimpa/di-restart.
+            return
+        count = self._restart_count.get(sid, 0)
+        if count >= MAX_AUTO_RESTARTS:
+            row.set_state("error")
+            self.println(sid, f"-- berhenti sendiri {count}x berturut-turut, menyerah auto-restart. Tekan Start manual kalau sudah yakin masalahnya teratasi.")
+            return
+        self._restart_count[sid] = count + 1
+        row.set_state("error")
+        self.println(sid, f"-- berhenti sendiri (bukan diminta) -- auto-restart #{count + 1}/{MAX_AUTO_RESTARTS} dalam {AUTO_RESTART_DELAY_MS // 1000} detik...")
+        self.after(AUTO_RESTART_DELAY_MS, lambda: self.start_service(sid, _is_auto_restart=True))
 
     def _on_close(self):
         self.stop_all()

@@ -1,5 +1,5 @@
 <script setup>
-import { Ban, CheckCircle2, KeyRound, Pencil, Trash2, UserPlus } from '@lucide/vue'
+import { Ban, CheckCircle2, KeyRound, Pencil, ShieldOff, Trash2, UserPlus } from '@lucide/vue'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { computed, onMounted, ref } from 'vue'
 
@@ -165,6 +165,17 @@ async function reactivate(user) {
     }
 }
 
+async function resetTwoFactor(user) {
+    if (!confirm(`Reset 2FA ${user.name}? Sesi login yang sedang aktif akan dicabut, dan login berikutnya wajib setup 2FA dari awal (QR code baru).`)) return
+    try {
+        await api.post(`/users/${user.id}/reset-2fa`)
+        toast.success(`2FA ${user.name} berhasil direset`)
+        await loadStaff()
+    } catch (err) {
+        toast.error('Gagal reset 2FA', err.response?.data?.message)
+    }
+}
+
 async function remove(user) {
     if (!confirm(`Hapus staf ${user.name}? Tindakan ini tidak bisa dibatalkan.`)) return
     try {
@@ -226,6 +237,13 @@ onMounted(async () => {
                                 @click="openPasswordDialog(user)"
                             >
                                 <KeyRound class="size-3.5" /> Ganti Password
+                            </button>
+                            <button
+                                type="button"
+                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-warning-500/50 hover:text-warning-300"
+                                @click="resetTwoFactor(user)"
+                            >
+                                <ShieldOff class="size-3.5" /> Reset 2FA
                             </button>
                             <button
                                 v-if="user.is_active"

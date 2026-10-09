@@ -59,6 +59,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::apiResource('users', UserController::class);
         Route::post('/users/{user}/suspend', [UserController::class, 'suspend']);
         Route::post('/users/{user}/reactivate', [UserController::class, 'reactivate']);
+        Route::post('/users/{user}/reset-2fa', [UserController::class, 'reset2fa']);
         Route::put('/users/{user}/site-access', [UserController::class, 'syncSiteAccess']);
 
         Route::apiResource('consent-documents', ConsentDocumentController::class)->only(['index', 'store', 'show']);

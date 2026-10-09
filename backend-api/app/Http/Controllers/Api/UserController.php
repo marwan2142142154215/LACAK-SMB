@@ -125,6 +125,33 @@ class UserController extends Controller
         return $this->success('Staf diaktifkan kembali', new UserResource($user->fresh(['roles', 'siteAccess'])));
     }
 
+    /**
+     * Reset 2FA staf (HP authenticator-nya hilang/ganti) -- mengosongkan
+     * secret & recovery codes supaya login berikutnya otomatis memicu setup
+     * 2FA dari awal lagi (QR code baru), sama seperti akun yang belum pernah
+     * setup 2FA sama sekali. Sesi login yang sedang aktif ikut dicabut
+     * (token dihapus) supaya device lama tidak bisa dipakai lagi tanpa
+     * setup ulang -- konsisten dengan suspend().
+     */
+    public function reset2fa(Request $request, User $user)
+    {
+        $request->user()->can('users.manage') || abort(403);
+
+        // SENGAJA set properti langsung + save(), BUKAN update() mass-assignment
+        // -- ketiga kolom 2FA ini memang tidak termasuk #[Fillable(...)] User
+        // (benar secara keamanan: tidak boleh bisa ditimpa lewat mass-assignment
+        // biasa), jadi update(['two_factor_secret' => null, ...]) diam-diam
+        // tidak melakukan apa-apa untuk kolom itu tanpa error apa pun. Assignment
+        // properti langsung selalu diizinkan terlepas dari $fillable/#[Fillable].
+        $user->two_factor_secret = null;
+        $user->two_factor_recovery_codes = null;
+        $user->two_factor_confirmed_at = null;
+        $user->save();
+        $user->tokens()->delete();
+
+        return $this->success("2FA {$user->name} direset — login berikutnya akan diminta setup ulang", new UserResource($user->fresh(['roles', 'siteAccess'])));
+    }
+
     /** Atur site mana saja yang boleh dilihat user dengan role admin/leader. */
     public function syncSiteAccess(Request $request, User $user)
     {
