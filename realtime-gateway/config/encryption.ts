@@ -2,25 +2,25 @@ import env from '#start/env'
 import { defineConfig, drivers } from '@adonisjs/core/encryption'
 
 const encryptionConfig = defineConfig({
-  /**
-   * Default encryption driver used by the application.
-   */
-  default: 'gcm',
+    /**
+     * Default encryption driver used by the application.
+     */
+    default: 'gcm',
 
-  list: {
-    gcm: drivers.aes256gcm({
-      /**
-       * Keys used for encryption/decryption.
-       * First key encrypts, all keys are tried for decryption.
-       */
-      keys: [env.get('APP_KEY')],
+    list: {
+        gcm: drivers.aes256gcm({
+            /**
+             * Keys used for encryption/decryption.
+             * First key encrypts, all keys are tried for decryption.
+             */
+            keys: [env.get('APP_KEY')],
 
-      /**
-       * Stable identifier for this driver.
-       */
-      id: 'gcm',
-    }),
-  },
+            /**
+             * Stable identifier for this driver.
+             */
+            id: 'gcm',
+        }),
+    },
 })
 
 export default encryptionConfig
@@ -30,5 +30,5 @@ export default encryptionConfig
  * in your application.
  */
 declare module '@adonisjs/core/types' {
-  export interface EncryptorsList extends InferEncryptors<typeof encryptionConfig> {}
+    export interface EncryptorsList extends InferEncryptors<typeof encryptionConfig> {}
 }

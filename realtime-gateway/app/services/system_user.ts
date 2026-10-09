@@ -13,18 +13,18 @@ let cachedSystemUserId: number | null = null
  * event), jauh setelah boot selesai.
  */
 export async function getSystemUserId(): Promise<number> {
-  if (cachedSystemUserId !== null) return cachedSystemUserId
+    if (cachedSystemUserId !== null) return cachedSystemUserId
 
-  const { default: db } = await import('@adonisjs/lucid/services/db')
-  const row = await db.from('users').where('username', 'system-automation').select('id').first()
+    const { default: db } = await import('@adonisjs/lucid/services/db')
+    const row = await db.from('users').where('username', 'system-automation').select('id').first()
 
-  if (!row) {
-    throw new Error(
-      'Akun system-automation belum ada. Jalankan "php artisan db:seed" di backend-api.'
-    )
-  }
+    if (!row) {
+        throw new Error(
+            'Akun system-automation belum ada. Jalankan "php artisan db:seed" di backend-api.'
+        )
+    }
 
-  cachedSystemUserId = row.id
+    cachedSystemUserId = row.id
 
-  return row.id
+    return row.id
 }

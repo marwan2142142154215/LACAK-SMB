@@ -1,20 +1,20 @@
 import { BaseModel, column } from '@adonisjs/lucid/orm'
 
 export default class Organization extends BaseModel {
-  static table = 'organizations'
+    static table = 'organizations'
 
-  @column({ isPrimary: true })
-  declare id: number
+    @column({ isPrimary: true })
+    declare id: number
 
-  @column()
-  declare name: string
+    @column()
+    declare name: string
 
-  @column()
-  declare type: 'company_asset'
+    @column()
+    declare type: 'company_asset'
 
-  @column()
-  declare uniqueSiteCode: string
+    @column()
+    declare uniqueSiteCode: string
 
-  @column()
-  declare isActive: boolean
+    @column()
+    declare isActive: boolean
 }

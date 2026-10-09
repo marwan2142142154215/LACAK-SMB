@@ -12,6 +12,7 @@ model Lucid read/write ke tabel yang sudah ada. Satu sumber kebenaran skema,
 dua runtime yang membacanya.
 
 ## Teknologi
+
 - Node.js 24 (LTS saat ini)
 - AdonisJS 6 (`@adonisjs/core` 7.x)
 - Socket.IO 4
@@ -32,8 +33,8 @@ APK pelacak (device) --[Socket.IO /device]--> Gateway --[Socket.IO /ops]--> Dash
 - **Namespace `/device`**: dipakai APK pelacak. Wajib kirim `device:hello`
   `{ deviceUuid, siteCode }` dalam 10 detik atau diputus. Ditolak
   (`device:rejected`) kalau device tidak dikenal, site tidak aktif, kode site
-  tidak cocok (APK bajakan/clone — pesan: *"silahkan download dari sumber
-  resmi bosku"*), checksum APK terdaftar tidak cocok, atau consent sudah
+  tidak cocok (APK bajakan/clone — pesan: _"silahkan download dari sumber
+  resmi bosku"_), checksum APK terdaftar tidak cocok, atau consent sudah
   tidak berlaku.
 - **Namespace `/ops`**: dipakai web dashboard & APK master. Wajib kirim
   `auth: { token }` (Bearer token Sanctum dari backend-api) saat connect —
@@ -53,6 +54,7 @@ APK pelacak (device) --[Socket.IO /device]--> Gateway --[Socket.IO /ops]--> Dash
   tetap ada jejak audit yang jujur.
 
 ## Cara menjalankan di local
+
 1. `npm install`
 2. Salin `.env.example` menjadi `.env`, sesuaikan `DB_*` (sama dengan
    `backend-api/.env`) dan `BACKEND_API_URL`
@@ -64,29 +66,33 @@ APK pelacak (device) --[Socket.IO /device]--> Gateway --[Socket.IO /ops]--> Dash
 ## Event Socket.IO
 
 ### `/device` (dari APK pelacak)
-| Event | Arah | Payload |
-|---|---|---|
-| `device:hello` | kirim | `{ deviceUuid, siteCode, appBuildVersion?, checksumSha256? }` |
-| `device:accepted` | terima | `{ deviceId, status }` |
-| `device:rejected` | terima | `{ message }` |
-| `device:location` | kirim | `{ source, latitude?, longitude?, bleDistanceMeters?, bleRssi?, batteryLevel?, ssid?, ip? }` |
-| `command:push` | terima | `{ command_id, command_type, reason_note }` |
-| `command:ack` | kirim | `{ commandId }` |
+
+| Event             | Arah   | Payload                                                                                      |
+| ----------------- | ------ | -------------------------------------------------------------------------------------------- |
+| `device:hello`    | kirim  | `{ deviceUuid, siteCode, appBuildVersion?, checksumSha256? }`                                |
+| `device:accepted` | terima | `{ deviceId, status }`                                                                       |
+| `device:rejected` | terima | `{ message }`                                                                                |
+| `device:location` | kirim  | `{ source, latitude?, longitude?, bleDistanceMeters?, bleRssi?, batteryLevel?, ssid?, ip? }` |
+| `command:push`    | terima | `{ command_id, command_type, reason_note }`                                                  |
+| `command:ack`     | kirim  | `{ commandId }`                                                                              |
 
 ### `/ops` (dari web dashboard / APK master)
-| Event | Arah | Payload |
-|---|---|---|
-| `subscribe:organization` | kirim | `organizationId` (number) |
-| `subscribe:confirmed` / `subscribe:rejected` | terima | `{ organizationId }` |
-| `radar:update` | terima | posisi device terbaru |
-| `violation:alert` | terima | pelanggaran geofence |
-| `device:status` | terima | perubahan status device |
+
+| Event                                        | Arah   | Payload                   |
+| -------------------------------------------- | ------ | ------------------------- |
+| `subscribe:organization`                     | kirim  | `organizationId` (number) |
+| `subscribe:confirmed` / `subscribe:rejected` | terima | `{ organizationId }`      |
+| `radar:update`                               | terima | posisi device terbaru     |
+| `violation:alert`                            | terima | pelanggaran geofence      |
+| `device:status`                              | terima | perubahan status device   |
 
 ## Penanggung jawab
-- Tim            : Internal
-- Developer      : Marwan (dengan Claude Code)
+
+- Tim : Internal
+- Developer : Marwan (dengan Claude Code)
 - Divisi pengguna: Pemilik sistem (aset perusahaan / parental control)
 
 ## Tautan terkait
+
 - Backend API (Laravel) : [../backend-api](../backend-api)
-- Skema database        : [../docs/skema-database.md](../docs/skema-database.md)
+- Skema database : [../docs/skema-database.md](../docs/skema-database.md)

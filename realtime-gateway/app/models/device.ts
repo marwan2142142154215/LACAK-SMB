@@ -8,44 +8,48 @@ import { BaseModel, column } from '@adonisjs/lucid/orm'
  * ada dua sumber kebenaran struktur data.
  */
 export default class Device extends BaseModel {
-  static table = 'devices'
+    static table = 'devices'
 
-  @column({ isPrimary: true })
-  declare id: number
+    @column({ isPrimary: true })
+    declare id: number
 
-  @column()
-  declare organizationId: number
+    @column()
+    declare organizationId: number
 
-  @column()
-  declare consentDocumentId: number
+    @column()
+    declare consentDocumentId: number
 
-  @column()
-  declare deviceName: string
+    @column()
+    declare deviceName: string
 
-  @column()
-  declare deviceUuid: string
+    @column()
+    declare deviceUuid: string
 
-  @column()
-  declare androidVersion: string
+    // Jangan pernah ikut terserialisasi ke payload socket/HTTP mana pun.
+    @column({ serializeAs: null })
+    declare secretHash: string | null
 
-  @column()
-  declare appBuildVersion: string
+    @column()
+    declare androidVersion: string
 
-  @column()
-  declare siteCodeEmbedded: string
+    @column()
+    declare appBuildVersion: string
 
-  @column()
-  declare status: 'online' | 'offline' | 'locked' | 'pending_enrollment'
+    @column()
+    declare siteCodeEmbedded: string
 
-  @column()
-  declare batteryLevel: number | null
+    @column()
+    declare status: 'online' | 'offline' | 'locked' | 'pending_enrollment'
 
-  @column.dateTime()
-  declare lastSeenAt: DateTime | null
+    @column()
+    declare batteryLevel: number | null
 
-  @column()
-  declare isActive: boolean
+    @column.dateTime()
+    declare lastSeenAt: DateTime | null
 
-  @column.dateTime({ autoCreate: false, autoUpdate: true })
-  declare updatedAt: DateTime
+    @column()
+    declare isActive: boolean
+
+    @column.dateTime({ autoCreate: false, autoUpdate: true })
+    declare updatedAt: DateTime
 }
