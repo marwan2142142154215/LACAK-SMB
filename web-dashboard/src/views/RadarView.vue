@@ -55,7 +55,16 @@ function renderMap(device) {
         mapInstance.setView([lat, lng], 16)
         mapMarker.setLatLng([lat, lng])
     }
-    mapMarker.bindPopup(device.device_name ?? '').openPopup()
+    // SENGAJA buat elemen dulu + textContent, BUKAN bindPopup(string) --
+    // Leaflet menulis string lewat innerHTML, jadi device_name yang mengandung
+    // HTML/script (device_name cuma divalidasi string|max:255 di backend,
+    // bisa diubah site_admin) akan DIEKSEKUSI di browser siapa pun yang buka
+    // popup ini -- termasuk super_admin yang lihat semua site (stored XSS,
+    // bisa curi token dari localStorage). textContent tidak pernah di-parse
+    // sebagai HTML, jadi aman apa pun isinya.
+    const popupEl = document.createElement('span')
+    popupEl.textContent = device.device_name ?? ''
+    mapMarker.bindPopup(popupEl).openPopup()
     // Container bisa saja baru pertama kali kelihatan (habis v-else muncul) --
     // Leaflet butuh ini supaya ukuran tile dihitung ulang, kalau tidak peta
     // kadang kepotong/abu-abu sebagian sampai window di-resize manual.
