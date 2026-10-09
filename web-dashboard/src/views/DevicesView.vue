@@ -1,12 +1,13 @@
 <script setup>
-import { KeyRound, Lock, MapPin, Pencil, PlayCircle, StopCircle, Trash2, Unlock } from '@lucide/vue'
+import { KeyRound, Lock, MapPin, Pencil, PlayCircle, RefreshCw, StopCircle, Trash2, Unlock } from '@lucide/vue'
 import dayjs from 'dayjs'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
@@ -20,6 +21,12 @@ const renameTarget = ref(null)
 const renameValue = ref('')
 const renaming = ref(false)
 const editDialogOpen = ref(false)
+const deleteTarget = ref(null)
+const deleting = ref(false)
+const reEnrollTarget = ref(null)
+const reEnrolling = ref(false)
+const reEnrollTitle = computed(() => (reEnrollTarget.value ? `Daftarkan ulang device "${reEnrollTarget.value.device_name}"?` : ''))
+const deleteTitle = computed(() => (deleteTarget.value ? `Hapus device "${deleteTarget.value.device_name}" dari sistem?` : ''))
 
 const statusVariant = { online: 'success', offline: 'neutral', locked: 'danger', pending_enrollment: 'warning' }
 
@@ -64,14 +71,31 @@ async function generateOtp(device) {
     }
 }
 
-async function removeDevice(device) {
-    if (!confirm(`Hapus device "${device.device_name}" dari sistem? History lokasi miliknya ikut terhapus.`)) return
+async function confirmDelete() {
+    deleting.value = true
     try {
-        await api.delete(`/devices/${device.id}`)
+        await api.delete(`/devices/${deleteTarget.value.id}`)
         toast.success('Device dihapus')
+        deleteTarget.value = null
         await loadDevices()
     } catch (err) {
         toast.error('Gagal menghapus device', err.response?.data?.message)
+    } finally {
+        deleting.value = false
+    }
+}
+
+async function confirmReEnroll() {
+    reEnrolling.value = true
+    try {
+        await api.post(`/devices/${reEnrollTarget.value.id}/re-enroll`)
+        toast.success('Device siap didaftarkan ulang', 'Buka aplikasi pelacak di HP tersebut agar terhubung kembali.')
+        reEnrollTarget.value = null
+        await loadDevices()
+    } catch (err) {
+        toast.error('Gagal mendaftarkan ulang device', err.response?.data?.message)
+    } finally {
+        reEnrolling.value = false
     }
 }
 
@@ -189,7 +213,16 @@ onMounted(loadDevices)
                                         <BaseButton size="sm" variant="outline" :disabled="actingDeviceId === d.id" @click="generateOtp(d)">
                                             <KeyRound class="size-3.5" /> Buat OTP
                                         </BaseButton>
-                                        <BaseButton size="sm" variant="ghost" @click="removeDevice(d)">
+                                        <BaseButton
+                                            size="sm"
+                                            variant="outline"
+                                            :disabled="d.status === 'locked'"
+                                            title="Buka kunci device dulu sebelum daftar ulang"
+                                            @click="reEnrollTarget = d"
+                                        >
+                                            <RefreshCw class="size-3.5" /> Daftar Ulang
+                                        </BaseButton>
+                                        <BaseButton size="sm" variant="ghost" @click="deleteTarget = d">
                                             <Trash2 class="size-3.5" /> Hapus
                                         </BaseButton>
                                     </div>
@@ -232,5 +265,25 @@ onMounted(loadDevices)
                 <BaseButton class="mt-5 w-full" variant="outline" @click="otpResult = null">Tutup</BaseButton>
             </div>
         </div>
+
+        <ConfirmDialog
+            :open="!!reEnrollTarget"
+            :title="reEnrollTitle"
+            description="Kunci akses lama device ini dicabut. Aplikasi pelacak di HP tersebut akan mengambil kunci baru otomatis saat terhubung."
+            confirm-label="Daftar Ulang"
+            :loading="reEnrolling"
+            @update:open="(v) => !v && (reEnrollTarget = null)"
+            @confirm="confirmReEnroll"
+        />
+
+        <ConfirmDialog
+            :open="!!deleteTarget"
+            :title="deleteTitle"
+            description="History lokasi miliknya ikut terhapus."
+            confirm-label="Hapus"
+            :loading="deleting"
+            @update:open="(v) => !v && (deleteTarget = null)"
+            @confirm="confirmDelete"
+        />
     </div>
 </template>

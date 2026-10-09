@@ -1,12 +1,13 @@
 <script setup>
 import { Copy, Pencil, Plus, Trash2 } from '@lucide/vue'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
@@ -19,6 +20,9 @@ const toast = useToast()
 
 const form = ref({ name: '', type: 'company_asset' })
 const editingOrg = ref(null)
+const deleteTarget = ref(null)
+const deleting = ref(false)
+const deleteTitle = computed(() => (deleteTarget.value ? `Hapus site "${deleteTarget.value.name}"?` : ''))
 
 async function loadOrganizations() {
     loading.value = true
@@ -57,14 +61,17 @@ function openEdit(org) {
     dialogOpen.value = true
 }
 
-async function removeSite(org) {
-    if (!confirm(`Hapus site "${org.name}"? Semua data device/consent milik site ini ikut terhapus.`)) return
+async function confirmDelete() {
+    deleting.value = true
     try {
-        await api.delete(`/organizations/${org.id}`)
+        await api.delete(`/organizations/${deleteTarget.value.id}`)
         toast.success('Site dihapus')
+        deleteTarget.value = null
         await loadOrganizations()
     } catch (err) {
         toast.error('Gagal menghapus site', err.response?.data?.message)
+    } finally {
+        deleting.value = false
     }
 }
 
@@ -114,7 +121,7 @@ onMounted(loadOrganizations)
                             <button
                                 type="button"
                                 class="flex items-center gap-1.5 rounded-lg border border-base-700 px-2.5 py-1.5 text-xs text-base-300 hover:border-danger-500/50 hover:text-danger-300"
-                                @click="removeSite(org)"
+                                @click="deleteTarget = org"
                             >
                                 <Trash2 class="size-3" /> Hapus
                             </button>
@@ -145,5 +152,15 @@ onMounted(loadOrganizations)
                 </DialogContent>
             </DialogPortal>
         </DialogRoot>
+
+        <ConfirmDialog
+            :open="!!deleteTarget"
+            :title="deleteTitle"
+            description="Semua data device/consent milik site ini ikut terhapus."
+            confirm-label="Hapus"
+            :loading="deleting"
+            @update:open="(v) => !v && (deleteTarget = null)"
+            @confirm="confirmDelete"
+        />
     </div>
 </template>

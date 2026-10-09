@@ -33,8 +33,8 @@ const form = ref({
 async function loadBindings() {
     loading.value = true
     try {
-        const response = await api.get('/telegram-bindings')
-        bindings.value = response.data.data
+        const response = await api.get('/telegram-bindings', { params: { per_page: 100 } })
+        bindings.value = response.data.data.items
     } finally {
         loading.value = false
     }

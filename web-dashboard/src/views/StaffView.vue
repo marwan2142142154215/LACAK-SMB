@@ -7,6 +7,7 @@ import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
@@ -23,6 +24,12 @@ const passwordTarget = ref(null)
 const passwordDialogOpen = ref(false)
 const newPassword = ref('')
 const changingPassword = ref(false)
+const suspendTarget = ref(null)
+const suspending = ref(false)
+const resetTwoFactorTarget = ref(null)
+const resettingTwoFactor = ref(false)
+const deleteTarget = ref(null)
+const deleting = ref(false)
 
 const ROLE_LABELS = {
     super_admin: 'Super Admin',
@@ -145,13 +152,18 @@ async function submitForm() {
     }
 }
 
-async function suspend(user) {
+async function confirmSuspend() {
+    const user = suspendTarget.value
+    suspending.value = true
     try {
         await api.post(`/users/${user.id}/suspend`)
         toast.success(`${user.name} disuspen`)
+        suspendTarget.value = null
         await loadStaff()
     } catch (err) {
         toast.error('Gagal men-suspend', err.response?.data?.message)
+    } finally {
+        suspending.value = false
     }
 }
 
@@ -165,25 +177,33 @@ async function reactivate(user) {
     }
 }
 
-async function resetTwoFactor(user) {
-    if (!confirm(`Reset 2FA ${user.name}? Sesi login yang sedang aktif akan dicabut, dan login berikutnya wajib setup 2FA dari awal (QR code baru).`)) return
+async function confirmResetTwoFactor() {
+    const user = resetTwoFactorTarget.value
+    resettingTwoFactor.value = true
     try {
         await api.post(`/users/${user.id}/reset-2fa`)
         toast.success(`2FA ${user.name} berhasil direset`)
+        resetTwoFactorTarget.value = null
         await loadStaff()
     } catch (err) {
         toast.error('Gagal reset 2FA', err.response?.data?.message)
+    } finally {
+        resettingTwoFactor.value = false
     }
 }
 
-async function remove(user) {
-    if (!confirm(`Hapus staf ${user.name}? Tindakan ini tidak bisa dibatalkan.`)) return
+async function confirmDelete() {
+    const user = deleteTarget.value
+    deleting.value = true
     try {
         await api.delete(`/users/${user.id}`)
         toast.success(`${user.name} dihapus`)
+        deleteTarget.value = null
         await loadStaff()
     } catch (err) {
         toast.error('Gagal menghapus', err.response?.data?.message)
+    } finally {
+        deleting.value = false
     }
 }
 
@@ -241,7 +261,7 @@ onMounted(async () => {
                             <button
                                 type="button"
                                 class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-warning-500/50 hover:text-warning-300"
-                                @click="resetTwoFactor(user)"
+                                @click="resetTwoFactorTarget = user"
                             >
                                 <ShieldOff class="size-3.5" /> Reset 2FA
                             </button>
@@ -249,7 +269,7 @@ onMounted(async () => {
                                 v-if="user.is_active"
                                 type="button"
                                 class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-warning-500/50 hover:text-warning-300"
-                                @click="suspend(user)"
+                                @click="suspendTarget = user"
                             >
                                 <Ban class="size-3.5" /> Suspen
                             </button>
@@ -264,7 +284,7 @@ onMounted(async () => {
                             <button
                                 type="button"
                                 class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-danger-500/50 hover:text-danger-300"
-                                @click="remove(user)"
+                                @click="deleteTarget = user"
                             >
                                 <Trash2 class="size-3.5" /> Hapus
                             </button>
@@ -358,5 +378,35 @@ onMounted(async () => {
                 </DialogContent>
             </DialogPortal>
         </DialogRoot>
+
+        <ConfirmDialog
+            :open="!!suspendTarget"
+            :title="suspendTarget ? `Suspen staf ${suspendTarget.name}?` : ''"
+            description="Semua sesi login staf ini akan dicabut, dan akun tidak bisa dipakai sampai diaktifkan kembali."
+            confirm-label="Suspen"
+            :loading="suspending"
+            @update:open="(v) => !v && (suspendTarget = null)"
+            @confirm="confirmSuspend"
+        />
+
+        <ConfirmDialog
+            :open="!!resetTwoFactorTarget"
+            :title="resetTwoFactorTarget ? `Reset 2FA ${resetTwoFactorTarget.name}?` : ''"
+            description="Sesi login yang sedang aktif akan dicabut, dan login berikutnya wajib setup 2FA dari awal (QR code baru)."
+            confirm-label="Reset 2FA"
+            :loading="resettingTwoFactor"
+            @update:open="(v) => !v && (resetTwoFactorTarget = null)"
+            @confirm="confirmResetTwoFactor"
+        />
+
+        <ConfirmDialog
+            :open="!!deleteTarget"
+            :title="deleteTarget ? `Hapus staf ${deleteTarget.name}?` : ''"
+            description="Tindakan ini tidak bisa dibatalkan."
+            confirm-label="Hapus"
+            :loading="deleting"
+            @update:open="(v) => !v && (deleteTarget = null)"
+            @confirm="confirmDelete"
+        />
     </div>
 </template>

@@ -8,6 +8,7 @@ import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
@@ -23,6 +24,8 @@ const generateDialogOpen = ref(false)
 const uploadDialogOpen = ref(false)
 const generating = ref(false)
 const submitting = ref(false)
+const deleteTarget = ref(null)
+const deleting = ref(false)
 let pollTimer = null
 
 const generateForm = ref({
@@ -51,17 +54,17 @@ function buildTitle(build) {
     return `${base} - ${build.organization_name ?? build.embedded_site_code}`
 }
 
-async function removeBuild(build) {
-    const label = typeLabel(build)
-    if (!confirm(`Hapus ${label} (v${build.version})? File di server juga ikut dibersihkan.`)) {
-        return
-    }
+async function confirmDelete() {
+    deleting.value = true
     try {
-        await api.delete(`/apk-builds/${build.id}`)
+        await api.delete(`/apk-builds/${deleteTarget.value.id}`)
         toast.success('Arsip APK dihapus')
+        deleteTarget.value = null
         await loadBuilds()
     } catch (err) {
         toast.error('Gagal menghapus APK build', err.response?.data?.message)
+    } finally {
+        deleting.value = false
     }
 }
 
@@ -207,7 +210,7 @@ onBeforeUnmount(() => {
                             <button
                                 type="button"
                                 class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-danger-500/50 hover:text-danger-300"
-                                @click="removeBuild(build)"
+                                @click="deleteTarget = build"
                             >
                                 <Trash2 class="size-3.5" /> Hapus
                             </button>
@@ -305,5 +308,15 @@ onBeforeUnmount(() => {
                 </DialogContent>
             </DialogPortal>
         </DialogRoot>
+
+        <ConfirmDialog
+            :open="!!deleteTarget"
+            :title="deleteTarget ? `Hapus ${typeLabel(deleteTarget)} (v${deleteTarget.version})?` : ''"
+            description="File di server juga ikut dibersihkan."
+            confirm-label="Hapus"
+            :loading="deleting"
+            @update:open="(v) => !v && (deleteTarget = null)"
+            @confirm="confirmDelete"
+        />
     </div>
 </template>
