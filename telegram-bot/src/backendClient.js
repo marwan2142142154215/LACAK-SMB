@@ -28,6 +28,23 @@ async function resolveOrganizationId(chatId) {
     }
 }
 
+/**
+ * Cocokkan akun Telegram pengirim pesan (ctx.from.id) ke akun staf yang
+ * ditautkan admin lewat dashboard -- supaya bot bisa menegakkan izin
+ * SEBENARNYA milik orang itu (role/permission-nya sendiri), bukan cuma izin
+ * akun layanan bot yang dipukul rata ke semua orang di grup. Lihat
+ * TelegramUserLinkController::lookup di backend-api.
+ */
+async function resolveUserLink(telegramUserId) {
+    try {
+        const response = await api.get('/telegram-user-links-lookup', { params: { telegram_user_id: String(telegramUserId) } })
+        return response.data.data
+    } catch (error) {
+        if (error.response?.status === 404 || error.response?.status === 403) return null
+        throw error
+    }
+}
+
 async function listDevices(organizationId) {
     const response = await api.get('/devices', { params: { organization_id: organizationId, per_page: 50 } })
     return response.data.data.items
@@ -64,6 +81,7 @@ async function getApkBuild(id) {
 
 module.exports = {
     resolveOrganizationId,
+    resolveUserLink,
     listDevices,
     getDevice,
     issueCommand,
