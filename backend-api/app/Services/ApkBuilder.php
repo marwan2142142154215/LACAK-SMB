@@ -66,8 +66,17 @@ class ApkBuilder
         $siteCode = $apkBuild->apk_type === 'master' ? 'MASTER-UNIVERSAL' : $organization->unique_site_code;
         $siteName = $apkBuild->apk_type === 'master' ? 'Lacak SMB' : $organization->name;
 
+        // SENGAJA '--exec' ('-e'), BUKAN '--' -- dengan '--', wsl.exe di
+        // Windows menggabungkan semua argumen setelah '--' jadi satu string
+        // lalu menjalankannya lewat shell default Linux ("$SHELL -c '...'"),
+        // yang berarti karakter shell seperti $(...) atau backtick di salah
+        // satu argumen (misalnya version atau siteName yang berasal dari
+        // input pengguna) DIEKSEKUSI ULANG oleh bash di dalam WSL --
+        // command injection. '--exec' menjalankan command langsung tanpa
+        // lewat shell default itu, jadi tiap argumen sampai ke bash sebagai
+        // argv literal, bukan teks yang di-parse ulang.
         $command = [
-            'wsl', '-d', config('lacaksmb.wsl_distro'), '--', 'bash', $scriptPathWsl,
+            'wsl', '-d', config('lacaksmb.wsl_distro'), '--exec', 'bash', $scriptPathWsl,
             $siteCode,
             config('lacaksmb.public_gateway_url'),
             $siteName,
