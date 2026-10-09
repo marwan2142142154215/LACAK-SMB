@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/vue'
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 
@@ -10,6 +11,18 @@ import './style.css'
 
 const app = createApp(App)
 const pinia = createPinia()
+
+// Standar 1.7: Sentry wajib dipasang di production. SENGAJA no-op kalau
+// VITE_SENTRY_DSN belum diisi (belum daftar akun Sentry) -- supaya tidak
+// bikin app gagal start di dev/staging sebelum DSN tersedia. Isi
+// VITE_SENTRY_DSN di .env begitu DSN dari sentry.io sudah ada.
+if (import.meta.env.VITE_SENTRY_DSN) {
+    Sentry.init({
+        app,
+        dsn: import.meta.env.VITE_SENTRY_DSN,
+        environment: import.meta.env.MODE,
+    })
+}
 
 app.use(pinia)
 app.use(router)
