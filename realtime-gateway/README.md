@@ -17,6 +17,12 @@ dua runtime yang membacanya.
 - Socket.IO 4
 - `@adonisjs/lucid` + `pg` (PostgreSQL, sama dengan backend-api)
 
+## Library utama
+- `socket.io`      : server WebSocket untuk namespace `/device` dan `/ops`
+- `@adonisjs/lucid` : ORM baca/tulis ke tabel milik backend-api (lihat catatan di atas)
+- `pg`             : driver PostgreSQL untuk Lucid
+- `luxon`          : tanggal/waktu di sisi AdonisJS (dipakai internal framework)
+
 ## Arsitektur singkat
 
 ```
@@ -66,7 +72,7 @@ APK pelacak (device) --[Socket.IO /device]--> Gateway --[Socket.IO /ops]--> Dash
 ### `/device` (dari APK pelacak)
 | Event | Arah | Payload |
 |---|---|---|
-| `device:hello` | kirim | `{ deviceUuid, siteCode, appBuildVersion?, checksumSha256? }` |
+| `device:hello` | kirim | `{ deviceUuid, siteCode, appBuildVersion?, checksumSha256?, deviceSecret? }` |
 | `device:accepted` | terima | `{ deviceId, status }` |
 | `device:rejected` | terima | `{ message }` |
 | `device:location` | kirim | `{ source, latitude?, longitude?, bleDistanceMeters?, bleRssi?, batteryLevel?, ssid?, ip? }` |
@@ -84,7 +90,7 @@ APK pelacak (device) --[Socket.IO /device]--> Gateway --[Socket.IO /ops]--> Dash
 
 ## Penanggung jawab
 - Tim            : Internal
-- Developer      : Marwan (dengan Claude Code)
+- Developer      : Marwan
 - Divisi pengguna: Pemilik sistem (aset perusahaan / parental control)
 
 ## Tautan terkait

@@ -81,7 +81,7 @@ pengembangan: `R9RXC03EC9N` (diperuntukkan APK pelacak ini) dan
 
 ## Penanggung jawab
 - Tim            : Internal
-- Developer      : Marwan (dengan Claude Code)
+- Developer      : Marwan
 - Divisi pengguna: Pemilik sistem
 
 ## Tautan terkait

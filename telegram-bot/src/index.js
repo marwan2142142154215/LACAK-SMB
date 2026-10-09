@@ -11,8 +11,10 @@ if (!token) {
 
 const bot = new Bot(token)
 
-const NOT_LINKED_MESSAGE =
-    'Chat ini belum ditautkan ke site mana pun. Minta admin menautkannya lewat dashboard (menu Bot Telegram).'
+const NOT_LINKED_MESSAGE = 'Chat ini belum ditautkan ke site mana pun. Minta admin menautkannya lewat dashboard (menu Bot Telegram).'
+const NOT_STAFF_MESSAGE =
+    'Akun Telegram Anda belum ditautkan ke akun staf. Minta admin menautkan akun Anda lewat dashboard (menu Bot Telegram -> Tautkan Akun Staf).'
+const NO_PERMISSION_MESSAGE = 'Akun staf Anda tidak punya izin untuk perintah ini.'
 
 /** Bungkus handler supaya chat yang belum ditautkan selalu dapat balasan yang jelas, bukan diam saja. */
 function withOrganization(handler) {
@@ -26,13 +28,54 @@ function withOrganization(handler) {
     }
 }
 
+/**
+ * Sama seperti web dashboard & APK master: setiap orang bertindak sesuai
+ * izin AKUN STAF-nya SENDIRI, bukan izin akun layanan bot yang dipukul rata
+ * ke semua orang di grup Telegram. Dulu siapa pun yang chat-nya terhubung
+ * ke satu site otomatis bisa lock/unlock device site itu -- staff_viewer
+ * (view-only) pun bisa, karena yang dicek cuma permission bot, bukan
+ * permission orangnya. Wrapper ini yang menutup celah itu.
+ */
+function withStaffPermission(permission, handler) {
+    return withOrganization(async (ctx, organizationId) => {
+        const telegramUserId = ctx.from?.id
+        if (!telegramUserId) {
+            await ctx.reply('Tidak bisa mengenali akun Telegram Anda.')
+            return
+        }
+
+        const staff = await backend.resolveUserLink(telegramUserId)
+        if (!staff) {
+            await ctx.reply(NOT_STAFF_MESSAGE)
+            return
+        }
+
+        if (!userCanActOnOrg(staff, organizationId, permission)) {
+            await ctx.reply(NO_PERMISSION_MESSAGE)
+            return
+        }
+
+        await handler(ctx, organizationId, staff)
+    })
+}
+
+/** Replika ResolvesOrganizationScope sisi backend (lihat PHP), dibangun dari data lookup. */
+function userCanActOnOrg(user, organizationId, permission) {
+    if (!user.permissions?.includes(permission)) return false
+    if (user.roles?.includes('super_admin')) return true
+    if (user.organization_id === organizationId) return true
+    if (user.accessible_organization_ids?.includes(organizationId)) return true
+    return false
+}
+
 function formatDeviceLine(device) {
-    const statusLabel = {
-        online: '🟢 online',
-        offline: '⚪ offline',
-        locked: '🔴 terkunci',
-        pending_enrollment: '🟡 menunggu enrollment',
-    }[device.status] ?? device.status
+    const statusLabel =
+        {
+            online: '🟢 online',
+            offline: '⚪ offline',
+            locked: '🔴 terkunci',
+            pending_enrollment: '🟡 menunggu enrollment',
+        }[device.status] ?? device.status
 
     const battery = device.battery_level != null ? `${device.battery_level}%` : '-'
 
@@ -48,6 +91,8 @@ bot.command(
                 `Chat ini terhubung ke site #${organizationId}.`,
                 '',
                 'Perintah tersedia: /devices /lock /unlock /locate /status /help',
+                '',
+                `ID Telegram Anda: ${ctx.from?.id ?? '-'} -- kasih tahu admin untuk ditautkan ke akun staf Anda.`,
             ].join('\n'),
         )
     }),
@@ -62,6 +107,8 @@ bot.command('help', async (ctx) => {
             '/locate <id> — minta lokasi terbaru sekarang',
             '/status <id> — detail status satu device',
             '/apk [tracker|master|server] - build & kirim artefak untuk site ini (default: tracker)',
+            '',
+            'Semua perintah di atas (selain /help) butuh akun Telegram Anda ditautkan ke akun staf, dan izin dicek sesuai role staf itu.',
         ].join('\n'),
     )
 })
@@ -75,10 +122,10 @@ function sleep(ms) {
 
 bot.command(
     'apk',
-    withOrganization(async (ctx, organizationId) => {
+    withStaffPermission('apk-builds.manage', async (ctx, organizationId) => {
         const requested = (ctx.match ?? '').trim().toLowerCase()
-        const apkType = requested === 'master' ? 'master' : (requested === 'server' ? 'server' : 'tracker')
-        const label = apkType === 'master' ? 'APK Master' : (apkType === 'server' ? 'Server Controller' : 'APK Pelacak')
+        const apkType = requested === 'master' ? 'master' : requested === 'server' ? 'server' : 'tracker'
+        const label = apkType === 'master' ? 'APK Master' : apkType === 'server' ? 'Server Controller' : 'APK Pelacak'
 
         let build
         try {
@@ -119,13 +166,15 @@ bot.command(
             }
         }
 
-        await ctx.reply(`Build ${label} masih berjalan setelah ${(APK_POLL_MAX_TRIES * APK_POLL_INTERVAL_MS) / 1000}s — cek lagi lewat dashboard (menu APK Builds).`)
+        await ctx.reply(
+            `Build ${label} masih berjalan setelah ${(APK_POLL_MAX_TRIES * APK_POLL_INTERVAL_MS) / 1000}s — cek lagi lewat dashboard (menu APK Builds).`,
+        )
     }),
 )
 
 bot.command(
     'devices',
-    withOrganization(async (ctx, organizationId) => {
+    withStaffPermission('devices.view', async (ctx, organizationId) => {
         const devices = await backend.listDevices(organizationId)
         if (devices.length === 0) {
             await ctx.reply('Belum ada device terdaftar di site ini.')
@@ -140,11 +189,8 @@ bot.command(
 // token melayani banyak chat yang masing-masing terikat ke site berbeda,
 // dan desain itu MEMANG mengandalkan bot sendiri yang mencocokkan device ke
 // organization_id chat sebelum bertindak (dicatat eksplisit di komentar
-// trait itu). Sebelumnya pencocokan ini tidak pernah benar-benar dilakukan
-// -- device ID tinggal diketik manual, jadi siapa pun di satu grup Telegram
-// bisa lock/unlock/lihat status device MILIK SITE LAIN. assertDeviceInOrg
-// menutup celah itu: ambil device dulu, tolak kalau organization_id-nya
-// tidak cocok dengan organisasi chat ini.
+// trait itu). assertDeviceInOrg menutup celah itu: ambil device dulu, tolak
+// kalau organization_id-nya tidak cocok dengan organisasi chat ini.
 async function assertDeviceInOrg(deviceId, organizationId) {
     const device = await backend.getDevice(deviceId)
     if (device.organization_id !== organizationId) {
@@ -157,7 +203,7 @@ async function assertDeviceInOrg(deviceId, organizationId) {
 
 bot.command(
     'status',
-    withOrganization(async (ctx, organizationId) => {
+    withStaffPermission('devices.view', async (ctx, organizationId) => {
         const [deviceId] = (ctx.match ?? '').trim().split(/\s+/)
         if (!deviceId) {
             await ctx.reply('Pakai format: /status <id_device>')
@@ -198,17 +244,21 @@ async function handleCommandAction(ctx, organizationId, commandType, label) {
 
 bot.command(
     'lock',
-    withOrganization(async (ctx, organizationId) => handleCommandAction(ctx, organizationId, 'lock', 'Lock')),
+    withStaffPermission('devices.lock', async (ctx, organizationId) => handleCommandAction(ctx, organizationId, 'lock', 'Lock')),
 )
 
 bot.command(
     'unlock',
-    withOrganization(async (ctx, organizationId) => handleCommandAction(ctx, organizationId, 'unlock', 'Unlock')),
+    withStaffPermission('devices.unlock', async (ctx, organizationId) =>
+        handleCommandAction(ctx, organizationId, 'unlock', 'Unlock'),
+    ),
 )
 
 bot.command(
     'locate',
-    withOrganization(async (ctx, organizationId) => handleCommandAction(ctx, organizationId, 'locate_now', 'Locate')),
+    withStaffPermission('devices.locate', async (ctx, organizationId) =>
+        handleCommandAction(ctx, organizationId, 'locate_now', 'Locate'),
+    ),
 )
 
 bot.catch((err, ctx) => {

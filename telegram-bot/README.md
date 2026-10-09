@@ -12,6 +12,11 @@ memegang token bot asli di `.env`-nya sendiri.
 - node-telegram-bot-api v2 (`Bot`, middleware `command()`/`hears()`)
 - axios (ke backend-api)
 
+## Library utama
+- `node-telegram-bot-api` : klien Bot API Telegram
+- `axios`                 : permintaan HTTP ke backend-api
+- `dotenv`                : baca `.env`
+
 ## Arsitektur singkat
 
 ```
@@ -76,7 +81,7 @@ sungguhan.
 
 ## Penanggung jawab
 - Tim            : Internal
-- Developer      : Marwan (dengan Claude Code)
+- Developer      : Marwan
 - Divisi pengguna: Pemilik sistem
 
 ## Tautan terkait
