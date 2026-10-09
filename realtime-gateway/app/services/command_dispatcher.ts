@@ -47,9 +47,19 @@ async function dispatchPendingCommands() {
   }
 }
 
-export async function markCommandAcknowledged(commandId: number) {
+/**
+ * deviceId WAJIB diisi dan dicocokkan ke command.deviceId -- sebelumnya
+ * fungsi ini menerima commandId mentah dari event socket 'command:ack'
+ * tanpa mengecek device yang mengirim ack itu MEMANG pemilik command-nya.
+ * Device mana pun yang berhasil device:hello (termasuk device "lama" yang
+ * belum di-pairing, lihat socket.ts) bisa meng-ack command_id APAPUN milik
+ * device LAIN di organisasi LAIN, membuat jejak audit palsu seolah
+ * perintah (misalnya 'lock') sudah dijalankan device korban padahal belum
+ * pernah sampai ke sana -- ditemukan lewat audit keamanan menyeluruh.
+ */
+export async function markCommandAcknowledged(commandId: number, deviceId: number) {
   const command = await DeviceCommand.find(commandId)
-  if (!command) return
+  if (!command || command.deviceId !== deviceId) return
 
   command.status = 'acknowledged'
   command.acknowledgedAt = DateTime.now()

@@ -191,7 +191,24 @@ bot.command(
 // organization_id chat sebelum bertindak (dicatat eksplisit di komentar
 // trait itu). assertDeviceInOrg menutup celah itu: ambil device dulu, tolak
 // kalau organization_id-nya tidak cocok dengan organisasi chat ini.
+// deviceId sebelumnya lolos ke backend.getDevice/issueCommand apa adanya,
+// cuma dipisah split(/\s+/) dari teks bebas -- axios menempel path lewat
+// penggabungan string biasa (`/devices/${deviceId}`), jadi nilai seperti
+// "../something" lolos ke request HTTP sungguhan memakai token LAYANAN BOT
+// yang sengaja lintas-organisasi (lihat komentar di atas). assertDeviceInOrg
+// baru mengecek organisasi SETELAH request itu terkirim -- terlambat kalau
+// path-nya sendiri sudah dibelokkan. Dicek di sini, sebelum request apa pun
+// dibuat, supaya non-digit tertolak lebih awal. Ditemukan lewat audit
+// keamanan menyeluruh.
+const DEVICE_ID_PATTERN = /^\d+$/
+
 async function assertDeviceInOrg(deviceId, organizationId) {
+    if (!DEVICE_ID_PATTERN.test(deviceId)) {
+        const err = new Error('ID device tidak valid')
+        err.isWrongOrg = true
+        throw err
+    }
+
     const device = await backend.getDevice(deviceId)
     if (device.organization_id !== organizationId) {
         const err = new Error('Device bukan milik site ini')

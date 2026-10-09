@@ -47,10 +47,36 @@ export function registerSocketHandlers(io: SocketIoServer) {
   registerOpsNamespace(opsNs)
 }
 
+// Pembatas percobaan device:hello per alamat IP -- sebelumnya TIDAK ADA
+// sama sekali (ditemukan lewat audit keamanan menyeluruh): tiap percobaan,
+// termasuk deviceUuid acak/garbage, memicu query Postgres sebelum ditolak,
+// jadi satu klien bisa membanjiri koneksi berulang tanpa batas (beban DB)
+// sekaligus dipakai sebagai oracle enumerasi deviceUuid/siteCode (pesan
+// penolakan beda-beda menyingkap state mana yang salah). device_secret
+// sendiri 240-bit (Str::random(40) di backend-api) jadi tidak praktis
+// ditebak paksa, tapi pembatas ini tetap menutup jalur DoS & enumerasi-nya.
+const HELLO_WINDOW_MS = 60_000
+const HELLO_MAX_ATTEMPTS = 20
+const helloAttemptsByIp = new Map<string, { count: number; windowStart: number }>()
+
+function helloRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const entry = helloAttemptsByIp.get(ip)
+
+  if (!entry || now - entry.windowStart > HELLO_WINDOW_MS) {
+    helloAttemptsByIp.set(ip, { count: 1, windowStart: now })
+    return false
+  }
+
+  entry.count += 1
+  return entry.count > HELLO_MAX_ATTEMPTS
+}
+
 function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
   deviceNs.on('connection', (socket) => {
     let boundDeviceId: number | null = null
     let boundOrganizationId: number | null = null
+    const clientIp = socket.handshake.address
 
     // Device wajib "hello" dalam 10 detik, kalau tidak diputus.
     const helloTimeout = setTimeout(() => {
@@ -61,6 +87,11 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
     }, 10_000)
 
     socket.on('device:hello', async (payload: DeviceHelloPayload) => {
+      if (helloRateLimited(clientIp)) {
+        socket.emit('device:rejected', { message: 'Terlalu banyak percobaan, coba lagi nanti' })
+        return socket.disconnect(true)
+      }
+
       try {
         const device = await Device.query()
           .where('device_uuid', payload.deviceUuid)
@@ -243,7 +274,24 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
 
     socket.on('command:ack', async (payload: { commandId: number }) => {
       if (boundDeviceId === null) return
-      await markCommandAcknowledged(payload.commandId)
+
+      try {
+        // commandId dari payload socket BUKAN data tepercaya -- payload bisa
+        // berisi apa saja (objek, array, string bukan angka). Tanpa validasi
+        // ini, Number.isInteger gagal diam-diam DAN query ke Postgres bisa
+        // reject dengan error cast tipe yang, tanpa try/catch, jadi unhandled
+        // promise rejection yang MEMATIKAN SELURUH PROSES gateway (default
+        // Node: unhandled rejection -> crash) -- memutus semua koneksi
+        // dashboard/device di SEMUA organisasi sekaligus. Ditemukan lewat
+        // audit keamanan menyeluruh.
+        if (!Number.isInteger(payload?.commandId)) return
+
+        // markCommandAcknowledged sendiri yang mencocokkan command_id ke
+        // boundDeviceId -- device tidak bisa meng-ack command milik device lain.
+        await markCommandAcknowledged(payload.commandId, boundDeviceId)
+      } catch (error) {
+        logger.error('command:ack gagal diproses', { error, deviceId: boundDeviceId })
+      }
     })
 
     socket.on('disconnect', async () => {
