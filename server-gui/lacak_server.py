@@ -309,7 +309,7 @@ class ServerController(tk.Tk):
             try:
                 self.rows[[r.sid for r in self.rows].index(sid)].set_state("running")
             except ValueError:
-                pass
+                self.println(sid, f"Status '{sid}' tidak bisa diperbarui: baris service tidak ditemukan.")
 
     def _pump(self, proc: subprocess.Popen, sid: str, port: int | None):
         for line in proc.stdout:  # type: ignore[union-attr]
