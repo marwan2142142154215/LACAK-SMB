@@ -101,6 +101,15 @@ class TelegramUserLinkController extends Controller
      */
     public function lookup(Request $request)
     {
+        // WAJIB dibatasi ke role telegram_bot_service -- route ini cuma
+        // butuh auth:sanctum (lihat routes/api.php), bukan permission
+        // apa pun, jadi tanpa cek eksplisit di sini SIAPA PUN yang sudah
+        // login (termasuk staff_viewer) bisa query role+permission+
+        // accessible_organization_ids staf LAIN lintas organisasi --
+        // persis kebocoran privilege yang coba ditutup fitur ini sendiri,
+        // ditemukan lewat audit keamanan menyeluruh.
+        $request->user()->hasRole('telegram_bot_service') || abort(403);
+
         $telegramUserId = $request->string('telegram_user_id')->toString();
 
         if ($telegramUserId === '') {

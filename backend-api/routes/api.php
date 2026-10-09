@@ -26,9 +26,17 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->name('api.v1.')->group(function () {
 
     Route::prefix('auth')->group(function () {
-        Route::post('/login', [AuthController::class, 'login']);
-        Route::post('/2fa/setup/confirm', [AuthController::class, 'confirmTwoFactorSetup']);
-        Route::post('/2fa/verify', [AuthController::class, 'verifyTwoFactor']);
+        // throttle:10,1 sudah jadi standar proyek ini untuk endpoint publik
+        // sensitif (lihat device-otp/verify, device-otp/pair di bawah) --
+        // tiga endpoint ini TIDAK pernah dibatasi sama sekali sebelumnya,
+        // ditemukan lewat audit keamanan menyeluruh: /login bisa ditebak
+        // password tanpa batas, /2fa/verify & /2fa/setup/confirm bisa
+        // ditebak kode TOTP 6 digit tanpa batas juga. 5/menit per IP lebih
+        // ketat dari OTP self-unlock (10/menit) karena ini jalur masuk akun
+        // staf sungguhan, bukan sekadar buka kunci device.
+        Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+        Route::post('/2fa/setup/confirm', [AuthController::class, 'confirmTwoFactorSetup'])->middleware('throttle:5,1');
+        Route::post('/2fa/verify', [AuthController::class, 'verifyTwoFactor'])->middleware('throttle:5,1');
 
         Route::middleware(['auth:sanctum', 'extend-token'])->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreGeofenceRuleRequest;
 use App\Http\Resources\GeofenceRuleResource;
 use App\Http\Responses\ApiResponse;
+use App\Models\Device;
 use App\Models\GeofenceRule;
 use App\Support\ResolvesOrganizationScope;
 use Illuminate\Http\Request;
@@ -38,6 +39,15 @@ class GeofenceRuleController extends Controller
 
         if ($organizationId === null) {
             return $this->fail('Anda tidak berwenang membuat aturan untuk site ini', null, 403);
+        }
+
+        // 'exists:devices,id' di StoreGeofenceRuleRequest cuma mengecek device-nya
+        // ADA, bukan device-nya milik SITE INI -- tanpa ini, admin site A bisa
+        // tanam anchor_device_id milik site B, dan nama device B ikut bocor
+        // lewat GeofenceRuleResource::anchor_device_name (IDOR lintas-tenant,
+        // ditemukan lewat audit keamanan menyeluruh).
+        if ($request->validated('anchor_device_id') && ! Device::where('id', $request->validated('anchor_device_id'))->where('organization_id', $organizationId)->exists()) {
+            return $this->fail('Device anchor harus milik site yang sama', null, 422);
         }
 
         $rule = GeofenceRule::create([
@@ -74,6 +84,12 @@ class GeofenceRuleController extends Controller
             'anchor_device_id' => ['sometimes', 'nullable', 'integer', 'exists:devices,id'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
+
+        // Sama seperti store() -- 'exists' saja tidak cukup, device anchor
+        // wajib milik site yang sama dengan aturan ini.
+        if (! empty($data['anchor_device_id']) && ! Device::where('id', $data['anchor_device_id'])->where('organization_id', $geofenceRule->organization_id)->exists()) {
+            return $this->fail('Device anchor harus milik site yang sama', null, 422);
+        }
 
         $geofenceRule->update($data);
 

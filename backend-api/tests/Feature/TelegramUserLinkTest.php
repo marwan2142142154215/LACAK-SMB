@@ -65,6 +65,26 @@ test('lookup balas role & permission akun staf yang ditautkan', function () {
     expect($response->json('data.roles'))->toContain('site_admin');
 });
 
+/**
+ * Regresi dari audit keamanan menyeluruh: lookup() sebelumnya cuma
+ * mengecek auth:sanctum tanpa role apa pun, jadi staff_viewer (atau
+ * siapa pun yang login) bisa query role+permission+
+ * accessible_organization_ids staf LAIN lintas organisasi.
+ */
+test('staff_viewer (bukan bot) TIDAK BISA panggil lookup sama sekali', function () {
+    $org = Organization::factory()->create();
+    $target = User::factory()->create(['organization_id' => $org->id]);
+    $target->assignRole('super_admin');
+    TelegramUserLink::factory()->for($target)->create(['telegram_user_id' => '999111222']);
+
+    $viewer = User::factory()->create(['organization_id' => $org->id]);
+    $viewer->assignRole('staff_viewer');
+
+    $this->actingAs($viewer, 'sanctum')
+        ->getJson('/api/v1/telegram-user-links-lookup?telegram_user_id=999111222')
+        ->assertForbidden();
+});
+
 test('lookup untuk telegram_user_id yang belum ditautkan balas 404', function () {
     $bot = User::factory()->create(['organization_id' => null]);
     $bot->assignRole('telegram_bot_service');

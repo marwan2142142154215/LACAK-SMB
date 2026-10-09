@@ -152,6 +152,26 @@ test('request terautentikasi menggeser maju expires_at token (sliding idle timeo
     expect(now()->diffInMinutes($fresh->expires_at, false))->toBeGreaterThan(100);
 });
 
+/**
+ * Regresi dari audit keamanan menyeluruh: /auth/login tidak punya rate
+ * limit sama sekali sebelumnya -- password bisa ditebak tanpa batas.
+ */
+test('login dibatasi rate limit setelah beberapa kali percobaan', function () {
+    $user = User::factory()->create(['password' => bcrypt('password-benar')]);
+
+    for ($i = 0; $i < 5; $i++) {
+        $this->postJson('/api/v1/auth/login', [
+            'username' => $user->username,
+            'password' => 'salah',
+        ])->assertStatus(401);
+    }
+
+    $this->postJson('/api/v1/auth/login', [
+        'username' => $user->username,
+        'password' => 'salah',
+    ])->assertStatus(429);
+});
+
 test('token tanpa expires_at (akun layanan) tidak disentuh ExtendTokenExpiry', function () {
     $user = User::factory()->create();
     $token = $user->createToken('telegram-bot-service');
