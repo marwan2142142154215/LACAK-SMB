@@ -8,7 +8,7 @@ dikirim langsung oleh [realtime-gateway](../realtime-gateway), yang
 memegang token bot asli di `.env`-nya sendiri.
 
 ## Teknologi
-- Node.js 24
+- Node.js 24 + AdonisJS 7 (tanpa HTTP server; bot dijalankan lewat perintah Ace `bot:run`)
 - node-telegram-bot-api v2 (`Bot`, middleware `command()`/`hears()`)
 - axios (ke backend-api)
 
@@ -45,10 +45,17 @@ sebagai `BACKEND_API_TOKEN` — token tidak ditampilkan lagi setelah itu.
 1. `npm install`
 2. Salin `.env.example` menjadi `.env`, isi `TELEGRAM_BOT_TOKEN` (dari
    [@BotFather](https://t.me/BotFather)), `BACKEND_API_URL`, dan
-   `BACKEND_API_TOKEN` (lihat di atas)
+   `BACKEND_API_TOKEN` (lihat di atas), lalu buat `APP_KEY` dengan
+   `node ace generate:key`
 3. Pastikan backend-api sudah jalan dan ada minimal satu
    `telegram_bindings` row yang mengarah ke chat Anda
-4. `npm start`
+4. `npm start` (sama dengan `node ace bot:run`)
+
+Variabel `.env` divalidasi di `start/env.ts`; bot langsung berhenti dengan
+pesan jelas bila ada yang belum diisi.
+
+Untuk production: `npm run build`, lalu dari folder `build/` jalankan
+`npm ci --omit=dev` dan `node ace bot:run`.
 
 ## Perintah
 

@@ -1,16 +1,38 @@
 {
     "name": "telegram-bot",
     "version": "1.0.0",
+    "private": true,
     "description": "Jembatan Telegram untuk kontrol device Lacak Master (lock/unlock/locate lewat chat)",
     "license": "UNLICENSED",
-    "type": "commonjs",
-    "main": "src/index.js",
+    "type": "module",
     "scripts": {
-        "start": "node src/index.js"
+        "start": "node ace bot:run",
+        "build": "node ace build",
+        "format": "prettier --write .",
+        "typecheck": "tsc --noEmit"
+    },
+    "imports": {
+        "#services/*": "./app/services/*.js",
+        "#start/*": "./start/*.js",
+        "#config/*": "./config/*.js"
+    },
+    "devDependencies": {
+        "@adonisjs/assembler": "^8.5.2",
+        "@adonisjs/tsconfig": "^2.0.0",
+        "@poppinss/ts-exec": "^1.4.4",
+        "@types/node": "~26.6.2",
+        "prettier": "^3.9.9",
+        "typescript": "~6.0.3"
     },
     "dependencies": {
+        "@adonisjs/core": "^7.5.2",
         "axios": "^1.20.0",
-        "dotenv": "^18.0.6",
-        "node-telegram-bot-api": "^2.1.0"
+        "node-telegram-bot-api": "^2.1.0",
+        "reflect-metadata": "^0.2.2"
+    },
+    "allowScripts": {
+        "@swc/core": true,
+        "esbuild": true,
+        "fsevents": true
     }
 }
