@@ -30,6 +30,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.navigation.NavHostController
+import com.lacaksmb.master.ble.BeaconUuid
 import com.lacaksmb.master.ble.BleRadarScanner
 import com.lacaksmb.master.data.ApiClient
 import com.lacaksmb.master.data.ApiResult
@@ -101,7 +102,8 @@ fun RadarScreen(apiClient: ApiClient, navController: NavHostController) {
                 )
             }
 
-            val devicesByUuid = devices.associateBy { it.deviceUuid }
+            // Beacon membawa UUID turunan (BeaconUuid), bukan device_uuid mentah.
+            val devicesByUuid = devices.associateBy { BeaconUuid.fromDeviceUuid(it.deviceUuid) }
             LazyColumn {
                 items(sightings.values.toList(), key = { it.deviceUuid }) { sighting ->
                     val matchedDevice = devicesByUuid[sighting.deviceUuid]

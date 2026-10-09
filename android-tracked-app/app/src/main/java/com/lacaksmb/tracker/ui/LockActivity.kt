@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.text.InputFilter
 import android.text.InputType
+import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -140,10 +141,11 @@ class LockActivity : ComponentActivity() {
             // biasa; tombol navigasi sudah disembunyikan lewat immersive mode.
             TrackerDeviceAdminReceiver.enableFullLockTaskIfDeviceOwner(this)
             startLockTask()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             // Sebagian OEM membatasi screen pinning untuk app non-Device-Owner.
             // lockNow() dari Device Admin (dipanggil service) tetap jadi
             // jaring pengaman minimum kalau pinning gagal di perangkat itu.
+            Log.w(TAG, "startLockTask gagal: ${e.message}")
         }
     }
 
@@ -200,8 +202,9 @@ class LockActivity : ComponentActivity() {
         }
         try {
             stopLockTask()
-        } catch (_: Exception) {
-            // Tidak sedang dipin — aman diabaikan.
+        } catch (e: Exception) {
+            // Tidak sedang dipin — aman diabaikan, cukup dicatat.
+            Log.w(TAG, "stopLockTask gagal: ${e.message}")
         }
         finish()
     }
@@ -303,6 +306,7 @@ class LockActivity : ComponentActivity() {
 
     companion object {
         private const val EXTRA_REASON = "reason"
+        private const val TAG = "TrackerLockActivity"
 
         /** Dipanggil dari service/receiver manapun — selalu task baru, selalu di luar recents. */
         fun launch(context: Context, reason: String?) {

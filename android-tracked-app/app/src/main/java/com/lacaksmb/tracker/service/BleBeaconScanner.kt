@@ -164,8 +164,9 @@ class BleBeaconScanner(private val context: Context) {
         if (!isScanning) return
         try {
             scanner?.stopScan(callback)
-        } catch (_: Exception) {
-            // Adapter mungkin sudah mati — aman diabaikan.
+        } catch (e: Exception) {
+            // Adapter mungkin sudah mati — state tetap direset di bawah, cukup dicatat.
+            Log.w(TAG, "stopScan gagal: ${e.message}")
         }
         isScanning = false
         scanner = null

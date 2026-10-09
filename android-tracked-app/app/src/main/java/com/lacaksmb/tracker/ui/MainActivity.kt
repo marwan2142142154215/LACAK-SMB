@@ -40,6 +40,7 @@ import com.lacaksmb.tracker.BuildConfig
 import com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver
 import com.lacaksmb.tracker.data.DeviceIdentityStore
 import com.lacaksmb.tracker.data.DeviceLockStore
+import com.lacaksmb.tracker.network.DeviceEnrollmentApi
 import com.lacaksmb.tracker.service.TrackerForegroundService
 import com.lacaksmb.tracker.ui.theme.LacakTrackerTheme
 import kotlinx.coroutines.launch
@@ -267,9 +268,27 @@ class MainActivity : ComponentActivity() {
         statusText = "Menyimpan konfigurasi & memulai pemantauan..."
         lifecycleScope.launch {
             identityStore.saveEnrollment(BuildConfig.SITE_CODE, BuildConfig.GATEWAY_URL)
+            // Klaim rahasia device sekarang supaya staf langsung tahu apakah
+            // admin sudah mendaftarkan ID Device ini. Kalau belum, service
+            // tetap dijalankan dan mengulang klaim sendiri secara berkala.
+            val snapshot = identityStore.snapshot()
+            var claimFailureReason: String? = null
+            if (snapshot.deviceSecret.isBlank()) {
+                val claimResult = DeviceEnrollmentApi.claim(snapshot.deviceUuid)
+                val claimedSecret = claimResult.getOrNull()
+                if (claimedSecret != null) {
+                    identityStore.saveDeviceSecret(claimedSecret)
+                } else {
+                    claimFailureReason = claimResult.exceptionOrNull()?.message ?: "Device belum didaftarkan admin"
+                }
+            }
             TrackerForegroundService.start(applicationContext)
             pendingStep = EnrollmentStep.ACTIVE
-            statusText = "Aktif memantau untuk site ${BuildConfig.SITE_NAME}."
+            statusText = if (claimFailureReason == null) {
+                "Aktif memantau untuk site ${BuildConfig.SITE_NAME}."
+            } else {
+                "$claimFailureReason Pemantauan akan aktif otomatis begitu admin mendaftarkan ID Device di atas."
+            }
         }
     }
 

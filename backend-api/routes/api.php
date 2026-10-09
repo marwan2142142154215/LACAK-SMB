@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ConsentDocumentController;
 use App\Http\Controllers\Api\DashboardSummaryController;
 use App\Http\Controllers\Api\DeviceCommandController;
 use App\Http\Controllers\Api\DeviceController;
+use App\Http\Controllers\Api\DeviceEnrollmentController;
 use App\Http\Controllers\Api\DeviceOtpController;
 use App\Http\Controllers\Api\GeofenceRuleController;
 use App\Http\Controllers\Api\OrganizationController;
@@ -41,6 +42,12 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::post('/device-otp/verify', [DeviceOtpController::class, 'verify'])
         ->middleware('throttle:10,1');
 
+    // Dipanggil APK pelacak untuk mengambil rahasia device (sekali per
+    // pendaftaran) — belum punya kredensial apa pun, jadi tanpa Sanctum;
+    // dibatasi rate limit dan hanya berlaku untuk device pending_enrollment.
+    Route::post('/device-enrollments/claim', [DeviceEnrollmentController::class, 'claim'])
+        ->middleware('throttle:10,1');
+
     // Download via signed URL (standar 6.3) — tanpa auth:sanctum karena
     // tautannya sendiri sudah berumur pendek & terenkripsi tanda tangannya.
     Route::get('/consent-documents/{consentDocument}/download', [ConsentDocumentController::class, 'download'])
@@ -69,6 +76,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::get('/devices/{device}/commands', [DeviceCommandController::class, 'index']);
         Route::post('/devices/{device}/commands', [DeviceCommandController::class, 'store']);
         Route::post('/devices/{device}/otp', [DeviceOtpController::class, 'generate']);
+        Route::post('/devices/{device}/re-enroll', [DeviceEnrollmentController::class, 'reEnroll']);
         Route::get('/devices/{device}/violations', [ViolationLogController::class, 'index']);
 
         Route::apiResource('geofence-rules', GeofenceRuleController::class)->except(['show']);

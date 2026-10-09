@@ -23,6 +23,13 @@ class GatewaySocketClient(
             bleMaxDistanceMeters: Double?,
         )
         fun onRejected(message: String)
+
+        /**
+         * Handshake ditolak middleware autentikasi gateway. isCredentialProblem
+         * true = rahasia salah/hilang/device perlu daftar ulang (klaim ulang);
+         * false = gangguan server sementara (coba sambung lagi nanti).
+         */
+        fun onAuthFailed(message: String, isCredentialProblem: Boolean)
         fun onCommandPush(commandId: Int?, commandType: String, reasonNote: String?)
         fun onConnected()
         fun onDisconnected()
@@ -30,8 +37,11 @@ class GatewaySocketClient(
 
     private var socket: Socket? = null
 
-    fun connect(deviceUuid: String, siteCode: String, appBuildVersion: String) {
+    fun connect(deviceUuid: String, deviceSecret: String, siteCode: String, appBuildVersion: String) {
         val options = IO.Options.builder()
+            // Dikirim di handshake (bukan di device:hello) supaya gateway
+            // menolak koneksi palsu sebelum handler apa pun sempat jalan.
+            .setAuth(mapOf("deviceUuid" to deviceUuid, "deviceSecret" to deviceSecret))
             .setTransports(arrayOf("websocket"))
             .setReconnection(true)
             .setReconnectionDelay(2000)
@@ -55,6 +65,24 @@ class GatewaySocketClient(
         sock.on(Socket.EVENT_DISCONNECT) {
             Log.w(TAG, "disconnected")
             listener.onDisconnected()
+        }
+
+        // Penolakan middleware gateway datang sebagai CONNECT_ERROR berisi
+        // JSONObject {message, data: {code}}; socket.io-client TIDAK menyambung
+        // ulang sendiri setelah itu. Error transport (bukan JSONObject) tetap
+        // ditangani mekanisme reconnection bawaan.
+        sock.on(Socket.EVENT_CONNECT_ERROR) { args ->
+            val error = args.firstOrNull() as? JSONObject
+            if (error == null) {
+                Log.w(TAG, "connect error transport: ${args.firstOrNull()}")
+                return@on
+            }
+            val code = error.optJSONObject("data")?.optString("code").orEmpty()
+            Log.w(TAG, "handshake ditolak gateway, code=$code")
+            listener.onAuthFailed(
+                error.optString("message", "Ditolak server"),
+                code == AUTH_CODE_INVALID_CREDENTIALS || code == AUTH_CODE_REENROLL_REQUIRED,
+            )
         }
 
         sock.on("device:accepted") { args ->
@@ -131,5 +159,9 @@ class GatewaySocketClient(
 
     companion object {
         private const val TAG = "GatewaySocketClient"
+
+        // Harus sama dengan DeviceAuthErrorCode di realtime-gateway/start/socket.ts.
+        private const val AUTH_CODE_INVALID_CREDENTIALS = "invalid_credentials"
+        private const val AUTH_CODE_REENROLL_REQUIRED = "reenroll_required"
     }
 }

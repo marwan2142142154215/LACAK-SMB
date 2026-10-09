@@ -25,6 +25,7 @@ import com.lacaksmb.tracker.R
 import com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver
 import com.lacaksmb.tracker.data.DeviceIdentityStore
 import com.lacaksmb.tracker.data.DeviceLockStore
+import com.lacaksmb.tracker.network.DeviceEnrollmentApi
 import com.lacaksmb.tracker.ui.LockActivity
 import com.lacaksmb.tracker.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -82,6 +83,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(serviceJob)
     private var heartbeatJob: Job? = null
+    private var gatewaySessionJob: Job? = null
 
     // Lokasi GPS terbaru dari LocationManager. null sampai perangkat pertama
     // kali melaporkan posisi (atau sampai isi sendiri dari last-known saat
@@ -223,13 +225,11 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
                 return@launch
             }
 
-            val client = GatewaySocketClient(snapshot.gatewayUrl, this@TrackerForegroundService)
-            socketClient = client
-            client.connect(
-                deviceUuid = snapshot.deviceUuid,
-                siteCode = snapshot.siteCode,
-                appBuildVersion = BuildConfig.VERSION_NAME,
-            )
+            // onStartCommand juga dipanggil ulang oleh LockDefenseReceiver;
+            // jangan membuka sesi/klaim kedua kalau yang lama masih berjalan.
+            if (socketClient == null && gatewaySessionJob?.isActive != true) {
+                startGatewaySession(initialDelayMs = 0L)
+            }
 
             // Terapkan ulang status kunci kalau device sedang dikunci admin —
             // berlaku setelah reboot / service di-restart (mis. user mencoba
@@ -245,7 +245,44 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         return START_STICKY
     }
 
+    /**
+     * Pastikan device punya rahasia (klaim ke backend kalau belum), lalu
+     * sambung ke gateway. Klaim diulang berkala karena admin bisa saja baru
+     * mendaftarkan device_uuid ini SETELAH app selesai disiapkan, atau baru
+     * menekan "daftar ulang" untuk device lama.
+     */
+    private fun startGatewaySession(initialDelayMs: Long) {
+        gatewaySessionJob?.cancel()
+        gatewaySessionJob = serviceScope.launch {
+            delay(initialDelayMs)
+            var snapshot = identityStore.snapshot()
+            while (snapshot.deviceSecret.isBlank()) {
+                val claimResult = DeviceEnrollmentApi.claim(snapshot.deviceUuid)
+                val claimedSecret = claimResult.getOrNull()
+                if (claimedSecret != null) {
+                    identityStore.saveDeviceSecret(claimedSecret)
+                } else {
+                    val reason = claimResult.exceptionOrNull()?.message ?: "Device belum didaftarkan admin"
+                    Log.w(TAG, "klaim enrollment belum berhasil: $reason")
+                    updateNotification("Menunggu pendaftaran oleh admin: $reason")
+                    delay(ENROLLMENT_RETRY_MS)
+                }
+                snapshot = identityStore.snapshot()
+            }
+
+            val client = GatewaySocketClient(snapshot.gatewayUrl, this@TrackerForegroundService)
+            socketClient = client
+            client.connect(
+                deviceUuid = snapshot.deviceUuid,
+                deviceSecret = snapshot.deviceSecret,
+                siteCode = snapshot.siteCode,
+                appBuildVersion = BuildConfig.VERSION_NAME,
+            )
+        }
+    }
+
     override fun onDestroy() {
+        gatewaySessionJob?.cancel()
         heartbeatJob?.cancel()
         lockWatchdogHandler.removeCallbacks(lockWatchdogRunnable)
         crossingFlushHandler.removeCallbacks(crossingFlushRunnable)
@@ -258,8 +295,9 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         if (lockDefenseRegistered) {
             try {
                 unregisterReceiver(lockDefenseReceiver)
-            } catch (_: IllegalArgumentException) {
-                // Sudah ter-unregister — aman diabaikan.
+            } catch (e: IllegalArgumentException) {
+                // Sudah ter-unregister — tidak fatal, cukup dicatat.
+                Log.w(TAG, "lockDefenseReceiver sudah tidak terdaftar: ${e.message}")
             }
             lockDefenseRegistered = false
         }
@@ -283,7 +321,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         startHeartbeat()
         startGpsUpdates()
         serviceScope.launch {
-            bleAdvertiser.start(identityStore.snapshot().deviceUuid)
+            bleAdvertiser.start(BeaconUuid.fromDeviceUuid(identityStore.snapshot().deviceUuid))
         }
         // Mode BLE geofence: server cuma mengirim bleAnchorUuid kalau site ini
         // punya aturan dengan anchor device dikonfigurasi (lihat socket.ts
@@ -312,6 +350,27 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         // Device ditolak server (site code tidak cocok / consent tidak berlaku
         // / dinonaktifkan) — hentikan service, jangan terus mencoba diam-diam.
         stopSelf()
+    }
+
+    override fun onAuthFailed(message: String, isCredentialProblem: Boolean) {
+        heartbeatJob?.cancel()
+        socketClient?.disconnect()
+        socketClient = null
+
+        if (!isCredentialProblem) {
+            updateNotification("Server sedang bermasalah, mencoba lagi...")
+            startGatewaySession(initialDelayMs = AUTH_RETRY_MS)
+            return
+        }
+
+        // Rahasia lokal sudah tidak diakui server (device lama sebelum
+        // pembaruan keamanan, atau admin menekan "daftar ulang") — buang dan
+        // klaim ulang; klaim baru berhasil setelah admin membuka pendaftaran.
+        updateNotification("Perlu didaftarkan ulang: $message")
+        serviceScope.launch {
+            identityStore.clearDeviceSecret()
+            startGatewaySession(initialDelayMs = 0L)
+        }
     }
 
     override fun onCommandPush(commandId: Int?, commandType: String, reasonNote: String?) {
@@ -437,8 +496,9 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         try {
             val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
             lm.removeUpdates(legacyLocationListener)
-        } catch (_: SecurityException) {
-            // Service sudah berhenti dan izin mungkin sudah tidak relevan — abaikan.
+        } catch (e: SecurityException) {
+            // Service sudah berhenti dan izin mungkin sudah dicabut — tidak fatal, cukup dicatat.
+            Log.w(TAG, "removeUpdates lokasi gagal: ${e.message}")
         }
     }
 
@@ -547,6 +607,12 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
 
         private const val TAG = "TrackerLock"
         private const val LOCK_WATCHDOG_MS = 5_000L
+
+        /** Jeda klaim ulang saat device belum didaftarkan/dibuka pendaftarannya oleh admin. */
+        private const val ENROLLMENT_RETRY_MS = 30_000L
+
+        /** Jeda sambung ulang setelah gateway gagal memproses autentikasi (gangguan server). */
+        private const val AUTH_RETRY_MS = 15_000L
 
         /** Aksi start service dari LockDefenseReceiver: pasang ulang LockActivity. */
         const val ACTION_ENSURE_LOCKED = "com.lacaksmb.tracker.action.ENSURE_LOCKED"

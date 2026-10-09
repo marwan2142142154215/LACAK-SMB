@@ -15,8 +15,9 @@ import kotlinx.coroutines.flow.update
 data class BleSighting(val deviceUuid: String, val rssi: Int, val lastSeenAt: Long)
 
 /**
- * Men-scan beacon BLE yang dipancarkan tracker app (Service UUID =
- * device_uuid device itu). RSSI dipakai sebagai indikator jarak relatif
+ * Men-scan beacon BLE yang dipancarkan tracker app (Service UUID = UUID
+ * beacon turunan device_uuid, lihat BeaconUuid; field deviceUuid pada
+ * BleSighting berisi UUID beacon itu). RSSI dipakai sebagai indikator jarak relatif
  * "dingin/panas" saat admin mencari device secara fisik — bukan GPS,
  * cocok untuk dalam ruangan/gedung dimana GPS tidak presisi.
  */
@@ -79,8 +80,9 @@ class BleRadarScanner(private val context: Context) {
         if (!isScanning) return
         try {
             scanner?.stopScan(callback)
-        } catch (_: Exception) {
-            // Adapter mungkin sudah mati — aman diabaikan.
+        } catch (e: Exception) {
+            // Adapter mungkin sudah mati — aman diabaikan, cukup dicatat.
+            Log.w(TAG, "stopScan gagal: ${e.message}")
         }
         isScanning = false
         scanner = null

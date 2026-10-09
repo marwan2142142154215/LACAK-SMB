@@ -31,6 +31,15 @@ class Device extends Model
         'updated_by',
     ];
 
+    /**
+     * secret_hash sengaja tidak fillable dan disembunyikan dari serialisasi:
+     * hanya DeviceEnrollmentController yang boleh mengisinya, dan hash ini
+     * tidak boleh pernah keluar lewat API mana pun.
+     */
+    protected $hidden = [
+        'secret_hash',
+    ];
+
     protected $casts = [
         'last_seen_at' => 'datetime',
         'enrolled_at' => 'datetime',

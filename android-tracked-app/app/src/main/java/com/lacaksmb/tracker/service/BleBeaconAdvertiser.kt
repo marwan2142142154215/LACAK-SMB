@@ -13,8 +13,10 @@ import android.util.Log
 import java.util.UUID
 
 /**
- * Memancarkan beacon BLE berisi device_uuid device ini sebagai 128-bit
- * Service UUID — "alat utama pelacak" jarak dekat: APK master cukup
+ * Memancarkan beacon BLE berisi UUID beacon device ini (turunan device_uuid,
+ * lihat BeaconUuid — BUKAN device_uuid mentah, karena device_uuid adalah
+ * identitas login ke gateway) sebagai 128-bit Service UUID — "alat utama
+ * pelacak" jarak dekat: APK master cukup
  * men-scan Service UUID yang cocok dan membaca RSSI untuk estimasi
  * jarak/proximity (makin kuat sinyal = makin dekat), berguna saat GPS
  * tidak presisi (dalam ruangan/gedung). GPS tetap dipakai untuk posisi
@@ -39,8 +41,8 @@ class BleBeaconAdvertiser(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun start(deviceUuid: String) {
-        if (isAdvertising || deviceUuid.isBlank()) return
+    fun start(beaconUuid: String) {
+        if (isAdvertising || beaconUuid.isBlank()) return
 
         val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         val adapter: BluetoothAdapter? = bluetoothManager?.adapter
@@ -64,10 +66,10 @@ class BleBeaconAdvertiser(private val context: Context) {
         val data = try {
             AdvertiseData.Builder()
                 .setIncludeDeviceName(false)
-                .addServiceUuid(ParcelUuid(UUID.fromString(deviceUuid)))
+                .addServiceUuid(ParcelUuid(UUID.fromString(beaconUuid)))
                 .build()
         } catch (_: IllegalArgumentException) {
-            Log.w(TAG, "device_uuid bukan UUID valid, beacon tidak dipancarkan")
+            Log.w(TAG, "UUID beacon tidak valid, beacon tidak dipancarkan")
             return
         }
 
@@ -85,8 +87,9 @@ class BleBeaconAdvertiser(private val context: Context) {
         if (!isAdvertising) return
         try {
             advertiser?.stopAdvertising(callback)
-        } catch (_: Exception) {
-            // Adapter mungkin sudah mati — aman diabaikan.
+        } catch (e: Exception) {
+            // Adapter mungkin sudah mati — state tetap direset di bawah, cukup dicatat.
+            Log.w(TAG, "stopAdvertising gagal: ${e.message}")
         }
         isAdvertising = false
         advertiser = null

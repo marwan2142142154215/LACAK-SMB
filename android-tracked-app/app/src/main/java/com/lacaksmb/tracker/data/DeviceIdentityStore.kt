@@ -27,6 +27,12 @@ class DeviceIdentityStore(private val context: Context) {
         val SITE_CODE = stringPreferencesKey("site_code")
         val GATEWAY_URL = stringPreferencesKey("gateway_url")
         val IS_ENROLLED = booleanPreferencesKey("is_enrolled")
+
+        // Rahasia autentikasi ke gateway (diterbitkan backend sekali saat
+        // klaim enrollment). DataStore ini ada di penyimpanan privat app;
+        // EncryptedSharedPreferences tidak dipakai karena belum jadi
+        // dependensi proyek.
+        val DEVICE_SECRET = stringPreferencesKey("device_secret")
     }
 
     val deviceUuidFlow: Flow<String> = context.dataStore.data.map { prefs ->
@@ -59,6 +65,15 @@ class DeviceIdentityStore(private val context: Context) {
         }
     }
 
+    suspend fun saveDeviceSecret(deviceSecret: String) {
+        context.dataStore.edit { prefs -> prefs[Keys.DEVICE_SECRET] = deviceSecret }
+    }
+
+    /** Dipanggil saat gateway menolak rahasia ini, supaya device mengklaim ulang. */
+    suspend fun clearDeviceSecret() {
+        context.dataStore.edit { prefs -> prefs.remove(Keys.DEVICE_SECRET) }
+    }
+
     suspend fun snapshot(): DeviceIdentitySnapshot {
         val prefs = context.dataStore.data.first()
         return DeviceIdentitySnapshot(
@@ -66,6 +81,7 @@ class DeviceIdentityStore(private val context: Context) {
             siteCode = prefs[Keys.SITE_CODE] ?: "",
             gatewayUrl = prefs[Keys.GATEWAY_URL] ?: DEFAULT_GATEWAY_URL,
             isEnrolled = prefs[Keys.IS_ENROLLED] ?: false,
+            deviceSecret = prefs[Keys.DEVICE_SECRET] ?: "",
         )
     }
 
@@ -80,4 +96,10 @@ data class DeviceIdentitySnapshot(
     val siteCode: String,
     val gatewayUrl: String,
     val isEnrolled: Boolean,
-)
+    val deviceSecret: String,
+) {
+    // Jangan sampai rahasia ikut tercetak kalau snapshot ini pernah di-log.
+    override fun toString(): String =
+        "DeviceIdentitySnapshot(deviceUuid=$deviceUuid, siteCode=$siteCode, gatewayUrl=$gatewayUrl, " +
+            "isEnrolled=$isEnrolled, hasDeviceSecret=${deviceSecret.isNotBlank()})"
+}
