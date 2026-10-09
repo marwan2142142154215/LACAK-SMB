@@ -41,6 +41,11 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::post('/device-otp/verify', [DeviceOtpController::class, 'verify'])
         ->middleware('throttle:10,1');
 
+    // Pairing device_secret (Vuln 5 security review) -- sama polanya dengan
+    // device-otp/verify di atas, dipanggil langsung oleh APK (bukan Sanctum).
+    Route::post('/device-otp/pair', [DeviceOtpController::class, 'pair'])
+        ->middleware('throttle:10,1');
+
     // Download via signed URL (standar 6.3) — tanpa auth:sanctum karena
     // tautannya sendiri sudah berumur pendek & terenkripsi tanda tangannya.
     Route::get('/consent-documents/{consentDocument}/download', [ConsentDocumentController::class, 'download'])
@@ -69,6 +74,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::get('/devices/{device}/commands', [DeviceCommandController::class, 'index']);
         Route::post('/devices/{device}/commands', [DeviceCommandController::class, 'store']);
         Route::post('/devices/{device}/otp', [DeviceOtpController::class, 'generate']);
+        Route::post('/devices/{device}/pairing-code', [DeviceOtpController::class, 'generatePairingCode']);
         Route::get('/devices/{device}/violations', [ViolationLogController::class, 'index']);
 
         Route::apiResource('geofence-rules', GeofenceRuleController::class)->except(['show']);

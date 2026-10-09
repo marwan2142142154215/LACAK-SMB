@@ -30,7 +30,7 @@ class GatewaySocketClient(
 
     private var socket: Socket? = null
 
-    fun connect(deviceUuid: String, siteCode: String, appBuildVersion: String) {
+    fun connect(deviceUuid: String, siteCode: String, appBuildVersion: String, deviceSecret: String = "") {
         val options = IO.Options.builder()
             .setTransports(arrayOf("websocket"))
             .setReconnection(true)
@@ -48,6 +48,7 @@ class GatewaySocketClient(
                 put("deviceUuid", deviceUuid)
                 put("siteCode", siteCode)
                 put("appBuildVersion", appBuildVersion)
+                if (deviceSecret.isNotBlank()) put("deviceSecret", deviceSecret)
             }
             sock.emit("device:hello", hello)
         }

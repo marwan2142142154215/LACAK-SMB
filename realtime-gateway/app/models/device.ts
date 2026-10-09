@@ -25,6 +25,11 @@ export default class Device extends BaseModel {
   @column()
   declare deviceUuid: string
 
+  // Nullable -- device yang belum pernah di-pairing ulang lewat alur
+  // device-otp/pair (lihat socket.ts device:hello) belum punya ini.
+  @column()
+  declare deviceSecret: string | null
+
   @column()
   declare androidVersion: string
 

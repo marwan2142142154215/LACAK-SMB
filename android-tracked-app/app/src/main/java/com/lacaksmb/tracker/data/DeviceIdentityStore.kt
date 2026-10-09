@@ -27,10 +27,20 @@ class DeviceIdentityStore(private val context: Context) {
         val SITE_CODE = stringPreferencesKey("site_code")
         val GATEWAY_URL = stringPreferencesKey("gateway_url")
         val IS_ENROLLED = booleanPreferencesKey("is_enrolled")
+        // Kosong sampai admin pasangkan device ini lewat kode pairing
+        // (lihat DeviceOtpApi.pair) -- device TETAP bisa connect ke gateway
+        // tanpa ini (mode lama, backward-compatible), tapi device:hello
+        // tanpa device_secret tidak dipercaya kalau device ini SUDAH pernah
+        // dipasangkan (server yang ingat, bukan state lokal ini).
+        val DEVICE_SECRET = stringPreferencesKey("device_secret")
     }
 
     val deviceUuidFlow: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[Keys.DEVICE_UUID] ?: ""
+    }
+
+    val deviceSecretFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[Keys.DEVICE_SECRET] ?: ""
     }
 
     val siteCodeFlow: Flow<String> = context.dataStore.data.map { prefs -> prefs[Keys.SITE_CODE] ?: "" }
@@ -59,6 +69,10 @@ class DeviceIdentityStore(private val context: Context) {
         }
     }
 
+    suspend fun saveDeviceSecret(secret: String) {
+        context.dataStore.edit { prefs -> prefs[Keys.DEVICE_SECRET] = secret }
+    }
+
     suspend fun snapshot(): DeviceIdentitySnapshot {
         val prefs = context.dataStore.data.first()
         return DeviceIdentitySnapshot(
@@ -66,6 +80,7 @@ class DeviceIdentityStore(private val context: Context) {
             siteCode = prefs[Keys.SITE_CODE] ?: "",
             gatewayUrl = prefs[Keys.GATEWAY_URL] ?: DEFAULT_GATEWAY_URL,
             isEnrolled = prefs[Keys.IS_ENROLLED] ?: false,
+            deviceSecret = prefs[Keys.DEVICE_SECRET] ?: "",
         )
     }
 
@@ -80,4 +95,5 @@ data class DeviceIdentitySnapshot(
     val siteCode: String,
     val gatewayUrl: String,
     val isEnrolled: Boolean,
+    val deviceSecret: String = "",
 )

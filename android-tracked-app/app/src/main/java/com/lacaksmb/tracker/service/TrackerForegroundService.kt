@@ -229,6 +229,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
                 deviceUuid = snapshot.deviceUuid,
                 siteCode = snapshot.siteCode,
                 appBuildVersion = BuildConfig.VERSION_NAME,
+                deviceSecret = snapshot.deviceSecret,
             )
 
             // Terapkan ulang status kunci kalau device sedang dikunci admin —

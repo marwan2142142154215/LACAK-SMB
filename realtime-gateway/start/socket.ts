@@ -17,6 +17,7 @@ type DeviceHelloPayload = {
   siteCode: string
   appBuildVersion?: string
   checksumSha256?: string
+  deviceSecret?: string
 }
 
 type DeviceLocationPayload = {
@@ -86,6 +87,26 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
         // Mismatch -> kemungkinan APK hasil tempel/clone dari site lain.
         if (payload.siteCode !== organization.uniqueSiteCode) {
           socket.emit('device:rejected', { message: PIRACY_WARNING })
+          return socket.disconnect(true)
+        }
+
+        // Vuln 5 (security review): deviceUuid+siteCode TIDAK rahasia --
+        // deviceUuid disiarkan lewat BLE terus-menerus, siteCode tertanam di
+        // setiap APK site itu. Siapa pun yang tahu dua nilai itu sebelumnya
+        // bisa menyamar sebagai device asli (device:hello palsu). device_secret
+        // didapat device lewat pairing sekali (lihat DeviceOtpController::pair,
+        // diketik admin langsung ke device fisik dari kode OTP 6-digit) dan
+        // TIDAK PERNAH ikut di APK maupun disiarkan. Kalau device ini SUDAH
+        // pernah dipasangkan (device.deviceSecret terisi), secret WAJIB
+        // cocok. Device yang belum pernah dipasangkan (device_secret masih
+        // null -- APK lama sebelum fitur ini) tetap diterima seperti biasa
+        // supaya device yang sedang aktif tidak mendadak terputus; begitu
+        // dipasangkan ulang sekali, mode lama ini tidak berlaku lagi untuknya.
+        if (device.deviceSecret && payload.deviceSecret !== device.deviceSecret) {
+          logger.warn('device:hello ditolak -- device_secret tidak cocok (kemungkinan percobaan penyamaran)', {
+            deviceId: device.id,
+          })
+          socket.emit('device:rejected', { message: 'Identitas device tidak valid, pasangkan ulang lewat admin' })
           return socket.disconnect(true)
         }
 

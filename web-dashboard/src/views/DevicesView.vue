@@ -1,5 +1,5 @@
 <script setup>
-import { KeyRound, Lock, MapPin, Pencil, PlayCircle, StopCircle, Trash2, Unlock } from '@lucide/vue'
+import { KeyRound, Lock, MapPin, Pencil, PlayCircle, ShieldCheck, StopCircle, Trash2, Unlock } from '@lucide/vue'
 import dayjs from 'dayjs'
 import { onMounted, ref } from 'vue'
 
@@ -15,6 +15,7 @@ const devices = ref([])
 const loading = ref(true)
 const actingDeviceId = ref(null)
 const otpResult = ref(null)
+const pairingResult = ref(null)
 const toast = useToast()
 const renameTarget = ref(null)
 const renameValue = ref('')
@@ -59,6 +60,18 @@ async function generateOtp(device) {
         otpResult.value = { device, ...response.data.data }
     } catch (err) {
         toast.error('Gagal membuat OTP', err.response?.data?.message)
+    } finally {
+        actingDeviceId.value = null
+    }
+}
+
+async function generatePairingCode(device) {
+    actingDeviceId.value = device.id
+    try {
+        const response = await api.post(`/devices/${device.id}/pairing-code`)
+        pairingResult.value = { device, ...response.data.data }
+    } catch (err) {
+        toast.error('Gagal membuat kode pairing', err.response?.data?.message)
     } finally {
         actingDeviceId.value = null
     }
@@ -189,6 +202,9 @@ onMounted(loadDevices)
                                         <BaseButton size="sm" variant="outline" :disabled="actingDeviceId === d.id" @click="generateOtp(d)">
                                             <KeyRound class="size-3.5" /> Buat OTP
                                         </BaseButton>
+                                        <BaseButton size="sm" variant="outline" :disabled="actingDeviceId === d.id" @click="generatePairingCode(d)">
+                                            <ShieldCheck class="size-3.5" /> Kode Pairing
+                                        </BaseButton>
                                         <BaseButton size="sm" variant="ghost" @click="removeDevice(d)">
                                             <Trash2 class="size-3.5" /> Hapus
                                         </BaseButton>
@@ -230,6 +246,22 @@ onMounted(loadDevices)
                     muka, jangan dikirim lewat chat yang tersimpan permanen.
                 </p>
                 <BaseButton class="mt-5 w-full" variant="outline" @click="otpResult = null">Tutup</BaseButton>
+            </div>
+        </div>
+
+        <div
+            v-if="pairingResult"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            @click.self="pairingResult = null"
+        >
+            <div class="w-full max-w-sm rounded-2xl border border-base-800 bg-base-900 p-6 text-center shadow-2xl">
+                <p class="text-sm text-base-400">Kode pairing untuk {{ pairingResult.device.device_name }}</p>
+                <p class="mt-3 font-mono text-4xl font-bold tracking-widest text-accent-400">{{ pairingResult.code }}</p>
+                <p class="mt-3 text-xs text-base-500">
+                    Berlaku sampai {{ dayjs(pairingResult.expires_at).format('HH:mm:ss') }} — masukkan kode ini di layar enrollment APK
+                    pada device fisiknya langsung (bukan lewat chat) untuk mengikat identitas device supaya tidak bisa dipalsukan.
+                </p>
+                <BaseButton class="mt-5 w-full" variant="outline" @click="pairingResult = null">Tutup</BaseButton>
             </div>
         </div>
     </div>

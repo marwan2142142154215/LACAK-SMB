@@ -40,6 +40,7 @@ import com.lacaksmb.tracker.BuildConfig
 import com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver
 import com.lacaksmb.tracker.data.DeviceIdentityStore
 import com.lacaksmb.tracker.data.DeviceLockStore
+import com.lacaksmb.tracker.network.DeviceOtpApi
 import com.lacaksmb.tracker.service.TrackerForegroundService
 import com.lacaksmb.tracker.ui.theme.LacakTrackerTheme
 import kotlinx.coroutines.launch
@@ -66,6 +67,8 @@ class MainActivity : ComponentActivity() {
     // battery optimization) lalu kembali.
     private var pendingStep by mutableStateOf(EnrollmentStep.RUNTIME_PERMISSIONS)
     private var statusText by mutableStateOf("")
+    private var pairingError by mutableStateOf("")
+    private var pairingInProgress by mutableStateOf(false)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -118,9 +121,25 @@ class MainActivity : ComponentActivity() {
                         step = pendingStep,
                         statusText = statusText,
                         canRetry = canRetry,
+                        pairingError = pairingError,
+                        pairingInProgress = pairingInProgress,
                         onBegin = { runStep(EnrollmentStep.RUNTIME_PERMISSIONS) },
                         onRetry = { runStep(pendingStep) },
                         onAlreadyEnrolled = { TrackerForegroundService.start(applicationContext) },
+                        onPair = { code -> pairDevice(code) { advanceFrom(EnrollmentStep.PAIRING) } },
+                        onSkipPairing = { advanceFrom(EnrollmentStep.PAIRING) },
+                        onPairAlreadyEnrolled = { code, onPaired ->
+                            pairDevice(code) {
+                                onPaired()
+                                // Stop lalu start lagi (bukan start() saja) -- socket client
+                                // yang sedang nyala sudah terlanjur kirim device:hello tanpa
+                                // secret saat service pertama kali dibuat; restart penuh
+                                // supaya onCreate() baca ulang DeviceIdentityStore yang sudah
+                                // berisi secret baru dan device:hello berikutnya membawanya.
+                                stopService(Intent(applicationContext, TrackerForegroundService::class.java))
+                                TrackerForegroundService.start(applicationContext)
+                            }
+                        },
                     )
                 }
             }
@@ -251,9 +270,42 @@ class MainActivity : ComponentActivity() {
                 startActivity(intent)
             }
 
+            EnrollmentStep.PAIRING -> {
+                statusText = "Minta admin buat kode pairing untuk device ini, lalu masukkan di bawah (opsional)."
+            }
+
             EnrollmentStep.STARTING -> startMonitoring()
 
             EnrollmentStep.ACTIVE -> Unit
+        }
+    }
+
+    /**
+     * Tukar kode pairing 6-digit (dibuat admin di dashboard, lihat
+     * DeviceOtpController::generatePairingCode) jadi device_secret --
+     * mengikat identitas device ini supaya tidak bisa dipalsukan cuma dari
+     * device_uuid+site_code yang tidak rahasia (lihat Vuln 5 security
+     * review). Langkah ini OPSIONAL (bisa dilewati) supaya enrollment tidak
+     * terhenti kalau admin belum sempat generate kode -- device tetap bisa
+     * dipantau tanpa ini, cuma tanpa perlindungan identitas tambahan.
+     * onDone dipanggil setelah berhasil -- beda tindakan tergantung dipanggil
+     * dari alur enrollment pertama kali (lanjut ke STARTING) atau dari device
+     * yang sudah lama aktif dipasangkan belakangan (cukup refresh status +
+     * restart service biar koneksi gateway berikutnya bawa secret baru).
+     */
+    private fun pairDevice(code: String, onDone: () -> Unit) {
+        pairingError = ""
+        pairingInProgress = true
+        lifecycleScope.launch {
+            val snapshot = identityStore.snapshot()
+            val result = DeviceOtpApi.pair(snapshot.deviceUuid, code)
+            pairingInProgress = false
+            result.onSuccess { secret ->
+                identityStore.saveDeviceSecret(secret)
+                onDone()
+            }.onFailure { error ->
+                pairingError = error.message ?: "Pairing gagal, coba lagi"
+            }
         }
     }
 
@@ -294,6 +346,7 @@ private enum class EnrollmentStep {
     DEVICE_ADMIN,
     BATTERY_EXEMPTION,
     DISPLAY_OVER_OTHER_APPS,
+    PAIRING,
     STARTING,
     ACTIVE,
     ;
@@ -307,12 +360,18 @@ private fun EnrollmentScreen(
     step: EnrollmentStep,
     statusText: String,
     canRetry: Boolean,
+    pairingError: String,
+    pairingInProgress: Boolean,
     onBegin: () -> Unit,
     onRetry: () -> Unit,
     onAlreadyEnrolled: () -> Unit,
+    onPair: (String) -> Unit,
+    onSkipPairing: () -> Unit,
+    onPairAlreadyEnrolled: (String, () -> Unit) -> Unit,
 ) {
     var deviceUuid by remember { mutableStateOf("") }
     var alreadyEnrolled by remember { mutableStateOf(false) }
+    var alreadyPaired by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     DisposableEffect(Unit) {
@@ -320,6 +379,7 @@ private fun EnrollmentScreen(
             deviceUuid = identityStore.ensureDeviceUuid()
             val snapshot = identityStore.snapshot()
             alreadyEnrolled = snapshot.isEnrolled
+            alreadyPaired = snapshot.deviceSecret.isNotBlank()
             // Jaga-jaga: kalau device sudah pernah di-enroll tapi service
             // entah kenapa tidak jalan (mis. sempat di-force-stop manual),
             // pastikan tetap/kembali jalan tiap app dibuka.
@@ -347,12 +407,67 @@ private fun EnrollmentScreen(
 
         if (alreadyEnrolled && step == EnrollmentStep.RUNTIME_PERMISSIONS) {
             Text("Device ini sudah terdaftar dan sedang dipantau.", style = MaterialTheme.typography.bodyLarge)
+
+            if (alreadyPaired) {
+                Text("Identitas device sudah terpasangkan (dilindungi dari penyamaran).", style = MaterialTheme.typography.bodySmall)
+            } else {
+                var reCode by remember { mutableStateOf("") }
+                Text(
+                    "Keamanan tambahan: minta admin buat kode pairing untuk device ini di dashboard, lalu masukkan di sini.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = reCode,
+                    onValueChange = { input -> reCode = input.filter { it.isDigit() }.take(6) },
+                    label = { Text("Kode pairing 6 digit") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !pairingInProgress,
+                )
+                if (pairingError.isNotBlank()) {
+                    Text(pairingError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                androidx.compose.material3.Button(
+                    onClick = { onPairAlreadyEnrolled(reCode) { alreadyPaired = true } },
+                    enabled = reCode.length == 6 && !pairingInProgress,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (pairingInProgress) "Memasangkan..." else "Pasangkan")
+                }
+            }
         } else {
             StepRow("Lokasi, Bluetooth & notifikasi", step >= EnrollmentStep.BACKGROUND_LOCATION, step == EnrollmentStep.RUNTIME_PERMISSIONS)
             StepRow("Izin lokasi \"selalu\"", step >= EnrollmentStep.DEVICE_ADMIN, step == EnrollmentStep.BACKGROUND_LOCATION)
             StepRow("Kemampuan lock jarak jauh", step >= EnrollmentStep.BATTERY_EXEMPTION, step == EnrollmentStep.DEVICE_ADMIN)
             StepRow("Pengecualian baterai", step >= EnrollmentStep.DISPLAY_OVER_OTHER_APPS, step == EnrollmentStep.BATTERY_EXEMPTION)
-            StepRow("Lapisan peringatan kunci (tampil di atas app lain)", step >= EnrollmentStep.STARTING, step == EnrollmentStep.DISPLAY_OVER_OTHER_APPS)
+            StepRow("Lapisan peringatan kunci (tampil di atas app lain)", step >= EnrollmentStep.PAIRING, step == EnrollmentStep.DISPLAY_OVER_OTHER_APPS)
+
+            if (step == EnrollmentStep.PAIRING) {
+                var code by remember { mutableStateOf("") }
+                Text(
+                    "Keamanan tambahan (opsional): minta admin buat kode pairing 6 digit untuk device ini di dashboard, lalu masukkan di sini.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = code,
+                    onValueChange = { input -> code = input.filter { it.isDigit() }.take(6) },
+                    label = { Text("Kode pairing 6 digit") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !pairingInProgress,
+                )
+                if (pairingError.isNotBlank()) {
+                    Text(pairingError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                androidx.compose.material3.Button(
+                    onClick = { onPair(code) },
+                    enabled = code.length == 6 && !pairingInProgress,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (pairingInProgress) "Memasangkan..." else "Pasangkan")
+                }
+                androidx.compose.material3.OutlinedButton(onClick = onSkipPairing, modifier = Modifier.fillMaxWidth(), enabled = !pairingInProgress) {
+                    Text("Lewati untuk sekarang")
+                }
+            }
 
             if (statusText.isNotBlank()) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
