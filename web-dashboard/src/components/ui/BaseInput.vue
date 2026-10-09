@@ -8,6 +8,8 @@ defineProps({
     required: { type: Boolean, default: false },
     disabled: { type: Boolean, default: false },
     autocomplete: { type: String, default: 'off' },
+    maxlength: { type: [String, Number], default: null },
+    inputmode: { type: String, default: null },
 })
 
 defineEmits(['update:modelValue'])
@@ -25,6 +27,8 @@ defineEmits(['update:modelValue'])
             :placeholder="placeholder"
             :disabled="disabled"
             :autocomplete="autocomplete"
+            :maxlength="maxlength"
+            :inputmode="inputmode"
             class="w-full rounded-lg border bg-base-850 px-3.5 py-2.5 text-sm text-base-50 placeholder-base-500 outline-none transition-colors focus:border-accent-500 disabled:cursor-not-allowed disabled:opacity-50"
             :class="error ? 'border-danger-500' : 'border-base-700'"
             @input="$emit('update:modelValue', $event.target.value)"

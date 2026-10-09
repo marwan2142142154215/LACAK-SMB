@@ -1,6 +1,6 @@
 <script setup>
 import { KeyRound, ShieldCheck } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -22,6 +22,13 @@ const challengeToken = ref(null)
 const qrCodeSvg = ref(null)
 const secretManualEntry = ref(null)
 const recoveryCodes = ref(null)
+
+// Kode 2FA cuma boleh 6 digit angka -- maxlength di <input> saja tidak cukup
+// (itu cuma batasi panjang, tidak nyaring karakter non-angka kalau di-paste).
+watch(code, (value) => {
+    const digitsOnly = value.replace(/\D/g, '').slice(0, 6)
+    if (digitsOnly !== value) code.value = digitsOnly
+})
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -132,7 +139,7 @@ function finishAfterRecoveryCodes() {
                     </div>
                     <p class="text-center font-mono text-xs break-all text-base-500">{{ secretManualEntry }}</p>
                     <form class="space-y-4" @submit.prevent="handleSetupConfirm">
-                        <BaseInput v-model="code" label="Kode 6 digit" placeholder="000000" required />
+                        <BaseInput v-model="code" label="Kode 6 digit" placeholder="000000" maxlength="6" inputmode="numeric" required />
                         <p v-if="errorMessage" class="text-sm text-danger-400">{{ errorMessage }}</p>
                         <BaseButton type="submit" class="w-full" :loading="loading">Konfirmasi & Aktifkan</BaseButton>
                     </form>
@@ -157,7 +164,7 @@ function finishAfterRecoveryCodes() {
                         <p class="text-sm font-medium text-base-100">Verifikasi 2FA</p>
                         <p class="mt-1 text-xs text-base-400">Masukkan kode dari aplikasi authenticator Anda</p>
                     </div>
-                    <BaseInput v-model="code" label="Kode 6 digit" placeholder="000000" required />
+                    <BaseInput v-model="code" label="Kode 6 digit" placeholder="000000" maxlength="6" inputmode="numeric" required />
                     <p v-if="errorMessage" class="text-sm text-danger-400">{{ errorMessage }}</p>
                     <BaseButton type="submit" class="w-full" :loading="loading">Verifikasi</BaseButton>
                 </form>
