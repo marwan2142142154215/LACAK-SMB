@@ -42,7 +42,9 @@ android {
         buildConfigField(
             "String",
             "SITE_NAME",
-            "\"${project.findProperty("siteName") ?: "Development"}\"",
+            // Nama site bebas diketik admin -- escape \ dan " supaya tidak bisa
+            // keluar dari string literal Java di BuildConfig.java.
+            "\"${((project.findProperty("siteName") as String?) ?: "Development").replace("\\", "\\\\").replace("\"", "\\\"")}\"",
         )
     }
 

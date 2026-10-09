@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class FortuneSmbSuperAdminSeeder extends Seeder
 {
@@ -14,23 +15,33 @@ class FortuneSmbSuperAdminSeeder extends Seeder
      * InitialSuperAdminSeeder: two_factor_confirmed_at null supaya login
      * pertama memaksa enrollment 2FA.
      *
-     * PENTING: ganti password ini lewat endpoint ganti password setelah
-     * login pertama di lingkungan non-local / production.
+     * Password TIDAK ditulis di kode (repo ini publik): diambil dari env
+     * FORTUNESMB_SUPERADMIN_PASSWORD, atau dibuat acak dan dicetak sekali ke konsol. Akun yang sudah ada
+     * TIDAK disentuh -- reseed tidak boleh me-reset password/2FA, karena
+     * itu membuka lagi jendela enrollment 2FA bagi siapa pun yang tahu
+     * password-nya.
      */
     public function run(): void
     {
-        User::updateOrCreate(
+        $password = env('FORTUNESMB_SUPERADMIN_PASSWORD') ?: Str::password(20);
+        $user = User::firstOrCreate(
             ['username' => 'fortunesmb'],
             [
                 'organization_id' => null, // super_admin lintas site
                 'name' => 'Fortune SMB',
                 'email' => 'fortunesmb@lacaksmbbot.com',
-                'password' => Hash::make('fortunesmb1'),
+                'password' => Hash::make($password),
                 'is_active' => true,
                 'two_factor_confirmed_at' => null,
                 'two_factor_secret' => null,
                 'two_factor_recovery_codes' => null,
             ]
-        )->assignRole('super_admin');
+        );
+
+        if ($user->wasRecentlyCreated && ! env('FORTUNESMB_SUPERADMIN_PASSWORD')) {
+            $this->command?->warn("Password awal fortunesmb: {$password} (simpan & ganti setelah login pertama)");
+        }
+
+        $user->assignRole('super_admin');
     }
 }

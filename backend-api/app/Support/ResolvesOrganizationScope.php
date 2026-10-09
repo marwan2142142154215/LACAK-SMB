@@ -2,12 +2,17 @@
 
 namespace App\Support;
 
+use App\Models\TelegramBinding;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Aturan scoping multi-tenant:
- *  - super_admin / telegram_bot_service: lintas site penuh (tidak dibatasi).
+ *  - super_admin: lintas site penuh (tidak dibatasi).
+ *  - telegram_bot_service: terkunci ke site milik chat Telegram yang sedang
+ *    dilayani -- bot wajib mengirim header X-Telegram-Chat-Id, lalu site-nya
+ *    di-resolve DI SINI dari telegram_bindings (aktif). Tanpa header / chat
+ *    tidak terikat = tidak ada akses.
  *  - admin / leader: dibatasi ke site yang DIBERIKAN IZIN eksplisit oleh
  *    super_admin lewat tabel user_site_access (bisa lebih dari satu site,
  *    beda dari organization_id "rumah" yang cuma satu) -- role ini VIEW-ONLY
@@ -16,18 +21,38 @@ use Illuminate\Database\Eloquent\Builder;
  *  - role lain (site_admin, staff_viewer, dst): terkunci ke organization_id
  *    miliknya sendiri saja.
  *
- * telegram_bot_service boleh lintas site karena satu bot token melayani
- * banyak chat Telegram yang masing-masing terikat ke organization berbeda
- * (lihat telegram_bindings). Kepercayaan ini aman karena permission role
- * tersebut sudah dipersempit (lihat RolesAndPermissionsSeeder), dan bot
- * sendiri wajib mencocokkan chat_id ke organization_id lewat
- * telegram_bindings sebelum memanggil API ini (ditegakkan di sisi bot).
+ * Satu bot token melayani banyak chat Telegram yang masing-masing terikat
+ * ke organization berbeda. Pencocokan chat -> site SENGAJA ditegakkan di
+ * server, bukan dipercayakan ke bot: sebelumnya bot meneruskan ID device
+ * ketikan user apa adanya, sehingga anggota grup site A bisa lock/unlock
+ * device site B.
  */
 trait ResolvesOrganizationScope
 {
     private function hasCrossOrganizationAccess(User $user): bool
     {
-        return $user->hasRole('super_admin') || $user->hasRole('telegram_bot_service');
+        return $user->hasRole('super_admin');
+    }
+
+    private function isTelegramBotService(User $user): bool
+    {
+        return $user->hasRole('telegram_bot_service');
+    }
+
+    /** Site milik chat Telegram yang sedang dilayani bot (header X-Telegram-Chat-Id), atau null. */
+    private function telegramChatOrganizationId(): ?int
+    {
+        $chatId = (string) request()->header('X-Telegram-Chat-Id', '');
+
+        if ($chatId === '') {
+            return null;
+        }
+
+        $organizationId = TelegramBinding::where('telegram_chat_id', $chatId)
+            ->where('is_active', true)
+            ->value('organization_id');
+
+        return $organizationId !== null ? (int) $organizationId : null;
     }
 
     private function hasGrantBasedAccess(User $user): bool
@@ -52,6 +77,18 @@ trait ResolvesOrganizationScope
     {
         if ($this->hasCrossOrganizationAccess($user)) {
             return $requestedOrganizationId;
+        }
+
+        if ($this->isTelegramBotService($user)) {
+            $chatOrganizationId = $this->telegramChatOrganizationId();
+
+            if ($chatOrganizationId === null) {
+                return null;
+            }
+
+            return ($requestedOrganizationId === null || $requestedOrganizationId === $chatOrganizationId)
+                ? $chatOrganizationId
+                : null;
         }
 
         if ($this->hasGrantBasedAccess($user)) {
@@ -84,6 +121,12 @@ trait ResolvesOrganizationScope
     {
         if ($this->hasCrossOrganizationAccess($user)) {
             return $requestedOrganizationId ? $query->where('organization_id', $requestedOrganizationId) : $query;
+        }
+
+        if ($this->isTelegramBotService($user)) {
+            $chatOrganizationId = $this->authorizedOrganizationId($user, $requestedOrganizationId);
+
+            return $chatOrganizationId !== null ? $query->where('organization_id', $chatOrganizationId) : null;
         }
 
         if ($this->hasGrantBasedAccess($user)) {

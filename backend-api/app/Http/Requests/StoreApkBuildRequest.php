@@ -15,7 +15,7 @@ class StoreApkBuildRequest extends FormRequest
     {
         return [
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
-            'version' => ['required', 'string', 'max:20'],
+            'version' => ['required', 'string', 'max:20', 'regex:/^\d+\.\d+\.\d+$/'],
             // File APK hasil build (ditandatangani kode site saat proses build Android,
             // lihat android-tracked-app). Server hanya menyimpan & mencatat checksum-nya.
             // 'apk' bukan ekstensi yang dikenal Symfony Mime, jadi rule `mimes:apk`

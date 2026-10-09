@@ -66,8 +66,11 @@ class ApkBuilder
         $siteCode = $apkBuild->apk_type === 'master' ? 'MASTER-UNIVERSAL' : $organization->unique_site_code;
         $siteName = $apkBuild->apk_type === 'master' ? 'Lacak SMB' : $organization->name;
 
+        // `--exec` (bukan `--`): argumen diteruskan langsung ke bash tanpa
+        // di-parse ulang oleh shell default WSL, jadi `$(...)`/backtick di
+        // nama site atau versi tidak bisa dieksekusi sebagai perintah.
         $command = [
-            'wsl', '-d', config('lacaksmb.wsl_distro'), '--', 'bash', $scriptPathWsl,
+            'wsl', '-d', config('lacaksmb.wsl_distro'), '--exec', 'bash', $scriptPathWsl,
             $siteCode,
             config('lacaksmb.public_gateway_url'),
             $siteName,

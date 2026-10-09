@@ -36,7 +36,9 @@ class DashboardSummaryController extends Controller
         // -- scopeToOrganization tidak bisa dipakai langsung di sini seperti
         // Device/ApkBuild, filter id-nya manual sesuai jenis scope user.
         $orgQuery = Organization::query();
-        if (! $user->hasRole('super_admin') && ! $user->hasRole('telegram_bot_service')) {
+        if ($user->hasRole('telegram_bot_service')) {
+            $orgQuery = $orgQuery->where('id', $this->authorizedOrganizationId($user, null));
+        } elseif (! $user->hasRole('super_admin')) {
             $orgQuery = ($user->hasRole('admin') || $user->hasRole('leader'))
                 ? $orgQuery->whereIn('id', $user->siteAccess()->pluck('organizations.id'))
                 : $orgQuery->where('id', $user->organization_id);
