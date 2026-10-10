@@ -11,6 +11,7 @@ import socketManager from '#services/socket_manager'
 import { verifyBearerToken } from '#services/backend_api_client'
 import { evaluateGeofence } from '#services/geofence_evaluator'
 import { markCommandAcknowledged } from '#services/command_dispatcher'
+import { registerMasterBeacon, unregisterMasterBeaconsForSocket } from '#services/master_anchor_registry'
 
 type DeviceHelloPayload = {
   deviceUuid: string
@@ -29,6 +30,12 @@ type DeviceLocationPayload = {
   batteryLevel?: number | null
   ssid?: string | null
   ip?: string | null
+  // APK Lacak scan BLE TANPA filter (bukan cuma anchor tetap yang sudah
+  // dikonfigurasi), jadi bisa melihat APK Master yang kebetulan lagi di
+  // dekatnya -- UUID+jarak sinyal BLE TERDEKAT selain anchor tetap (kalau
+  // ada), dicocokkan ke master_anchor_registry oleh geofence_evaluator.
+  nearbyBeaconUuid?: string | null
+  nearbyBeaconDistanceMeters?: number | null
 }
 
 const PIRACY_WARNING = 'silahkan download dari sumber resmi bosku'
@@ -266,6 +273,8 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
           bleDistanceMeters: payload.bleDistanceMeters,
           latitude: payload.latitude,
           longitude: payload.longitude,
+          nearbyBeaconUuid: payload.nearbyBeaconUuid,
+          nearbyBeaconDistanceMeters: payload.nearbyBeaconDistanceMeters,
         })
       } catch (error) {
         logger.error('device:location gagal diproses', { error })
@@ -403,7 +412,25 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
       },
       5 * 60 * 1000,
     )
-    socket.on('disconnect', () => clearInterval(revalidate))
+    // APK Master jadi "anchor bergerak": selama socket /ops ini hidup DAN
+    // APK Master memanggil master:beacon:start, geofence_evaluator menganggap
+    // APK Lacak yang mendeteksinya lewat BLE (dalam radius aman) sebagai bukti
+    // device di tempat aman -- lihat master_anchor_registry.ts. Permission
+    // devices.unlock dicek DI SINI (bukan percaya klien) -- staf view-only
+    // tidak berhak jadi anchor sama persis tidak berhak klik tombol Unlock.
+    socket.on('master:beacon:start', (payload: { beaconUuid?: string }) => {
+      if (!payload?.beaconUuid) return
+      registerMasterBeacon(payload.beaconUuid, user, socket.id)
+    })
+
+    socket.on('master:beacon:stop', () => {
+      unregisterMasterBeaconsForSocket(socket.id)
+    })
+
+    socket.on('disconnect', () => {
+      clearInterval(revalidate)
+      unregisterMasterBeaconsForSocket(socket.id)
+    })
 
     logger.info('ops client terhubung', { userId: user.id, username: user.username })
   })

@@ -105,6 +105,8 @@ class GatewaySocketClient(
         batteryLevel: Int?,
         ssid: String?,
         ip: String?,
+        nearbyBeaconUuid: String? = null,
+        nearbyBeaconDistanceMeters: Double? = null,
     ) {
         val payload = JSONObject().apply {
             put("source", source)
@@ -115,6 +117,11 @@ class GatewaySocketClient(
             put("batteryLevel", batteryLevel)
             put("ssid", ssid)
             put("ip", ip)
+            // UUID+jarak BLE TERDEKAT selain anchor tetap -- dicocokkan server
+            // ke master_anchor_registry (APK Master yang sedang login), lihat
+            // BleBeaconScanner.strongestOtherReading().
+            if (nearbyBeaconUuid != null) put("nearbyBeaconUuid", nearbyBeaconUuid)
+            if (nearbyBeaconDistanceMeters != null) put("nearbyBeaconDistanceMeters", nearbyBeaconDistanceMeters)
         }
         socket?.emit("device:location", payload)
     }

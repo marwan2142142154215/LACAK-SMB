@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -43,6 +44,7 @@ import com.lacaksmb.master.data.ApiClient
 import com.lacaksmb.master.data.ApiResult
 import com.lacaksmb.master.data.Device
 import com.lacaksmb.master.data.SessionStore
+import com.lacaksmb.master.service.MasterAnchorService
 import com.lacaksmb.master.ui.components.AppTopBar
 import com.lacaksmb.master.ui.components.BadgeVariant
 import com.lacaksmb.master.ui.components.SectionCard
@@ -62,6 +64,7 @@ fun DeviceListScreen(apiClient: ApiClient, sessionStore: SessionStore, navContro
     var errorText by remember { mutableStateOf<String?>(null) }
     var refreshTick by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     LaunchedEffect(refreshTick) {
         loading = true
@@ -90,6 +93,7 @@ fun DeviceListScreen(apiClient: ApiClient, sessionStore: SessionStore, navContro
                     IconButton(onClick = {
                         scope.launch { apiClient.logout() }
                         sessionStore.clear()
+                        MasterAnchorService.stop(context.applicationContext)
                         navController.navigate(Routes.LOGIN) { popUpTo(0) }
                     }) { Icon(Icons.Filled.Logout, "Keluar", tint = Base300) }
                 },

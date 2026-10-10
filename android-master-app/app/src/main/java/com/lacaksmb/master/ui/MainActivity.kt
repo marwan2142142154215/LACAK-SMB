@@ -12,6 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.lacaksmb.master.data.ApiClient
 import com.lacaksmb.master.data.SessionStore
+import com.lacaksmb.master.service.MasterAnchorService
 import com.lacaksmb.master.ui.theme.LacakMasterTheme
 
 class MainActivity : ComponentActivity() {
@@ -24,6 +25,13 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         sessionStore = SessionStore(applicationContext)
         apiClient = ApiClient(sessionStore)
+
+        // Sesi lama yang masih tersimpan (app dibuka ulang, bukan login baru)
+        // -- MasterAnchorService sendiri yang mengecek izin devices.unlock
+        // dan berhenti diam-diam kalau tidak berwenang/token sudah mati.
+        if (sessionStore.isLoggedIn()) {
+            MasterAnchorService.start(applicationContext)
+        }
 
         setContent {
             LacakMasterTheme {

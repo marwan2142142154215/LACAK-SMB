@@ -6,6 +6,7 @@ import socketManager from '#services/socket_manager'
 import { getSystemUserId } from '#services/system_user'
 import { notifyTelegramViolation } from '#services/telegram_notifier'
 import Device from '#models/device'
+import { isAuthorizedMasterBeaconFor } from '#services/master_anchor_registry'
 
 type LocationReport = {
   ssid?: string | null
@@ -13,7 +14,19 @@ type LocationReport = {
   bleDistanceMeters?: number | null
   latitude?: number | null
   longitude?: number | null
+  nearbyBeaconUuid?: string | null
+  nearbyBeaconDistanceMeters?: number | null
 }
+
+/**
+ * Radius aman buat anchor BERGERAK (APK Master yang login, lihat
+ * master_anchor_registry.ts) -- sengaja konstanta tetap, TIDAK ikut
+ * max_distance_meters punya GeofenceRule mana pun, supaya fitur ini tetap
+ * jalan walau belum ada aturan geofence dikonfigurasi sama sekali untuk
+ * site itu (anchor fisik yang hilang/rusak -- persis kasus yang memicu
+ * fitur ini dibuat -- tidak boleh ikut membuat anchor bergerak ini mati).
+ */
+const MASTER_ANCHOR_SAFE_RADIUS_METERS = 10
 
 /**
  * Histeresis unlock: pembacaan dianggap "bukti kembali ke radius aman" hanya
@@ -135,6 +148,19 @@ async function evaluateGeofenceNow(device: Device, report: LocationReport) {
   }
   const inBleWarmup = (warmupUntilByDevice.get(device.id) ?? 0) > now
 
+  // APK Master yang login & dekat (lihat master_anchor_registry.ts) jadi
+  // bukti "di tempat aman" yang SETARA anchor BLE fisik -- dihitung sekali
+  // di sini, dipakai di bawah untuk menutupi kasus anchor fisik yang
+  // rusak/hilang/belum pernah di-setup (persis kejadian yang memicu fitur
+  // ini dibuat: GeofenceRule.anchor_device_id menunjuk ke device yang sudah
+  // dihapus, device TIDAK PERNAH bisa membuktikan dirinya aman lagi tanpa
+  // anchor cadangan seperti ini).
+  const masterAnchorSafe =
+    !!report.nearbyBeaconUuid &&
+    report.nearbyBeaconDistanceMeters != null &&
+    report.nearbyBeaconDistanceMeters <= MASTER_ANCHOR_SAFE_RADIUS_METERS &&
+    isAuthorizedMasterBeaconFor(report.nearbyBeaconUuid, device.organizationId)
+
   const rules = await GeofenceRule.query()
     .where('organization_id', device.organizationId)
     .where('is_active', true)
@@ -226,6 +252,15 @@ async function evaluateGeofenceNow(device: Device, report: LocationReport) {
     // SENGAJA dicek terpisah dari GPS (keduanya independen; kalau rule punya
     // dua-duanya, device harus lolos keduanya -- lebih ketat, bukan masalah).
     if (rule.maxDistanceMeters && rule.anchorDeviceId !== null && rule.anchorDeviceId !== device.id) {
+      if (masterAnchorSafe) {
+        // APK Master terdeteksi dekat & berwenang -- dihitung sebagai bukti
+        // aman untuk CEK ANCHOR INI SAJA (bukan bypass seluruh rule: WiFi/IP/
+        // GPS rule lain yang sama tetap dievaluasi normal di bawah/atas).
+        // Tidak mencatat pelanggaran apa pun untuk anchor fisik yang hilang.
+        hasEvaluableSignal = true
+        continue
+      }
+
       const bleMissing =
         report.bleDistanceMeters === null || report.bleDistanceMeters === undefined
 

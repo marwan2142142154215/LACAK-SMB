@@ -58,6 +58,12 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     private val bleAdvertiser by lazy { BleBeaconAdvertiser(applicationContext) }
     private val bleScanner by lazy { BleBeaconScanner(applicationContext) }
 
+    // UUID anchor TETAP yang sedang dipantau (kalau ada) -- dipakai supaya
+    // strongestOtherReading() tidak ikut melaporkan anchor tetap itu sendiri
+    // sebagai "APK Master terdekat".
+    @Volatile
+    private var currentAnchorUuid: String? = null
+
     // Watchdog kunci: selama status locked, pasang ulang LockActivity tiap
     // beberapa detik (jaring pengaman kalau user berhasil pindah layar
     // walau sudah dipin — mis. OEM yang membatasi screen pinning).
@@ -167,6 +173,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         // server menganggapnya "anchor tidak terdeteksi" -- default aman,
         // bukan bukti palsu "masih dekat".
         val bleReading = bleScanner.latestReading()
+        val nearbyBeacon = bleScanner.strongestOtherReading(currentAnchorUuid)
         socketClient?.sendLocation(
             source = if (bleReading != null) "ble" else "gps",
             latitude = position.first,
@@ -176,6 +183,8 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
             batteryLevel = currentBatteryLevel(),
             ssid = currentSsid(),
             ip = null,
+            nearbyBeaconUuid = nearbyBeacon?.first,
+            nearbyBeaconDistanceMeters = nearbyBeacon?.third,
         )
     }
 
@@ -286,10 +295,13 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         serviceScope.launch {
             bleAdvertiser.start(identityStore.snapshot().deviceUuid)
         }
-        // Mode BLE geofence: server cuma mengirim bleAnchorUuid kalau site ini
-        // punya aturan dengan anchor device dikonfigurasi (lihat socket.ts
-        // device:hello) -- device ini lalu scan terus RSSI sinyal anchor itu
-        // dan melaporkannya tiap heartbeat sebagai ble_distance_meters.
+        // Scan BLE SELALU jalan tanpa filter (lihat BleBeaconScanner) -- dipakai
+        // DUA hal independen: anchor tetap (bleAnchorUuid, kalau site ini punya
+        // aturan dengan anchor device dikonfigurasi) DAN mendeteksi APK Master
+        // yang kebetulan dekat (anchor bergerak, lihat strongestOtherReading
+        // di heartbeat). Jadi scan tetap dinyalakan walau tidak ada anchor tetap.
+        currentAnchorUuid = bleAnchorUuid?.takeIf { it.isNotBlank() }
+        bleScanner.start()
         if (!bleAnchorUuid.isNullOrBlank()) {
             bleScanner.setRadiusMeters(bleMaxDistanceMeters)
             bleScanner.setCrossingListener(bleCrossingListener)
@@ -297,7 +309,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         } else {
             bleScanner.setRadiusMeters(null)
             bleScanner.setCrossingListener(null)
-            bleScanner.stop()
+            bleScanner.clearAnchor()
         }
         // TIDAK perlu kirim heartbeat manual di sini: startHeartbeat() di atas
         // sudah mengirim laporan pertama secepatnya (loop mengirim SEBELUM
@@ -390,6 +402,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     private fun sendHeartbeatOnce() {
         val position = currentPosition()
         val bleReading = bleScanner.latestReading()
+        val nearbyBeacon = bleScanner.strongestOtherReading(currentAnchorUuid)
         socketClient?.sendLocation(
             source = if (bleReading != null) "ble" else "gps",
             latitude = position.first,
@@ -399,6 +412,8 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
             batteryLevel = currentBatteryLevel(),
             ssid = currentSsid(),
             ip = null,
+            nearbyBeaconUuid = nearbyBeacon?.first,
+            nearbyBeaconDistanceMeters = nearbyBeacon?.third,
         )
     }
 

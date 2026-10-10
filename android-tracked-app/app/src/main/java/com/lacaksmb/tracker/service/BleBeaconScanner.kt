@@ -4,43 +4,46 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
-import android.os.ParcelUuid
 import android.util.Log
-import java.util.UUID
 
 /**
- * Mode BLE geofence: scan terus-menerus untuk SATU anchor tertentu (device
- * referensi diam di lokasi, UUID-nya dikirim server lewat device:accepted
- * -- lihat GatewaySocketClient & TrackerForegroundService). RSSI sinyal
- * anchor dipakai mengestimasi jarak dalam meter, dilaporkan tiap heartbeat
- * sebagai ble_distance_meters -- jauh lebih presisi dari GPS untuk jarak
- * dekat (beberapa meter), karena tidak bergantung sinyal satelit sama
- * sekali. Kebalikan dari BleBeaconAdvertiser (yang MEMANCARKAN identitas
- * device ini sendiri, dipakai APK master untuk mencari device secara
- * manual) -- scanner ini yang MEMBACA sinyal device lain.
+ * Mode BLE geofence: scan TANPA FILTER (bukan cuma satu anchor tertentu) --
+ * dipakai dua hal independen:
+ *  1. Anchor tetap (device referensi diam di lokasi, UUID-nya dikirim server
+ *     lewat device:accepted) -- lihat latestReading()/setRadiusMeters().
+ *  2. APK Master yang kebetulan lewat/berada dekat (anchor BERGERAK, lihat
+ *     realtime-gateway master_anchor_registry.ts) -- lihat
+ *     strongestOtherReading(). UUID-nya TIDAK diketahui device ini
+ *     sebelumnya (siapa pun yang sedang login APK Master bisa jadi anchor),
+ *     makanya scan harus tanpa filter dan server-lah yang memutuskan
+ *     (lewat registry login) apakah UUID yang terdeteksi itu memang APK
+ *     Master yang berwenang atau cuma perangkat BLE lain yang kebetulan ada
+ *     di sekitar (headset, dst -- dilaporkan apa adanya, diabaikan server
+ *     kalau tidak cocok).
+ *
+ * Sebelumnya scan dengan ScanFilter per-UUID (scan terpisah tiap ganti
+ * target) -- diganti scan tunggal tanpa filter + sampel per-UUID, supaya
+ * kedua kebutuhan di atas jalan dari SATU sesi scan BLE saja (Android
+ * membatasi jumlah sesi scan bersamaan per app).
  */
 class BleBeaconScanner(private val context: Context) {
 
     /**
-     * Jendela sampel RSSI mentah (waktu, rssi) -- dipakai median, bukan
-     * pembacaan tunggal. Satu paket BLE sangat berisik (pantulan dinding,
-     * orientasi antena, interferensi WiFi 2.4GHz) dan estimasi jarak itu
-     * EKSPONENSIAL terhadap RSSI: lompatan puluhan dB antar paket yang cuma
-     * puluhan milidetik itu jaraknya berpuluhan meter. Median jendela 15
-     * detik membunuh outlier sesaat sambil tetap merespons gerakan nyata
-     * (heartbeat cuma tiap 30 detik, lag median ~setengah jendela tidak
-     * berarti). Menggantikan EMA per-paket sebelumnya yang terlalu cepat
-     * mengikuti satu paket yang menyimpang.
+     * Jendela sampel RSSI mentah PER UUID (waktu, rssi) -- dipakai median,
+     * bukan pembacaan tunggal. Satu paket BLE sangat berisik (pantulan
+     * dinding, orientasi antena, interferensi WiFi 2.4GHz) dan estimasi
+     * jarak itu EKSPONENSIAL terhadap RSSI: lompatan puluhan dB antar paket
+     * yang cuma puluhan milidetik itu jaraknya berpuluhan meter. Median
+     * jendela 15 detik membunuh outlier sesaat sambil tetap merespons
+     * gerakan nyata (heartbeat cuma tiap 30 detik, lag median ~setengah
+     * jendela tidak berarti).
      */
     private val sampleLock = Any()
-    private val recentSamples = ArrayDeque<Pair<Long, Int>>()
-
-    @Volatile
-    private var latestRssiAtMillis: Long = 0L
+    private val samplesByUuid = HashMap<String, ArrayDeque<Pair<Long, Int>>>()
+    private val lastSeenAtByUuid = HashMap<String, Long>()
 
     @Volatile
     private var targetUuid: String? = null
@@ -48,7 +51,7 @@ class BleBeaconScanner(private val context: Context) {
     private var scanner: BluetoothLeScanner? = null
     private var isScanning = false
 
-    /** Dipanggil tiap kali status terhadap radius (LOST/IN/OUT) berubah. */
+    /** Dipanggil tiap kali status terhadap radius (LOST/IN/OUT) berubah -- khusus anchor TETAP (targetUuid). */
     interface CrossingListener {
         fun onCrossingChanged(isInsideRadius: Boolean, distanceMeters: Double?)
     }
@@ -66,8 +69,8 @@ class BleBeaconScanner(private val context: Context) {
     private var lastZone: Zone = Zone.LOST
 
     /**
-     * Set radius (meter) untuk deteksi perpindahan. Dipanggil service saat
-     * server mengirim bleMaxDistanceMeters lewat device:accepted.
+     * Set radius (meter) untuk deteksi perpindahan anchor TETAP. Dipanggil
+     * service saat server mengirim bleMaxDistanceMeters lewat device:accepted.
      */
     fun setRadiusMeters(meters: Double?) {
         radiusMeters = meters
@@ -80,19 +83,24 @@ class BleBeaconScanner(private val context: Context) {
     private val callback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val now = System.currentTimeMillis()
-            synchronized(sampleLock) {
-                recentSamples.addLast(now to result.rssi)
-                // Buang sampel luar jendela + batasi ukuran (safety valve
-                // kalau device sangat dermis mengirim paket).
-                while (recentSamples.isNotEmpty() && now - recentSamples.first().first > RSSI_WINDOW_MS) {
-                    recentSamples.removeFirst()
+            val uuids = result.scanRecord?.serviceUuids ?: return
+            for (parcelUuid in uuids) {
+                val uuid = parcelUuid.uuid.toString()
+                synchronized(sampleLock) {
+                    val deque = samplesByUuid.getOrPut(uuid) { ArrayDeque() }
+                    deque.addLast(now to result.rssi)
+                    while (deque.isNotEmpty() && now - deque.first().first > RSSI_WINDOW_MS) {
+                        deque.removeFirst()
+                    }
+                    while (deque.size > MAX_SAMPLES) {
+                        deque.removeFirst()
+                    }
                 }
-                while (recentSamples.size > MAX_SAMPLES) {
-                    recentSamples.removeFirst()
-                }
+                lastSeenAtByUuid[uuid] = now
             }
-            latestRssiAtMillis = now
-            evaluateCrossing()
+            if (targetUuid != null && uuids.any { it.uuid.toString() == targetUuid }) {
+                evaluateCrossing()
+            }
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -123,40 +131,51 @@ class BleBeaconScanner(private val context: Context) {
         crossingListener?.onCrossingChanged(zone == Zone.IN, reading?.second)
     }
 
-    /** Mulai scan untuk anchorUuid tertentu. Memanggil ulang dengan UUID baru otomatis restart filter. */
+    /**
+     * Mulai scan TANPA FILTER (semua perangkat BLE di sekitar). Dipanggil
+     * sekali saat service connect ke gateway, berjalan terus selama service
+     * hidup -- anchor tetap (targetUuid) di-set terpisah lewat
+     * startScanningFor(), tidak perlu restart sesi scan.
+     */
     @SuppressLint("MissingPermission")
-    fun startScanningFor(anchorUuid: String) {
-        if (isScanning && targetUuid == anchorUuid) return
-        stop()
+    fun start() {
+        if (isScanning) return
 
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         val adapter = manager?.adapter
         if (adapter == null || !adapter.isEnabled) {
-            Log.w(TAG, "Bluetooth tidak aktif — scan anchor BLE tidak bisa jalan")
+            Log.w(TAG, "Bluetooth tidak aktif — scan BLE tidak bisa jalan")
             return
         }
         val leScanner = adapter.bluetoothLeScanner ?: return
-
-        val filter = try {
-            ScanFilter.Builder().setServiceUuid(ParcelUuid(UUID.fromString(anchorUuid))).build()
-        } catch (_: IllegalArgumentException) {
-            Log.w(TAG, "anchorUuid bukan UUID valid: $anchorUuid")
-            return
-        }
 
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
         try {
-            leScanner.startScan(listOf(filter), settings, callback)
+            leScanner.startScan(null, settings, callback)
             scanner = leScanner
-            targetUuid = anchorUuid
             isScanning = true
-            clearSamples()
         } catch (e: Exception) {
             Log.w(TAG, "startScan gagal: ${e.message}")
         }
+    }
+
+    /** Set/ganti UUID anchor TETAP yang dipantau untuk crossing radius -- scan tetap satu sesi yang sama (start()). */
+    fun startScanningFor(anchorUuid: String) {
+        if (targetUuid == anchorUuid) return
+        targetUuid = anchorUuid
+        lastZone = Zone.LOST
+        start()
+    }
+
+    /** Matikan pemantauan anchor tetap (tidak menghentikan scan BLE-nya -- itu via stop()). */
+    fun clearAnchor() {
+        targetUuid = null
+        radiusMeters = null
+        crossingListener = null
+        lastZone = Zone.LOST
     }
 
     @SuppressLint("MissingPermission")
@@ -170,41 +189,61 @@ class BleBeaconScanner(private val context: Context) {
         isScanning = false
         scanner = null
         targetUuid = null
-        // Reset zona supaya setelah scan dimulai ulang, perpindahan pertama
-        // tetap terlapor (bukan dianggap "sudah di zona yang sama").
         lastZone = Zone.LOST
-        clearSamples()
-    }
-
-    private fun clearSamples() {
-        synchronized(sampleLock) { recentSamples.clear() }
-        latestRssiAtMillis = 0L
+        synchronized(sampleLock) { samplesByUuid.clear() }
+        lastSeenAtByUuid.clear()
     }
 
     /**
-     * Pasangan (rssi, estimasi_meter) dari MEDIAN jendela sampel terakhir, atau
-     * null kalau belum pernah dengar anchor-nya sama sekali -- ATAU kalau tidak
-     * ada paket yang masuk lebih baru dari READING_MAX_AGE_MS. Tanpa batas umur
-     * ini, anchor yang sudah keluar jangkauan (atau Bluetooth-nya mati) akan
-     * tetap dilaporkan "dekat" selamanya memakai RSSI lama yang ter-cache --
-     * auto-lock tidak akan pernah menyala walau device sungguhan sudah pergi
-     * jauh. Median (bukan nilai terakhir) supaya satu paket yang menyimpang
-     * tidak mengubah estimasi jarak puluhan meter di heartbeat berikutnya.
+     * Pasangan (rssi, estimasi_meter) anchor TETAP dari MEDIAN jendela sampel
+     * terakhir, atau null kalau belum pernah dengar sama sekali -- ATAU kalau
+     * tidak ada paket yang masuk lebih baru dari READING_MAX_AGE_MS. Tanpa
+     * batas umur ini, anchor yang sudah keluar jangkauan (atau Bluetooth-nya
+     * mati) akan tetap dilaporkan "dekat" selamanya memakai RSSI lama yang
+     * ter-cache -- auto-lock tidak akan pernah menyala walau device sungguhan
+     * sudah pergi jauh. Median (bukan nilai terakhir) supaya satu paket yang
+     * menyimpang tidak mengubah estimasi jarak puluhan meter di heartbeat
+     * berikutnya.
      */
-    fun latestReading(): Pair<Int, Double>? {
-        if (System.currentTimeMillis() - latestRssiAtMillis > READING_MAX_AGE_MS) return null
+    fun latestReading(): Pair<Int, Double>? = targetUuid?.let { readingFor(it) }
+
+    private fun readingFor(uuid: String): Pair<Int, Double>? {
+        val lastSeen = lastSeenAtByUuid[uuid] ?: return null
+        if (System.currentTimeMillis() - lastSeen > READING_MAX_AGE_MS) return null
         val rssi = synchronized(sampleLock) {
-            if (recentSamples.isEmpty()) return null
-            // Buang sampel yang sudah tua bahkan kalau tidak ada paket baru
-            // (jendela tidak di-prune kalau tidak ada callback masuk).
+            val deque = samplesByUuid[uuid] ?: return null
             val cutoff = System.currentTimeMillis() - RSSI_WINDOW_MS
-            while (recentSamples.isNotEmpty() && recentSamples.first().first < cutoff) {
-                recentSamples.removeFirst()
+            while (deque.isNotEmpty() && deque.first().first < cutoff) {
+                deque.removeFirst()
             }
-            if (recentSamples.isEmpty()) return null
-            recentSamples.map { it.second }.sorted()[recentSamples.size / 2]
+            if (deque.isEmpty()) return null
+            deque.map { it.second }.sorted()[deque.size / 2]
         }
         return rssi to estimateDistanceMeters(rssi)
+    }
+
+    /**
+     * UUID+bacaan TERDEKAT di antara semua perangkat BLE yang sedang
+     * terdeteksi, SELAIN excludeUuid (anchor tetap, supaya tidak dobel
+     * dihitung) -- dipakai melaporkan "APK Master terdekat" tiap heartbeat.
+     * Server (master_anchor_registry) yang memutuskan apakah UUID ini
+     * memang APK Master berwenang; di sini cuma melaporkan sinyal terkuat
+     * apa adanya.
+     */
+    fun strongestOtherReading(excludeUuid: String?): Triple<String, Int, Double>? {
+        val now = System.currentTimeMillis()
+        val candidates = synchronized(sampleLock) { samplesByUuid.keys.toList() }
+        var best: Triple<String, Int, Double>? = null
+        for (uuid in candidates) {
+            if (uuid == excludeUuid) continue
+            val lastSeen = lastSeenAtByUuid[uuid] ?: continue
+            if (now - lastSeen > READING_MAX_AGE_MS) continue
+            val reading = readingFor(uuid) ?: continue
+            if (best == null || reading.second < best.third) {
+                best = Triple(uuid, reading.first, reading.second)
+            }
+        }
+        return best
     }
 
     companion object {
