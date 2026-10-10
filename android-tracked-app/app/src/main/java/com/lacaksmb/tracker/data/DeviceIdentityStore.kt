@@ -1,6 +1,7 @@
 package com.lacaksmb.tracker.data
 
 import android.content.Context
+import com.lacaksmb.tracker.BuildConfig
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -51,14 +52,40 @@ class DeviceIdentityStore(private val context: Context) {
 
     val isEnrolledFlow: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[Keys.IS_ENROLLED] ?: false }
 
-    /** Dipanggil sekali saat app pertama kali dibuka — bikin UUID kalau belum ada. */
+    /**
+     * Dipanggil sekali saat app pertama kali dibuka. Device identitas
+     * zero-touch (lihat build.gradle.kts DEVICE_UUID) SELALU diprioritaskan
+     * kalau ada -- backend-api yang generate device_uuid itu & sudah
+     * mendaftarkan baris Device-nya SEBELUM APK ini di-build, jadi device
+     * TIDAK BOLEH bikin UUID acak sendiri (acak sendiri = device_uuid yang
+     * tidak pernah terdaftar, gateway akan menolak device:hello-nya).
+     * ensureDeviceSecretFromBuild() mengikuti pola yang sama untuk secret.
+     */
     suspend fun ensureDeviceUuid(): String {
         val current = context.dataStore.data.map { it[Keys.DEVICE_UUID] }.first()
         if (!current.isNullOrBlank()) return current
 
+        if (BuildConfig.DEVICE_UUID.isNotBlank()) {
+            context.dataStore.edit { prefs -> prefs[Keys.DEVICE_UUID] = BuildConfig.DEVICE_UUID }
+            return BuildConfig.DEVICE_UUID
+        }
+
         val generated = UUID.randomUUID().toString()
         context.dataStore.edit { prefs -> prefs[Keys.DEVICE_UUID] = generated }
         return generated
+    }
+
+    /**
+     * Simpan device_secret yang sudah ditanam saat build (zero-touch) kalau
+     * ada dan belum pernah disimpan -- menggantikan langkah pairing manual
+     * sepenuhnya untuk APK yang dibuild lewat alur per-device baru. Aman
+     * dipanggil berkali-kali (no-op kalau sudah ada atau tidak ditanam).
+     */
+    suspend fun ensureDeviceSecretFromBuild() {
+        if (BuildConfig.DEVICE_SECRET.isBlank()) return
+        val current = context.dataStore.data.map { it[Keys.DEVICE_SECRET] }.first()
+        if (!current.isNullOrBlank()) return
+        context.dataStore.edit { prefs -> prefs[Keys.DEVICE_SECRET] = BuildConfig.DEVICE_SECRET }
     }
 
     suspend fun saveEnrollment(siteCode: String, gatewayUrl: String) {

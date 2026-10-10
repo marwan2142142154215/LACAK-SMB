@@ -47,6 +47,27 @@ android {
             "BACKEND_API_URL",
             "\"${project.findProperty("backendApiUrl") ?: "http://10.0.2.2:8010/api/v1"}\"",
         )
+        // Identitas device sendiri ditanam LANGSUNG saat build (-PdeviceUuid=...
+        // -PdeviceSecret=...), BUKAN dibuat sendiri oleh app atau dipasangkan
+        // belakangan lewat kode OTP -- backend-api membuat baris Device dulu
+        // (dengan consent & nama yang sudah diisi admin), generate device_uuid
+        // + device_secret di sana, lalu oper keduanya ke build ini (lihat
+        // App\Services\ApkBuilder, App\Http\Controllers\Api\ApkBuildController
+        // ::generate). Hasilnya: APK ini begitu dipasang LANGSUNG punya
+        // identitas lengkap + device_secret yang sudah "dipasangkan" --
+        // zero-touch, tidak ada layar pairing yang perlu diisi staf lapangan.
+        // Kosong berarti build pengembangan lokal biasa (device_uuid dibuat
+        // sendiri oleh app seperti sebelumnya, lihat DeviceIdentityStore).
+        buildConfigField(
+            "String",
+            "DEVICE_UUID",
+            "\"${project.findProperty("deviceUuid") ?: ""}\"",
+        )
+        buildConfigField(
+            "String",
+            "DEVICE_SECRET",
+            "\"${project.findProperty("deviceSecret") ?: ""}\"",
+        )
     }
 
     buildTypes {

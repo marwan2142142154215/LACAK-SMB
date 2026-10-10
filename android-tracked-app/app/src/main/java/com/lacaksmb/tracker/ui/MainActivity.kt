@@ -271,6 +271,13 @@ class MainActivity : ComponentActivity() {
             }
 
             EnrollmentStep.PAIRING -> {
+                // Zero-touch: device_secret sudah ditanam saat build (lihat
+                // BuildConfig.DEVICE_SECRET), tidak ada yang perlu diisi staf
+                // lapangan sama sekali -- lewati layar pairing seluruhnya.
+                if (BuildConfig.DEVICE_SECRET.isNotBlank()) {
+                    advanceFrom(EnrollmentStep.PAIRING)
+                    return
+                }
                 statusText = "Minta admin buat kode pairing untuk device ini, lalu masukkan di bawah (opsional)."
             }
 
@@ -377,6 +384,7 @@ private fun EnrollmentScreen(
     DisposableEffect(Unit) {
         scope.launch {
             deviceUuid = identityStore.ensureDeviceUuid()
+            identityStore.ensureDeviceSecretFromBuild()
             val snapshot = identityStore.snapshot()
             alreadyEnrolled = snapshot.isEnrolled
             alreadyPaired = snapshot.deviceSecret.isNotBlank()

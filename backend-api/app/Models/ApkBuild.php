@@ -14,6 +14,7 @@ class ApkBuild extends Model
 
     protected $fillable = [
         'organization_id',
+        'device_id',
         'apk_type',
         'version',
         'status',
@@ -32,6 +33,11 @@ class ApkBuild extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    public function device(): BelongsTo
+    {
+        return $this->belongsTo(Device::class);
     }
 
     public function builder(): BelongsTo

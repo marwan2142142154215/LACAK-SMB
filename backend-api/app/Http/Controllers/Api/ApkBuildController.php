@@ -9,10 +9,13 @@ use App\Http\Resources\ApkBuildResource;
 use App\Http\Responses\ApiResponse;
 use App\Jobs\BuildApkJob;
 use App\Models\ApkBuild;
+use App\Models\ConsentDocument;
+use App\Models\Device;
 use App\Models\Organization;
 use App\Support\ResolvesOrganizationScope;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Registry APK pelacak per site. embedded_site_code + checksum dipakai APK
@@ -100,8 +103,57 @@ class ApkBuildController extends Controller
 
         $organization = Organization::findOrFail($organizationId);
 
+        // Zero-touch provisioning: untuk APK tracker, baris Device dibuat DI
+        // SINI -- sebelum build Gradle dipicu -- dengan device_uuid &
+        // device_secret digenerate server, supaya keduanya bisa ditanam
+        // langsung ke APK (lihat App\Services\ApkBuilder). Begitu APK
+        // dipasang di HP tujuan, dia sudah "terdaftar & terpasangkan"
+        // sepenuhnya, nol langkah manual (baca UUID dari layar, ketik ke
+        // dashboard, isi kode pairing) -- cukup sama seperti device_uuid
+        // yang dulu HARUS dibuat device itu sendiri saat pertama kali
+        // dibuka, sekarang backend yang membuatnya lebih dulu.
+        $device = null;
+
+        if ($request->validated('apk_type') === 'tracker') {
+            $consent = ConsentDocument::find($request->validated('consent_document_id'));
+
+            if (! $consent || $consent->organization_id !== $organizationId) {
+                return $this->fail('Dokumen consent tidak ditemukan untuk site ini', null, 422);
+            }
+
+            if (! $consent->isActive()) {
+                return $this->fail('Dokumen consent sudah dicabut/kedaluwarsa, tidak bisa dipakai membuat APK', null, 422);
+            }
+
+            $device = Device::create([
+                'organization_id' => $organizationId,
+                'consent_document_id' => $consent->id,
+                'device_name' => $request->validated('device_name'),
+                'device_uuid' => (string) Str::uuid(),
+                // Belum diketahui -- device fisiknya belum pernah terhubung.
+                // Kosong, bukan placeholder palsu seperti "unknown", supaya
+                // nilai beneran begitu device:hello pertama diterima gateway
+                // tidak ambigu dengan string yang sengaja dikosongkan admin.
+                'android_version' => '',
+                'app_build_version' => $request->validated('version') ?: '1.0.0',
+                'site_code_embedded' => $organization->unique_site_code,
+                'status' => 'pending_enrollment',
+                'enrolled_at' => now(),
+                'is_active' => true,
+                'created_by' => $request->user()->id,
+                'updated_by' => $request->user()->id,
+            ]);
+
+            // device_secret SENGAJA bukan mass-assignment (tidak ada di
+            // $fillable Device, lihat model) -- assignment properti langsung
+            // + save() seperti pola reset2fa di UserController.
+            $device->device_secret = Str::random(40);
+            $device->save();
+        }
+
         $build = ApkBuild::create([
             'organization_id' => $organizationId,
+            'device_id' => $device?->id,
             'apk_type' => $request->validated('apk_type'),
             'version' => $request->validated('version') ?: '1.0.0',
             'status' => 'pending',

@@ -82,6 +82,12 @@ class ApkBuilder
             $siteName,
             $apkBuild->version,
             config('lacaksmb.public_backend_api_url'),
+            // Identitas zero-touch (lihat ApkBuildController::generate) --
+            // cuma terisi untuk apk_type='tracker', device_secret TIDAK PERNAH
+            // ikut $fillable Device jadi dibaca lewat properti langsung di
+            // sini, bukan lewat accessor publik mana pun.
+            $apkBuild->device?->device_uuid ?? '',
+            $apkBuild->device?->device_secret ?? '',
         ];
 
         $result = Process::timeout(300)->run($command);

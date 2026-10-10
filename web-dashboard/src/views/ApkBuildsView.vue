@@ -2,7 +2,7 @@
 import { Download, Hammer, Loader2, PackageOpen, Trash2, Upload } from '@lucide/vue'
 import dayjs from 'dayjs'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -29,7 +29,33 @@ const generateForm = ref({
     organization_id: auth.user?.organization_id ?? null,
     apk_type: 'tracker',
     version: '1.0.0',
+    device_name: '',
+    consent_document_id: null,
 })
+
+// Zero-touch: APK pelacak sekarang terikat SATU device sejak dibuild
+// (identitas+device_secret-nya ditanam langsung, lihat backend-api
+// ApkBuildController::generate) -- dialog build-nya ikut minta nama
+// device & dokumen consent, bukan cuma site+versi seperti sebelumnya.
+const consentDocuments = ref([])
+
+async function loadConsentDocuments() {
+    if (generateForm.value.apk_type !== 'tracker' || !generateForm.value.organization_id) {
+        consentDocuments.value = []
+        return
+    }
+    try {
+        const response = await api.get('/consent-documents', {
+            params: { organization_id: generateForm.value.organization_id, per_page: 100 },
+        })
+        consentDocuments.value = response.data.data.items.filter((d) => d.is_active)
+        if (!consentDocuments.value.some((d) => d.id === generateForm.value.consent_document_id)) {
+            generateForm.value.consent_document_id = consentDocuments.value[0]?.id ?? null
+        }
+    } catch {
+        consentDocuments.value = []
+    }
+}
 
 const uploadForm = ref({
     organization_id: auth.user?.organization_id ?? null,
@@ -106,6 +132,7 @@ async function submitGenerate() {
         await api.post('/apk-builds/generate', generateForm.value)
         toast.success('Build dimulai', 'Biasanya selesai dalam 1-2 menit, status diperbarui otomatis')
         generateDialogOpen.value = false
+        generateForm.value.device_name = ''
         await loadBuilds()
         schedulePoll()
     } catch (err) {
@@ -135,6 +162,13 @@ async function submitUpload() {
         submitting.value = false
     }
 }
+
+watch(
+    [() => generateForm.value.apk_type, () => generateForm.value.organization_id, generateDialogOpen],
+    () => {
+        if (generateDialogOpen.value) loadConsentDocuments()
+    },
+)
 
 function schedulePoll() {
     if (pollTimer) return
@@ -247,7 +281,27 @@ onBeforeUnmount(() => {
                             </select>
                         </label>
                         <BaseInput v-model="generateForm.version" label="Versi" placeholder="1.0.0" required />
-                        <p v-if="generateForm.apk_type === 'master'" class="text-xs text-base-400">
+
+                        <template v-if="generateForm.apk_type === 'tracker'">
+                            <BaseInput v-model="generateForm.device_name" label="Nama Device" placeholder="Contoh: HP CS Line - Asep" required />
+                            <label class="block">
+                                <span class="mb-1.5 block text-xs font-medium text-base-300">Dokumen Consent</span>
+                                <select
+                                    v-model="generateForm.consent_document_id"
+                                    class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
+                                    required
+                                >
+                                    <option v-if="consentDocuments.length === 0" :value="null" disabled>Belum ada dokumen consent aktif di site ini</option>
+                                    <option v-for="doc in consentDocuments" :key="doc.id" :value="doc.id">{{ doc.subject_name }}</option>
+                                </select>
+                            </label>
+                            <p class="text-xs text-base-500">
+                                APK ini akan langsung terikat ke satu device (identitas & kunci-nya ditanam saat build) —
+                                begitu di-download & dipasang di HP tujuan, langsung aktif tanpa kode pairing apa pun.
+                                Device otomatis terdaftar di menu Semua Device.
+                            </p>
+                        </template>
+                        <p v-else-if="generateForm.apk_type === 'master'" class="text-xs text-base-400">
                             APK Master tidak terikat site — satu APK untuk semua site. Site mana yang bisa dilihat
                             ditentukan oleh akun yang login (peran + akses site), bukan oleh APK-nya.
                         </p>
