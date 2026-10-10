@@ -14,11 +14,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -87,7 +87,7 @@ fun DeviceListScreen(apiClient: ApiClient, sessionStore: SessionStore, navContro
                 actions = {
                     IconButton(onClick = { refreshTick++ }) { Icon(Icons.Filled.Refresh, "Refresh", tint = Base300) }
                     IconButton(onClick = { navController.navigate(Routes.RADAR) }) { Icon(Icons.Filled.LocationOn, "Radar", tint = Base300) }
-                    IconButton(onClick = { navController.navigate(Routes.GEOFENCE) }) { Icon(Icons.Filled.Rule, "Geofence", tint = Base300) }
+                    IconButton(onClick = { navController.navigate(Routes.GEOFENCE) }) { Icon(Icons.AutoMirrored.Filled.Rule, "Geofence", tint = Base300) }
                     IconButton(onClick = { navController.navigate(Routes.CONSENT) }) { Icon(Icons.Filled.VerifiedUser, "Consent", tint = Base300) }
                     IconButton(onClick = { navController.navigate(Routes.DOWNLOAD_APK) }) { Icon(Icons.Filled.Download, "Download APK", tint = Base300) }
                     IconButton(onClick = {
@@ -95,7 +95,7 @@ fun DeviceListScreen(apiClient: ApiClient, sessionStore: SessionStore, navContro
                         sessionStore.clear()
                         MasterAnchorService.stop(context.applicationContext)
                         navController.navigate(Routes.LOGIN) { popUpTo(0) }
-                    }) { Icon(Icons.Filled.Logout, "Keluar", tint = Base300) }
+                    }) { Icon(Icons.AutoMirrored.Filled.Logout, "Keluar", tint = Base300) }
                 },
             )
         },
