@@ -9,8 +9,8 @@
 #       <ORGANIZATION_ID> <VERSION> <BACKEND_API_URL> <ADMIN_BEARER_TOKEN>
 #
 # Contoh:
-#   ./scripts/build-for-site.sh SITE-ZFMDROXE2Z https://ws.lacaksmbbot.com \
-#       "LACAK SMB" 1 1.0.0 https://api.lacaksmbbot.com/api/v1 "1|xxxxx..."
+#   ./scripts/build-for-site.sh SITE-ZFMDROXE2Z https://ws.salahmu.fun \
+#       "LACAK SMB" 1 1.0.0 https://api.salahmu.fun/api/v1 "1|xxxxx..."
 #
 # Catatan: APK yang dihasilkan masih debug-signed (belum ada keystore
 # release terpisah) -- cukup untuk distribusi langsung/sideload ke staf

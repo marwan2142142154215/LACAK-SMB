@@ -1,6 +1,6 @@
 {
-    "gateway_url": "https://gateway.lacaksmbbot.com",
-    "backend_api_url": "https://api.lacaksmbbot.com/api/v1",
+    "gateway_url": "https://ws.salahmu.fun",
+    "backend_api_url": "https://api.salahmu.fun/api/v1",
     "site_code": "ISI-KODE-SITE-DI-SINI",
     "app_version": "1.0.0",
     "report_interval_seconds": 300

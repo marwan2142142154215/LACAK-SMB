@@ -14,8 +14,8 @@ return [
     'tracker_project_path' => env('LACAKSMB_TRACKER_PROJECT_PATH', base_path('../android-tracked-app')),
     'master_project_path' => env('LACAKSMB_MASTER_PROJECT_PATH', base_path('../android-master-app')),
 
-    'public_gateway_url' => env('LACAKSMB_PUBLIC_GATEWAY_URL', 'https://ws.lacaksmbbot.com'),
-    'public_backend_api_url' => env('LACAKSMB_PUBLIC_BACKEND_API_URL', 'https://api.lacaksmbbot.com/api/v1'),
+    'public_gateway_url' => env('LACAKSMB_PUBLIC_GATEWAY_URL', 'https://ws.salahmu.fun'),
+    'public_backend_api_url' => env('LACAKSMB_PUBLIC_BACKEND_API_URL', 'https://api.salahmu.fun/api/v1'),
 
     // Nama distro WSL yang dipakai untuk build Gradle (lihat catatan proyek:
     // Gradle tidak bisa jalan langsung di Windows native di mesin ini).
@@ -52,7 +52,7 @@ return [
     | wajib sama dengan bagian `keys:` di livekit-server/livekit.yaml.
     */
     'livekit' => [
-        'url' => env('LIVEKIT_URL', 'wss://live.lacaksmbbot.com'),
+        'url' => env('LIVEKIT_URL', 'wss://live.salahmu.fun'),
         'api_key' => env('LIVEKIT_API_KEY'),
         'api_secret' => env('LIVEKIT_API_SECRET'),
         'token_ttl_seconds' => (int) env('LIVEKIT_TOKEN_TTL_SECONDS', 600),

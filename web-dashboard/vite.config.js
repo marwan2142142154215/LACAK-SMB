@@ -14,9 +14,9 @@ export default defineConfig({
     },
     server: {
         port: 5173,
-        // Cloudflare Tunnel meneruskan Host: app.lacaksmbbot.com ke dev
+        // Cloudflare Tunnel meneruskan Host: app.salahmu.fun ke dev
         // server ini — Vite 5+ menolak Host header asing secara default.
-        allowedHosts: ['app.lacaksmbbot.com'],
+        allowedHosts: ['app.salahmu.fun'],
         // Tanpa ini, browser menyimpan /src/*.js dengan Cache-Control
         // max-age bawaan Vite selama berjam-jam -- lewat Cloudflare Tunnel,
         // reload biasa/tab baru TETAP memakai JS lama yang di-cache walau
