@@ -71,6 +71,19 @@ async function selectSite(siteId) {
     }
 }
 
+const restartingCamera = ref(false)
+
+async function restartCamera() {
+    restartingCamera.value = true
+    try {
+        await live.restartCamera()
+    } catch (err) {
+        toast.error('Kamera gagal dinyalakan ulang', err.message)
+    } finally {
+        restartingCamera.value = false
+    }
+}
+
 async function startWork() {
     try {
         await live.startWork()
@@ -78,11 +91,12 @@ async function startWork() {
         mySession.value = null
         toast.success('Mulai kerja', 'Kamera Anda sedang disiarkan ke rekan se-site')
     } catch (err) {
-        const cameraDenied = err.name === 'NotAllowedError' || err.name === 'NotFoundError'
-        toast.error(
-            'Gagal memulai siaran',
-            cameraDenied ? 'Izin kamera ditolak atau kamera tidak ditemukan' : (err.response?.data?.message ?? err.message),
-        )
+        const cameraMessages = {
+            NotAllowedError: 'Izin kamera ditolak. Izinkan kamera untuk situs ini di pengaturan browser, lalu coba lagi.',
+            NotFoundError: 'Kamera tidak ditemukan di perangkat ini.',
+            NotReadableError: 'Kamera sedang dipakai aplikasi lain (Zoom, Teams, tab lain). Tutup dulu, lalu coba lagi.',
+        }
+        toast.error('Gagal memulai siaran', cameraMessages[err.name] ?? err.response?.data?.message ?? err.message)
         // startWork() memutus koneksi tonton yang lama -- sambung lagi supaya
         // staf tetap melihat rekan-rekannya walau siarannya sendiri gagal.
         if (selectedSiteId.value) await selectSite(selectedSiteId.value)
@@ -159,6 +173,17 @@ onMounted(async () => {
         </PageHeader>
 
         <div class="space-y-6 p-4 sm:p-8">
+            <div
+                v-if="live.isBroadcasting && live.cameraProblem"
+                class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-danger-500/30 bg-danger-500/10 px-4 py-3 text-sm text-danger-400"
+                role="alert"
+            >
+                <span class="text-pretty">{{ live.cameraProblem }}</span>
+                <BaseButton size="sm" variant="outline" :loading="restartingCamera" @click="restartCamera"
+                    >Nyalakan ulang kamera</BaseButton
+                >
+            </div>
+
             <div
                 v-if="mySession && !live.isBroadcasting"
                 class="rounded-lg border border-warning-500/30 bg-warning-500/10 px-4 py-3 text-sm text-pretty text-warning-400"

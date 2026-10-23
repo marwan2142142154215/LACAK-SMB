@@ -32,6 +32,9 @@ export const useLiveStore = defineStore('live', () => {
     const organizationId = ref(null)
     const connecting = ref(false)
     const revision = ref(0)
+    // Pesan untuk staf kalau kamera berhenti mengirim gambar di tengah siaran
+    // (dipakai aplikasi lain, izin dicabut, kabel kamera USB lepas, dst).
+    const cameraProblem = ref(null)
 
     const isBroadcasting = computed(() => mode.value === 'broadcasting')
 
@@ -64,7 +67,8 @@ export const useLiveStore = defineStore('live', () => {
             // dynacast: pengirim berhenti meng-encode layer resolusi yang
             // tidak ada satu pun penonton yang memintanya.
             dynacast: true,
-            videoCaptureDefaults: { resolution: VideoPresets.h540.resolution },
+            // facingMode user: di HP pakai kamera depan (wajah staf), bukan belakang.
+            videoCaptureDefaults: { resolution: VideoPresets.h540.resolution, facingMode: 'user' },
             publishDefaults: {
                 simulcast: true,
                 videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
@@ -79,6 +83,7 @@ export const useLiveStore = defineStore('live', () => {
             .on(RoomEvent.TrackUnsubscribed, bump)
             .on(RoomEvent.LocalTrackPublished, bump)
             .on(RoomEvent.LocalTrackUnpublished, bump)
+            .on(RoomEvent.TrackMuted, handleLocalCameraStopped)
             .on(RoomEvent.Disconnected, handleDisconnected)
 
         // autoSubscribe: false -- LiveView yang memilih peserta mana yang
@@ -98,6 +103,7 @@ export const useLiveStore = defineStore('live', () => {
             await current.disconnect()
         }
         mode.value = 'idle'
+        cameraProblem.value = null
         bump()
     }
 
@@ -108,6 +114,7 @@ export const useLiveStore = defineStore('live', () => {
         stopHeartbeat()
         releaseWakeLock()
         mode.value = 'idle'
+        cameraProblem.value = null
         bump()
     }
 
@@ -124,14 +131,40 @@ export const useLiveStore = defineStore('live', () => {
         }
     }
 
+    // LiveKit membisukan track kamera lokal sendiri kalau kamera berhenti
+    // (track 'ended' lalu gagal dinyalakan ulang) -- siaran tetap tercatat
+    // aktif tapi tanpa gambar, jadi beri tahu staf dengan jelas.
+    function handleLocalCameraStopped(publication, participant) {
+        if (participant !== room?.localParticipant || publication.source !== CAMERA_SOURCE) return
+        if (mode.value !== 'broadcasting') return
+        cameraProblem.value = 'Kamera berhenti mengirim gambar. Tutup aplikasi lain yang memakai kamera, lalu tekan Nyalakan ulang kamera.'
+        bump()
+    }
+
+    function cameraIsLive() {
+        const track = room?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track
+        return !!track && !track.isMuted && track.mediaStreamTrack?.readyState === 'live'
+    }
+
     async function startWork() {
         connecting.value = true
+        cameraProblem.value = null
         try {
             const response = await api.post('/live/sessions/start')
             const { livekit_url, token, session } = response.data.data
             await connect(livekit_url, token)
             organizationId.value = session.organization_id
             await room.localParticipant.setCameraEnabled(true)
+            // Kamera bisa "berhasil" dibuka lalu langsung berhenti (mis. sedang
+            // dipakai aplikasi lain) -- jangan anggap siaran jalan tanpa gambar.
+            await new Promise((resolve) => setTimeout(resolve, 800))
+            if (!cameraIsLive()) {
+                const error = new Error(
+                    'Kamera menyala sebentar lalu berhenti. Tutup aplikasi lain yang memakai kamera (Zoom, Teams, tab lain), lalu coba lagi.',
+                )
+                error.name = 'CameraNotLive'
+                throw error
+            }
             mode.value = 'broadcasting'
             startHeartbeat()
             acquireWakeLock()
@@ -144,6 +177,18 @@ export const useLiveStore = defineStore('live', () => {
         } finally {
             connecting.value = false
         }
+    }
+
+    /** Matikan lalu nyalakan lagi kamera tanpa memutus siaran. */
+    async function restartCamera() {
+        if (!room || mode.value !== 'broadcasting') return
+        await room.localParticipant.setCameraEnabled(false)
+        await room.localParticipant.setCameraEnabled(true)
+        await new Promise((resolve) => setTimeout(resolve, 800))
+        cameraProblem.value = cameraIsLive()
+            ? null
+            : 'Kamera masih belum mengirim gambar. Periksa izin kamera di browser dan pastikan tidak dipakai aplikasi lain.'
+        bump()
     }
 
     async function endWork() {
@@ -212,6 +257,7 @@ export const useLiveStore = defineStore('live', () => {
     return {
         mode,
         organizationId,
+        cameraProblem,
         connecting,
         isBroadcasting,
         remoteParticipants,
@@ -219,6 +265,7 @@ export const useLiveStore = defineStore('live', () => {
         watchSite,
         startWork,
         endWork,
+        restartCamera,
         disconnect,
         setVisibleParticipants,
     }
