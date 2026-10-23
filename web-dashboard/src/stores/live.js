@@ -35,6 +35,8 @@ export const useLiveStore = defineStore('live', () => {
     // Pesan untuk staf kalau kamera berhenti mengirim gambar di tengah siaran
     // (dipakai aplikasi lain, izin dicabut, kabel kamera USB lepas, dst).
     const cameraProblem = ref(null)
+    // Awal sesi kerja (dari server) -- dasar durasi siaran di monitor sendiri.
+    const broadcastStartedAt = ref(null)
 
     const isBroadcasting = computed(() => mode.value === 'broadcasting')
 
@@ -74,10 +76,16 @@ export const useLiveStore = defineStore('live', () => {
             videoCaptureDefaults: { resolution: VideoPresets.h720.resolution, facingMode: 'user' },
             publishDefaults: {
                 simulcast: true,
-                // Layer kecil untuk grid, 720p hanya dikirim saat ada yang
-                // membuka tampilan besar (dynacast mematikan layer yang tidak diminta).
-                videoEncoding: VideoPresets.h720.encoding,
-                videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
+                // 720p dengan bitrate lebih longgar dari preset (1,7 Mbps) supaya
+                // detail meja/layar kerja tidak pecah jadi kotak-kotak.
+                videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 30 },
+                // Layer bawah untuk ubin kecil/jaringan lemah; penonton menerima
+                // layer sesuai ukuran ubinnya (dynacast mematikan yang tak diminta).
+                videoSimulcastLayers: [VideoPresets.h360, VideoPresets.h540],
+                // Saat bandwidth/CPU pas-pasan, turunkan frame rate -- bukan
+                // resolusi. Untuk memantau kerja, gambar tajam lebih penting
+                // daripada gerakan mulus.
+                degradationPreference: 'maintain-resolution',
             },
         })
 
@@ -110,6 +118,7 @@ export const useLiveStore = defineStore('live', () => {
         }
         mode.value = 'idle'
         cameraProblem.value = null
+        broadcastStartedAt.value = null
         bump()
     }
 
@@ -121,6 +130,7 @@ export const useLiveStore = defineStore('live', () => {
         releaseWakeLock()
         mode.value = 'idle'
         cameraProblem.value = null
+        broadcastStartedAt.value = null
         bump()
     }
 
@@ -175,6 +185,7 @@ export const useLiveStore = defineStore('live', () => {
                 throw error
             }
             mode.value = 'broadcasting'
+            broadcastStartedAt.value = session.started_at ?? new Date().toISOString()
             startHeartbeat()
             acquireWakeLock()
         } catch (err) {
@@ -198,6 +209,13 @@ export const useLiveStore = defineStore('live', () => {
             ? null
             : 'Kamera masih belum mengirim gambar. Periksa izin kamera di browser dan pastikan tidak dipakai aplikasi lain.'
         bump()
+    }
+
+    /** Resolusi & frame rate yang benar-benar dihasilkan kamera saat ini. */
+    function localCameraSettings() {
+        const settings = room?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track?.mediaStreamTrack?.getSettings()
+        if (!settings?.width) return null
+        return { width: settings.width, height: settings.height, frameRate: Math.round(settings.frameRate ?? 0) }
     }
 
     async function endWork() {
@@ -277,6 +295,7 @@ export const useLiveStore = defineStore('live', () => {
         mode,
         organizationId,
         cameraProblem,
+        broadcastStartedAt,
         connecting,
         isBroadcasting,
         remoteParticipants,
@@ -285,6 +304,7 @@ export const useLiveStore = defineStore('live', () => {
         startWork,
         endWork,
         restartCamera,
+        localCameraSettings,
         disconnect,
         setVisibleParticipants,
     }
