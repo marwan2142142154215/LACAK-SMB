@@ -56,7 +56,7 @@ sudo service redis-server start
 
 ## Penanggung jawab
 - Tim            : Internal
-- Developer      : Marwan (dengan Claude Code)
+- Developer      : Marwan
 - Divisi pengguna: Pemilik sistem (aset perusahaan / parental control)
 
 ## Tautan terkait

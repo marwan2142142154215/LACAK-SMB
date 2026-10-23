@@ -1,6 +1,7 @@
 package com.lacaksmb.tracker.data
 
 import android.content.Context
+import com.lacaksmb.tracker.BuildConfig
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -33,6 +34,11 @@ class DeviceIdentityStore(private val context: Context) {
         // EncryptedSharedPreferences tidak dipakai karena belum jadi
         // dependensi proyek.
         val DEVICE_SECRET = stringPreferencesKey("device_secret")
+
+        // Rahasia zero-touch dari BuildConfig hanya dipakai sekali. Kalau
+        // gateway kemudian menolaknya (mis. admin menekan Daftar Ulang),
+        // device harus mengklaim rahasia baru, bukan memasang ulang yang lama.
+        val BUILD_SECRET_APPLIED = booleanPreferencesKey("build_secret_applied")
     }
 
     val deviceUuidFlow: Flow<String> = context.dataStore.data.map { prefs ->
@@ -47,14 +53,43 @@ class DeviceIdentityStore(private val context: Context) {
 
     val isEnrolledFlow: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[Keys.IS_ENROLLED] ?: false }
 
-    /** Dipanggil sekali saat app pertama kali dibuka — bikin UUID kalau belum ada. */
+    /**
+     * Dipanggil sekali saat app pertama kali dibuka. Device identitas
+     * zero-touch (lihat build.gradle.kts DEVICE_UUID) SELALU diprioritaskan
+     * kalau ada -- backend-api yang generate device_uuid itu & sudah
+     * mendaftarkan baris Device-nya SEBELUM APK ini di-build, jadi device
+     * TIDAK BOLEH bikin UUID acak sendiri (acak sendiri = device_uuid yang
+     * tidak pernah terdaftar, gateway akan menolak device:hello-nya).
+     * ensureDeviceSecretFromBuild() mengikuti pola yang sama untuk secret.
+     */
     suspend fun ensureDeviceUuid(): String {
         val current = context.dataStore.data.map { it[Keys.DEVICE_UUID] }.first()
         if (!current.isNullOrBlank()) return current
 
+        if (BuildConfig.DEVICE_UUID.isNotBlank()) {
+            context.dataStore.edit { prefs -> prefs[Keys.DEVICE_UUID] = BuildConfig.DEVICE_UUID }
+            return BuildConfig.DEVICE_UUID
+        }
+
         val generated = UUID.randomUUID().toString()
         context.dataStore.edit { prefs -> prefs[Keys.DEVICE_UUID] = generated }
         return generated
+    }
+
+    /**
+     * Simpan rahasia device yang ditanam saat build (zero-touch, lihat
+     * build.gradle.kts DEVICE_SECRET) supaya APK langsung terhubung tanpa
+     * klaim enrollment. Hanya sekali per instalasi; aman dipanggil berulang.
+     */
+    suspend fun ensureDeviceSecretFromBuild() {
+        if (BuildConfig.DEVICE_SECRET.isBlank()) return
+        context.dataStore.edit { prefs ->
+            if (prefs[Keys.BUILD_SECRET_APPLIED] == true) return@edit
+            if (prefs[Keys.DEVICE_SECRET].isNullOrBlank()) {
+                prefs[Keys.DEVICE_SECRET] = BuildConfig.DEVICE_SECRET
+            }
+            prefs[Keys.BUILD_SECRET_APPLIED] = true
+        }
     }
 
     suspend fun saveEnrollment(siteCode: String, gatewayUrl: String) {

@@ -1,5 +1,6 @@
 import { io } from 'socket.io-client'
 import { onBeforeUnmount, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth'
 
@@ -10,6 +11,7 @@ import { useAuthStore } from '@/stores/auth'
  */
 export function useGatewaySocket() {
     const auth = useAuthStore()
+    const router = useRouter()
     const connected = ref(false)
     let socket = null
 
@@ -28,6 +30,18 @@ export function useGatewaySocket() {
 
         socket.on('disconnect', () => {
             connected.value = false
+        })
+
+        // Gateway mengecek ulang token tiap 5 menit (lihat socket.ts
+        // registerOpsNamespace) karena koneksi socket cuma diverifikasi
+        // sekali di awal -- tab yang didiamkan lama tanpa request REST apa
+        // pun (jadi tidak pernah kena 401 dari interceptor di main.js) bisa
+        // tetap "connect" walau sesinya sudah idle timeout 2 jam di server.
+        // Event ini yang menutup celah itu: logout paksa begitu gateway
+        // bilang tokennya sudah tidak valid lagi.
+        socket.on('session:expired', () => {
+            auth.clearSession()
+            router.push({ name: 'login' })
         })
 
         return socket

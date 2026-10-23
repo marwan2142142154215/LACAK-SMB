@@ -4,10 +4,16 @@ namespace App\Jobs;
 
 use App\Models\ApkBuild;
 use App\Services\ApkBuilder;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
-class BuildApkJob implements ShouldQueue
+/**
+ * ShouldBeEncrypted: untuk APK tracker zero-touch, payload job membawa rahasia
+ * device asli (server sendiri hanya menyimpan hash-nya), jadi tidak boleh
+ * tersimpan polos di tabel jobs.
+ */
+class BuildApkJob implements ShouldBeEncrypted, ShouldQueue
 {
     use Queueable;
 
@@ -16,7 +22,7 @@ class BuildApkJob implements ShouldQueue
 
     public $tries = 1;
 
-    public function __construct(public int $apkBuildId) {}
+    public function __construct(public int $apkBuildId, public ?string $deviceSecret = null) {}
 
     public function handle(ApkBuilder $builder): void
     {
@@ -28,7 +34,7 @@ class BuildApkJob implements ShouldQueue
 
         $apkBuild->update(['status' => 'building']);
 
-        $builder->build($apkBuild);
+        $builder->build($apkBuild, $this->deviceSecret);
     }
 
     public function failed(\Throwable $exception): void

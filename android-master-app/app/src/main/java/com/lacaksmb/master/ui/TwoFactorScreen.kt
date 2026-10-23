@@ -19,11 +19,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import com.lacaksmb.master.data.ApiClient
 import com.lacaksmb.master.data.ApiResult
 import com.lacaksmb.master.data.SessionStore
 import com.lacaksmb.master.data.UserProfile
+import com.lacaksmb.master.service.MasterAnchorService
 import com.lacaksmb.master.ui.components.AppButton
 import com.lacaksmb.master.ui.components.SectionCard
 import com.lacaksmb.master.ui.components.appTextFieldColors
@@ -40,6 +42,7 @@ fun TwoFactorScreen(apiClient: ApiClient, sessionStore: SessionStore, navControl
     var loading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val isSetup = AuthFlowState.isSetupMode
+    val context = LocalContext.current
 
     fun handleAuthData(data: JSONObject?) {
         val token = data?.optString("access_token")
@@ -50,6 +53,7 @@ fun TwoFactorScreen(apiClient: ApiClient, sessionStore: SessionStore, navControl
         }
         val user = UserProfile.fromJson(userJson)
         sessionStore.saveSession(token, user)
+        MasterAnchorService.start(context.applicationContext)
         AuthFlowState.clear()
         navController.navigate(Routes.DEVICE_LIST) {
             popUpTo(Routes.LOGIN) { inclusive = true }

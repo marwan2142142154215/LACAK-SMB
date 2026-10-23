@@ -18,7 +18,11 @@ use RuntimeException;
  */
 class ApkBuilder
 {
-    public function build(ApkBuild $apkBuild): void
+    /**
+     * @param  string|null  $deviceSecret  Rahasia device asli untuk APK tracker
+     *                                     zero-touch; database hanya menyimpan hash-nya.
+     */
+    public function build(ApkBuild $apkBuild, ?string $deviceSecret = null): void
     {
         $organization = Organization::findOrFail($apkBuild->organization_id);
 
@@ -76,6 +80,10 @@ class ApkBuilder
             $siteName,
             $apkBuild->version,
             config('lacaksmb.public_backend_api_url'),
+            // Identitas zero-touch (lihat ApkBuildController::generate) --
+            // cuma terisi untuk apk_type='tracker'.
+            $apkBuild->device?->device_uuid ?? '',
+            $deviceSecret ?? '',
         ];
 
         $result = Process::timeout(300)->run($command);

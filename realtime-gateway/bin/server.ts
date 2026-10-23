@@ -22,7 +22,7 @@
 // ini memaksa semua kolom bigint di-parse sebagai JS number di satu tempat,
 // konsisten dengan apa yang dikirim backend-api, bukan ditambal di tiap
 // pemakai belakangan.
-const pg = (await import('pg')).default
+const { default: pg } = await import('pg')
 pg.types.setTypeParser(20, (value: string) => Number.parseInt(value, 10))
 
 await import('reflect-metadata')

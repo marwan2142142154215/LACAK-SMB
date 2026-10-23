@@ -35,7 +35,7 @@ class DeviceEnrollmentController extends Controller
             'device_uuid' => ['required', 'string', 'max:255'],
         ]);
 
-        $plainSecret = bin2hex(random_bytes(self::SECRET_BYTES));
+        $plainSecret = self::generatePlainSecret();
 
         // lockForUpdate di dalam transaksi supaya dua klaim bersamaan untuk
         // device yang sama tidak sama-sama lolos dan saling menimpa rahasia.
@@ -65,6 +65,15 @@ class DeviceEnrollmentController extends Controller
         return $this->success('Device berhasil diaktifkan', [
             'device_secret' => $plainSecret,
         ]);
+    }
+
+    /**
+     * Rahasia device baru (hex). Juga dipakai ApkBuildController::generate
+     * untuk APK tracker zero-touch yang rahasianya ditanam saat build.
+     */
+    public static function generatePlainSecret(): string
+    {
+        return bin2hex(random_bytes(self::SECRET_BYTES));
     }
 
     public function reEnroll(Request $request, Device $device): JsonResponse

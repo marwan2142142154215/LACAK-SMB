@@ -94,6 +94,7 @@
             android:launchMode="singleTask"
             android:excludeFromRecents="true"
             android:showOnLockScreen="true"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.LacakTracker" />
 
         <receiver

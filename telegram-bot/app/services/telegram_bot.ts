@@ -1,16 +1,34 @@
 import { Bot, InputFile, type Context } from 'node-telegram-bot-api/node'
 import type { Logger } from '@adonisjs/core/logger'
 import * as backend from '#services/backend_api_client'
-import type { Device } from '#services/backend_api_client'
+import type { Device, StaffLink } from '#services/backend_api_client'
 
 const NOT_LINKED_MESSAGE =
     'Chat ini belum ditautkan ke site mana pun. Minta admin menautkannya lewat dashboard (menu Bot Telegram).'
+
+const NOT_STAFF_MESSAGE =
+    'Akun Telegram Anda belum ditautkan ke akun staf. Minta admin menautkan akun Anda lewat dashboard (menu Bot Telegram -> Tautkan Akun Staf).'
+const NO_PERMISSION_MESSAGE = 'Akun staf Anda tidak punya izin untuk perintah ini.'
 
 const APK_POLL_INTERVAL_MS = 5_000
 // ~3 menit: cukup untuk build normal (1-2 menit) tanpa membuat operator menunggu tanpa batas.
 const APK_POLL_MAX_TRIES = 36
 
 type OrganizationHandler = (ctx: Context, chatId: number, organizationId: number) => Promise<void>
+
+/**
+ * Replika ResolvesOrganizationScope di backend-api untuk akun staf pengirim:
+ * super_admin lintas site, admin/leader hanya site yang diberikan lewat
+ * user_site_access, role lain hanya site miliknya sendiri.
+ */
+function staffCanActOnOrganization(staff: StaffLink, organizationId: number, permission: string) {
+    if (!staff.permissions.includes(permission)) return false
+    if (staff.roles.includes('super_admin')) return true
+    if (staff.roles.includes('admin') || staff.roles.includes('leader')) {
+        return staff.accessible_organization_ids.includes(organizationId)
+    }
+    return staff.organization_id === organizationId
+}
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
@@ -76,6 +94,34 @@ export function createTelegramBot(token: string, logger: Logger): Bot {
         }
     }
 
+    /**
+     * Seperti dashboard & APK master: tiap orang bertindak sesuai izin akun
+     * stafnya sendiri, bukan izin akun layanan bot yang berlaku untuk semua
+     * anggota grup. Backend tetap membatasi bot ke site milik chat.
+     */
+    function withStaffPermission(permission: string, handler: OrganizationHandler) {
+        return withOrganization(async (ctx, chatId, organizationId) => {
+            const telegramUserId = ctx.from?.id
+            if (telegramUserId === undefined) {
+                await ctx.reply('Tidak bisa mengenali akun Telegram Anda.')
+                return
+            }
+
+            const staff = await backend.resolveUserLink(telegramUserId)
+            if (!staff) {
+                await ctx.reply(NOT_STAFF_MESSAGE)
+                return
+            }
+
+            if (!staffCanActOnOrganization(staff, organizationId, permission)) {
+                await ctx.reply(NO_PERMISSION_MESSAGE)
+                return
+            }
+
+            await handler(ctx, chatId, organizationId)
+        })
+    }
+
     async function handleCommandAction(
         ctx: Context,
         chatId: number,
@@ -114,6 +160,8 @@ export function createTelegramBot(token: string, logger: Logger): Bot {
                     `Chat ini terhubung ke site #${organizationId}.`,
                     '',
                     'Perintah tersedia: /devices /lock /unlock /locate /status /help',
+                    '',
+                    `ID Telegram Anda: ${ctx.from?.id ?? '-'} — kirim ke admin untuk ditautkan ke akun staf Anda.`,
                 ].join('\n')
             )
         })
@@ -128,13 +176,15 @@ export function createTelegramBot(token: string, logger: Logger): Bot {
                 '/locate <id> — minta lokasi terbaru sekarang',
                 '/status <id> — detail status satu device',
                 '/apk [tracker|master|server] - build & kirim artefak untuk site ini (default: tracker)',
+                '',
+                'Setiap perintah dicek terhadap izin akun staf yang ditautkan ke akun Telegram Anda.',
             ].join('\n')
         )
     })
 
     bot.command(
         'apk',
-        withOrganization(async (ctx, chatId, organizationId) => {
+        withStaffPermission('apk-builds.manage', async (ctx, chatId, organizationId) => {
             const requested = commandArgs(ctx).toLowerCase()
             const apkType =
                 requested === 'master' ? 'master' : requested === 'server' ? 'server' : 'tracker'
@@ -221,7 +271,7 @@ export function createTelegramBot(token: string, logger: Logger): Bot {
 
     bot.command(
         'devices',
-        withOrganization(async (ctx, chatId, organizationId) => {
+        withStaffPermission('devices.view', async (ctx, chatId, organizationId) => {
             const devices = await backend.listDevices(chatId, organizationId)
             if (devices.length === 0) {
                 await ctx.reply('Belum ada device terdaftar di site ini.')
@@ -233,7 +283,7 @@ export function createTelegramBot(token: string, logger: Logger): Bot {
 
     bot.command(
         'status',
-        withOrganization(async (ctx, chatId, organizationId) => {
+        withStaffPermission('devices.view', async (ctx, chatId, organizationId) => {
             const [deviceId] = commandArgs(ctx).split(/\s+/)
             if (!/^\d+$/.test(deviceId ?? '')) {
                 await ctx.reply('Pakai format: /status <id_device>')
@@ -264,21 +314,21 @@ export function createTelegramBot(token: string, logger: Logger): Bot {
 
     bot.command(
         'lock',
-        withOrganization((ctx, chatId, organizationId) =>
+        withStaffPermission('devices.lock', (ctx, chatId, organizationId) =>
             handleCommandAction(ctx, chatId, organizationId, 'lock', 'Lock')
         )
     )
 
     bot.command(
         'unlock',
-        withOrganization((ctx, chatId, organizationId) =>
+        withStaffPermission('devices.unlock', (ctx, chatId, organizationId) =>
             handleCommandAction(ctx, chatId, organizationId, 'unlock', 'Unlock')
         )
     )
 
     bot.command(
         'locate',
-        withOrganization((ctx, chatId, organizationId) =>
+        withStaffPermission('devices.locate', (ctx, chatId, organizationId) =>
             handleCommandAction(ctx, chatId, organizationId, 'locate_now', 'Locate')
         )
     )

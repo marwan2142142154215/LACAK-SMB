@@ -12,6 +12,10 @@ GATEWAY_URL="${2:?GATEWAY_URL wajib diisi}"
 SITE_NAME="${3:?SITE_NAME wajib diisi}"
 VERSION="${4:-1.0.0}"
 BACKEND_API_URL="${5:?BACKEND_API_URL wajib diisi}"
+# Opsional -- identitas device zero-touch (lihat komentar DEVICE_UUID/
+# DEVICE_SECRET di app/build.gradle.kts). Kosong untuk build master/dev biasa.
+DEVICE_UUID="${6:-}"
+DEVICE_SECRET="${7:-}"
 
 export ANDROID_HOME="$HOME/android-sdk"
 export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
@@ -23,7 +27,9 @@ cd "$(dirname "$0")/.."
     -PgatewayUrl="$GATEWAY_URL" \
     -PsiteName="$SITE_NAME" \
     -PappVersionName="$VERSION" \
-    -PbackendApiUrl="$BACKEND_API_URL"
+    -PbackendApiUrl="$BACKEND_API_URL" \
+    -PdeviceUuid="$DEVICE_UUID" \
+    -PdeviceSecret="$DEVICE_SECRET"
 
 APK_PATH="$(pwd)/app/build/outputs/apk/debug/app-debug.apk"
 

@@ -47,6 +47,7 @@
         "@poppinss/ts-exec": "^1.4.4",
         "@types/luxon": "^3.7.5",
         "@types/node": "~26.6.2",
+        "@types/pg": "^8.23.1",
         "eslint": "^10.11.0",
         "hot-hook": "^1.0.0",
         "pino-pretty": "^13.1.3",

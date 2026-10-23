@@ -64,6 +64,34 @@ export async function resolveOrganizationId(chatId: number): Promise<number | nu
     }
 }
 
+/** Akun staf yang ditautkan ke akun Telegram pengirim pesan. */
+export type StaffLink = {
+    id: number
+    name: string
+    username: string
+    organization_id: number | null
+    roles: string[]
+    permissions: string[]
+    accessible_organization_ids: number[]
+}
+
+/**
+ * Cocokkan akun Telegram pengirim (ctx.from.id) ke akun staf lewat endpoint
+ * lookup khusus akun layanan bot. null = belum ditautkan atau staf nonaktif.
+ */
+export async function resolveUserLink(telegramUserId: number): Promise<StaffLink | null> {
+    try {
+        const response = await api.get('/telegram-user-links-lookup', {
+            params: { telegram_user_id: String(telegramUserId) },
+        })
+        return response.data.data
+    } catch (error) {
+        const status = responseStatusOf(error)
+        if (status === 403 || status === 404) return null
+        throw error
+    }
+}
+
 export async function listDevices(chatId: number, organizationId: number): Promise<Device[]> {
     const response = await api.get(
         '/devices',

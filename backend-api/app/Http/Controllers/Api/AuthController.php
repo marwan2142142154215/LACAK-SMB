@@ -43,6 +43,23 @@ class AuthController extends Controller
     /** Maksimum percobaan kode salah per challenge sebelum sesi login dibatalkan. */
     private const MAX_2FA_ATTEMPTS = 5;
 
+    // Standar keamanan perusahaan (bagian 6.4): "token dan sesi memiliki
+    // masa berlaku, tidak berlaku selamanya" -- diterapkan sebagai sesi
+    // IDLE TIMEOUT (seperti sesi login biasa), bukan batas absolut dari
+    // waktu login: tiap request yang diautentikasi memperpanjang expires_at
+    // 2 jam ke depan lagi (lihat middleware ExtendTokenExpiry di
+    // bootstrap/app.php), jadi staf yang aktif terus tidak pernah ke-logout
+    // paksa, tapi yang diam/menutup tab 2 jam otomatis perlu login ulang.
+    //
+    // SENGAJA per-token lewat createToken($name, $abilities, $expiresAt),
+    // BUKAN lewat config('sanctum.expiration') global -- itu akan ikut
+    // memotong token akun layanan (telegram-bot, dkk, lihat
+    // App\Console\Commands\IssueTelegramBotToken) yang memang harus hidup
+    // terus tanpa ada yang login ulang untuk memperbaruinya. Token service
+    // account dibuat TANPA expires_at (null) dan ExtendTokenExpiry sengaja
+    // membiarkan token null tetap null, tidak pernah memberinya expiry.
+    public const TOKEN_IDLE_HOURS = 2;
+
     public function login(Request $request)
     {
         $credentials = $request->validate([
@@ -169,7 +186,7 @@ class AuthController extends Controller
                 'two_factor_confirmed_at' => now(),
             ])->save();
 
-            return $user->createToken($this->tokenNameFor($request))->plainTextToken;
+            return $user->createToken($this->tokenNameFor($request), ['*'], now()->addHours(self::TOKEN_IDLE_HOURS))->plainTextToken;
         });
 
         Cache::forget("auth:2fa_setup:{$data['setup_token']}");
@@ -221,7 +238,7 @@ class AuthController extends Controller
         Cache::forget($challengeKey);
         Cache::forget($attemptsKey);
 
-        $token = $user->createToken($this->tokenNameFor($request))->plainTextToken;
+        $token = $user->createToken($this->tokenNameFor($request), ['*'], now()->addHours(self::TOKEN_IDLE_HOURS))->plainTextToken;
 
         return $this->success('Login berhasil', [
             'access_token' => $token,
@@ -281,6 +298,16 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         return $this->success('Data user saat ini', $this->userPayload($request->user()));
+    }
+
+    /**
+     * Sama seperti me(), tapi route-nya tanpa extend-token: dipakai
+     * realtime-gateway untuk cek ulang sesi socket dashboard tanpa ikut
+     * memperpanjang idle timeout.
+     */
+    public function session(Request $request)
+    {
+        return $this->success('Sesi masih berlaku', $this->userPayload($request->user()));
     }
 
     private function tokenNameFor(Request $request): string

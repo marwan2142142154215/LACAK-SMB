@@ -9,11 +9,15 @@ use App\Http\Resources\ApkBuildResource;
 use App\Http\Responses\ApiResponse;
 use App\Jobs\BuildApkJob;
 use App\Models\ApkBuild;
+use App\Models\ConsentDocument;
+use App\Models\Device;
 use App\Models\Organization;
 use App\Support\ResolvesOrganizationScope;
 use App\Support\ServesDocumentsDiskFiles;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Registry APK pelacak per site. embedded_site_code + checksum dipakai APK
@@ -101,9 +105,58 @@ class ApkBuildController extends Controller
 
         $organization = Organization::findOrFail($organizationId);
 
-        $build = DB::transaction(function () use ($request, $organizationId, $organization): ApkBuild {
+        // Zero-touch provisioning: untuk APK tracker, baris Device dibuat di
+        // sini -- sebelum build Gradle dipicu -- dengan device_uuid & rahasia
+        // device digenerate server, lalu keduanya ditanam ke APK (lihat
+        // App\Services\ApkBuilder). Begitu dipasang, APK langsung bisa
+        // terhubung ke gateway tanpa klaim enrollment.
+        $consent = null;
+
+        if ($request->validated('apk_type') === 'tracker') {
+            $consent = ConsentDocument::find($request->validated('consent_document_id'));
+
+            if (! $consent || $consent->organization_id !== $organizationId) {
+                return $this->fail('Dokumen consent tidak ditemukan untuk site ini', null, 422);
+            }
+
+            if (! $consent->isActive()) {
+                return $this->fail('Dokumen consent sudah dicabut/kedaluwarsa, tidak bisa dipakai membuat APK', null, 422);
+            }
+        }
+
+        $build = DB::transaction(function () use ($request, $organizationId, $organization, $consent): ApkBuild {
+            $device = null;
+            $plainDeviceSecret = null;
+
+            if ($consent !== null) {
+                // Format sama dengan DeviceEnrollmentController::claim. Yang
+                // disimpan hanya hash-nya; token asli cuma ikut payload job
+                // build (terenkripsi) untuk ditanam ke APK.
+                $plainDeviceSecret = DeviceEnrollmentController::generatePlainSecret();
+
+                $device = Device::create([
+                    'organization_id' => $organizationId,
+                    'consent_document_id' => $consent->id,
+                    'device_name' => $request->validated('device_name'),
+                    'device_uuid' => (string) Str::uuid(),
+                    // Belum diketahui sampai device fisiknya pertama kali
+                    // terhubung; kosong, bukan placeholder seperti "unknown".
+                    'android_version' => '',
+                    'app_build_version' => $request->validated('version') ?: '1.0.0',
+                    'site_code_embedded' => $organization->unique_site_code,
+                    'status' => 'pending_enrollment',
+                    'enrolled_at' => now(),
+                    'is_active' => true,
+                    'created_by' => $request->user()->id,
+                    'updated_by' => $request->user()->id,
+                ]);
+
+                $device->forceFill(['secret_hash' => hash('sha256', $plainDeviceSecret)])->save();
+            }
+
             $build = ApkBuild::create([
                 'organization_id' => $organizationId,
+                'device_id' => $device?->id,
                 'apk_type' => $request->validated('apk_type'),
                 'version' => $request->validated('version') ?: '1.0.0',
                 'status' => 'pending',
@@ -115,7 +168,7 @@ class ApkBuildController extends Controller
             // Antrean berbasis PostgreSQL (QUEUE_CONNECTION=database): baris job
             // ikut transaksi yang sama, jadi batal bersama bila insert gagal dan
             // tidak terlihat worker sebelum commit (standar: antrean transaksional).
-            BuildApkJob::dispatch($build->id);
+            BuildApkJob::dispatch($build->id, $plainDeviceSecret);
 
             return $build;
         });

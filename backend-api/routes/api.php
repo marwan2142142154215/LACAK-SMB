@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\DeviceOtpController;
 use App\Http\Controllers\Api\GeofenceRuleController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\TelegramBindingController;
+use App\Http\Controllers\Api\TelegramUserLinkController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ViolationLogController;
 use App\Http\Controllers\Api\WorkSessionController;
@@ -27,18 +28,24 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->name('api.v1.')->group(function () {
 
     Route::prefix('auth')->group(function () {
-        Route::post('/login', [AuthController::class, 'login']);
         // throttle per-IP sebagai lapis pertama anti brute-force (lapis kedua:
-        // hitung percobaan per challenge/device di controller).
+        // hitung percobaan per challenge/device di controller). /login lebih
+        // ketat karena tidak punya batas percobaan per challenge.
+        Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
         Route::post('/2fa/setup/confirm', [AuthController::class, 'confirmTwoFactorSetup'])
             ->middleware('throttle:10,1');
         Route::post('/2fa/verify', [AuthController::class, 'verifyTwoFactor'])
             ->middleware('throttle:10,1');
 
-        Route::middleware('auth:sanctum')->group(function () {
+        Route::middleware(['auth:sanctum', 'extend-token'])->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);
             Route::get('/me', [AuthController::class, 'me']);
         });
+
+        // Dipakai realtime-gateway untuk mengecek ulang sesi socket dashboard
+        // secara berkala. Sengaja TANPA extend-token: pengecekan otomatis ini
+        // bukan aktivitas staf, jadi tidak boleh memperpanjang idle timeout.
+        Route::get('/session', [AuthController::class, 'session'])->middleware('auth:sanctum');
     });
 
     // Dipanggil langsung oleh APK pelacak di device target yang sedang
@@ -63,7 +70,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         ->name('apk-builds.download')
         ->middleware('signed');
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'extend-token'])->group(function () {
         Route::apiResource('organizations', OrganizationController::class);
 
         Route::get('/dashboard-summary', [DashboardSummaryController::class, 'show']);
@@ -100,5 +107,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('/live/sessions/heartbeat', [WorkSessionController::class, 'heartbeat']);
         Route::post('/live/sessions/end', [WorkSessionController::class, 'end']);
         Route::post('/live/watch-token', [WorkSessionController::class, 'watchToken'])->middleware('throttle:30,1');
+        Route::apiResource('telegram-user-links', TelegramUserLinkController::class)->only(['index', 'store', 'destroy']);
+        Route::get('/telegram-user-links-lookup', [TelegramUserLinkController::class, 'lookup']);
     });
 });

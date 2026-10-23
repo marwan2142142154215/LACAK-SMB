@@ -6,6 +6,7 @@ import socketManager from '#services/socket_manager'
 import { getSystemUserId } from '#services/system_user'
 import { notifyTelegramViolation } from '#services/telegram_notifier'
 import Device from '#models/device'
+import { isAuthorizedMasterBeaconFor } from '#services/master_anchor_registry'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 type LocationReport = {
@@ -14,7 +15,17 @@ type LocationReport = {
     bleDistanceMeters?: number | null
     latitude?: number | null
     longitude?: number | null
+    nearbyBeaconUuid?: string | null
+    nearbyBeaconDistanceMeters?: number | null
 }
+
+/**
+ * Radius aman untuk anchor bergerak (APK Master yang login, lihat
+ * master_anchor_registry.ts). Sengaja konstanta tetap, tidak ikut
+ * max_distance_meters GeofenceRule, supaya tetap berfungsi saat anchor fisik
+ * hilang/rusak -- kasus yang memicu fitur ini.
+ */
+const MASTER_ANCHOR_SAFE_RADIUS_METERS = 10
 
 /**
  * Histeresis unlock: pembacaan dianggap "bukti kembali ke radius aman" hanya
@@ -136,6 +147,14 @@ async function evaluateGeofenceNow(device: Device, report: LocationReport) {
     }
     const inBleWarmup = (warmupUntilByDevice.get(device.id) ?? 0) > now
 
+    // APK Master yang login & dekat jadi bukti "di tempat aman" setara anchor
+    // BLE fisik, untuk menutupi anchor fisik yang rusak/hilang/belum di-setup.
+    const masterAnchorSafe =
+        !!report.nearbyBeaconUuid &&
+        typeof report.nearbyBeaconDistanceMeters === 'number' &&
+        report.nearbyBeaconDistanceMeters <= MASTER_ANCHOR_SAFE_RADIUS_METERS &&
+        isAuthorizedMasterBeaconFor(report.nearbyBeaconUuid, device.organizationId)
+
     const rules = await GeofenceRule.query()
         .where('organization_id', device.organizationId)
         .where('is_active', true)
@@ -231,6 +250,13 @@ async function evaluateGeofenceNow(device: Device, report: LocationReport) {
             rule.anchorDeviceId !== null &&
             rule.anchorDeviceId !== device.id
         ) {
+            if (masterAnchorSafe) {
+                // Bukti aman hanya untuk cek anchor ini; WiFi/IP/GPS rule yang
+                // sama tetap dievaluasi seperti biasa.
+                hasEvaluableSignal = true
+                continue
+            }
+
             const bleMissing =
                 report.bleDistanceMeters === null || report.bleDistanceMeters === undefined
 

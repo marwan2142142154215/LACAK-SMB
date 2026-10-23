@@ -28,6 +28,30 @@ type AuthMeResponse = {
  * balik ke backend-api Laravel (satu-satunya sumber kebenaran auth, sesuai
  * instruksi: semua wajib login lewat jalur yang sama).
  */
+/**
+ * Cek ulang sesi dashboard lewat /auth/session, yang sengaja tidak memperpanjang
+ * idle timeout token. true = masih berlaku, false = ditolak backend (401/403),
+ * null = backend tidak bisa dihubungi (jangan perlakukan sebagai sesi habis).
+ */
+export async function isSessionStillValid(token: string): Promise<boolean | null> {
+    try {
+        const response = await axios.get(`${env.get('BACKEND_API_URL')}/api/v1/auth/session`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: 'application/json',
+            },
+            validateStatus: () => true,
+        })
+
+        if (response.status === 401 || response.status === 403) return false
+        if (response.status >= 200 && response.status < 300) return true
+        return null
+    } catch (error) {
+        log.error('gagal mengecek ulang sesi ke backend-api', describeHttpError(error))
+        return null
+    }
+}
+
 export async function verifyBearerToken(token: string): Promise<AuthenticatedUser | null> {
     try {
         const response = await axios.get<AuthMeResponse>(

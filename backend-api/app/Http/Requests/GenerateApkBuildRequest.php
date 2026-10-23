@@ -18,6 +18,15 @@ class GenerateApkBuildRequest extends FormRequest
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
             'apk_type' => ['required', Rule::in(['tracker', 'master', 'server'])],
             'version' => ['nullable', 'string', 'max:20', 'regex:/^\d+\.\d+\.\d+$/'],
+            // Zero-touch provisioning (permintaan: APK tracker begitu
+            // dipasang langsung jalan, tanpa layar pairing apa pun) --
+            // device_name & consent_document_id WAJIB untuk apk_type=tracker
+            // supaya ApkBuildController::generate bisa langsung membuat baris
+            // Device (dengan device_uuid + rahasia device digenerate server)
+            // SEBELUM build Gradle dipicu, lalu menanamkan keduanya ke APK.
+            // Tidak relevan untuk master/server (tidak terikat satu device).
+            'device_name' => ['required_if:apk_type,tracker', 'nullable', 'string', 'max:255'],
+            'consent_document_id' => ['required_if:apk_type,tracker', 'nullable', 'integer', 'exists:consent_documents,id'],
         ];
     }
 }

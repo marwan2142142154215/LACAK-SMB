@@ -8,10 +8,14 @@ import ApkBuild from '#models/apk_build'
 import DeviceLocation from '#models/device_location'
 import GeofenceRule from '#models/geofence_rule'
 import socketManager from '#services/socket_manager'
-import { verifyBearerToken } from '#services/backend_api_client'
+import { isSessionStillValid, verifyBearerToken } from '#services/backend_api_client'
 import { evaluateGeofence } from '#services/geofence_evaluator'
 import { markCommandAcknowledged } from '#services/command_dispatcher'
 import { beaconUuidFor, isDeviceSecretValid } from '#services/device_credentials'
+import {
+    registerMasterBeacon,
+    unregisterMasterBeaconsForSocket,
+} from '#services/master_anchor_registry'
 
 type DeviceHelloPayload = {
     deviceUuid: string
@@ -29,16 +33,23 @@ type DeviceLocationPayload = {
     batteryLevel?: number | null
     ssid?: string | null
     ip?: string | null
+    // APK Lacak scan BLE tanpa filter, jadi bisa melihat APK Master yang
+    // kebetulan di dekatnya: UUID + jarak sinyal BLE terdekat selain anchor
+    // tetap, dicocokkan ke master_anchor_registry oleh geofence_evaluator.
+    nearbyBeaconUuid?: string | null
+    nearbyBeaconDistanceMeters?: number | null
 }
 
 const PIRACY_WARNING = 'silahkan download dari sumber resmi bosku'
 
 // Kode dikirim di error.data supaya APK bisa membedakan "rahasia salah/hilang,
 // klaim ulang" dari gangguan server sementara tanpa mengurai teks pesan.
-type DeviceAuthErrorCode = 'invalid_credentials' | 'reenroll_required' | 'server_error'
+type DeviceAuthErrorCode =
+    'invalid_credentials' | 'reenroll_required' | 'rate_limited' | 'server_error'
 
 const INVALID_CREDENTIALS_MESSAGE =
     'Kredensial device tidak valid, minta admin mendaftarkan ulang device ini'
+const RATE_LIMITED_MESSAGE = 'Terlalu banyak percobaan, coba lagi nanti'
 const REENROLL_REQUIRED_MESSAGE =
     'Device ini terdaftar sebelum pembaruan keamanan dan wajib didaftarkan ulang oleh admin'
 
@@ -62,6 +73,26 @@ export function registerSocketHandlers(io: SocketIoServer) {
     registerOpsNamespace(opsNs)
 }
 
+// Pembatas percobaan handshake device per alamat IP: tiap percobaan (termasuk
+// deviceUuid acak) memicu query Postgres sebelum ditolak, jadi tanpa batas
+// satu klien bisa membebani DB. In-memory cukup untuk satu instance gateway.
+const HANDSHAKE_WINDOW_MS = 60_000
+const HANDSHAKE_MAX_ATTEMPTS = 20
+const handshakeAttemptsByIp = new Map<string, { count: number; windowStart: number }>()
+
+function isHandshakeRateLimited(ip: string): boolean {
+    const now = Date.now()
+    const entry = handshakeAttemptsByIp.get(ip)
+
+    if (!entry || now - entry.windowStart > HANDSHAKE_WINDOW_MS) {
+        handshakeAttemptsByIp.set(ip, { count: 1, windowStart: now })
+        return false
+    }
+
+    entry.count += 1
+    return entry.count > HANDSHAKE_MAX_ATTEMPTS
+}
+
 function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
     // device_uuid & site code tidak rahasia (tampil di layar / tertanam di APK),
     // jadi identitas device hanya diterima kalau handshake juga membawa rahasia
@@ -69,6 +100,10 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
     // yang tahu device_uuid bisa menyamar: mengirim lokasi palsu (memicu
     // auto-unlock geofence) dan menerima command:push milik device itu.
     deviceNs.use(async (socket, next) => {
+        if (isHandshakeRateLimited(socket.handshake.address)) {
+            return next(deviceAuthError(RATE_LIMITED_MESSAGE, 'rate_limited'))
+        }
+
         const deviceUuid = socket.handshake.auth?.deviceUuid
         const deviceSecret = socket.handshake.auth?.deviceSecret
 
@@ -305,6 +340,8 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                     bleDistanceMeters: payload.bleDistanceMeters,
                     latitude: payload.latitude,
                     longitude: payload.longitude,
+                    nearbyBeaconUuid: payload.nearbyBeaconUuid,
+                    nearbyBeaconDistanceMeters: payload.nearbyBeaconDistanceMeters,
                 })
             } catch (error) {
                 logger.error('device:location gagal diproses', { error })
@@ -313,7 +350,17 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
 
         socket.on('command:ack', async (payload: { commandId: number }) => {
             if (boundDeviceId === null) return
-            await markCommandAcknowledged(payload.commandId, boundDeviceId)
+
+            // commandId berasal dari payload socket (tidak tepercaya): nilai
+            // bukan angka membuat query Postgres reject, dan tanpa try/catch
+            // unhandled rejection itu mematikan seluruh proses gateway.
+            if (!Number.isInteger(payload?.commandId)) return
+
+            try {
+                await markCommandAcknowledged(payload.commandId, boundDeviceId)
+            } catch (error) {
+                logger.error('command:ack gagal diproses', { error, deviceId: boundDeviceId })
+            }
         })
 
         socket.on('disconnect', async () => {
@@ -405,6 +452,42 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
         if (isSuperAdmin) {
             socket.join('superadmins')
         }
+
+        // Idle timeout (standar 6.4) ditegakkan backend-api lewat expires_at
+        // token, tapi socket hanya memverifikasi token sekali saat connect.
+        // Cek ulang berkala lewat /auth/session (tidak memperpanjang token),
+        // supaya tab dashboard yang didiamkan tetap kena idle timeout. Gangguan
+        // jaringan ke backend (null) tidak memutus sesi.
+        const token = socket.handshake.auth?.token as string
+        const revalidate = setInterval(
+            async () => {
+                if ((await isSessionStillValid(token)) === false) {
+                    socket.emit('session:expired', {
+                        message: 'Sesi berakhir, silakan login ulang',
+                    })
+                    socket.disconnect(true)
+                }
+            },
+            5 * 60 * 1000
+        )
+
+        // APK Master jadi "anchor bergerak": selama socket /ops ini hidup dan
+        // APK Master memanggil master:beacon:start, APK Lacak yang mendeteksinya
+        // lewat BLE dalam radius aman dianggap berada di tempat aman (lihat
+        // master_anchor_registry.ts, yang juga memeriksa izin devices.unlock).
+        socket.on('master:beacon:start', (payload: { beaconUuid?: string }) => {
+            if (typeof payload?.beaconUuid !== 'string' || payload.beaconUuid === '') return
+            registerMasterBeacon(payload.beaconUuid, user, socket.id)
+        })
+
+        socket.on('master:beacon:stop', () => {
+            unregisterMasterBeaconsForSocket(socket.id)
+        })
+
+        socket.on('disconnect', () => {
+            clearInterval(revalidate)
+            unregisterMasterBeaconsForSocket(socket.id)
+        })
 
         logger.info('ops client terhubung', { userId: user.id, username: user.username })
     })

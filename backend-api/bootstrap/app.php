@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ExtendTokenExpiry;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -29,6 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
+            'extend-token' => ExtendTokenExpiry::class,
         ]);
 
         // Server ini diakses publik lewat Cloudflare Tunnel (TLS berhenti di

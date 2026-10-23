@@ -14,11 +14,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -43,6 +44,7 @@ import com.lacaksmb.master.data.ApiClient
 import com.lacaksmb.master.data.ApiResult
 import com.lacaksmb.master.data.Device
 import com.lacaksmb.master.data.SessionStore
+import com.lacaksmb.master.service.MasterAnchorService
 import com.lacaksmb.master.ui.components.AppTopBar
 import com.lacaksmb.master.ui.components.BadgeVariant
 import com.lacaksmb.master.ui.components.SectionCard
@@ -62,6 +64,7 @@ fun DeviceListScreen(apiClient: ApiClient, sessionStore: SessionStore, navContro
     var errorText by remember { mutableStateOf<String?>(null) }
     var refreshTick by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     LaunchedEffect(refreshTick) {
         loading = true
@@ -84,14 +87,15 @@ fun DeviceListScreen(apiClient: ApiClient, sessionStore: SessionStore, navContro
                 actions = {
                     IconButton(onClick = { refreshTick++ }) { Icon(Icons.Filled.Refresh, "Refresh", tint = Base300) }
                     IconButton(onClick = { navController.navigate(Routes.RADAR) }) { Icon(Icons.Filled.LocationOn, "Radar", tint = Base300) }
-                    IconButton(onClick = { navController.navigate(Routes.GEOFENCE) }) { Icon(Icons.Filled.Rule, "Geofence", tint = Base300) }
+                    IconButton(onClick = { navController.navigate(Routes.GEOFENCE) }) { Icon(Icons.AutoMirrored.Filled.Rule, "Geofence", tint = Base300) }
                     IconButton(onClick = { navController.navigate(Routes.CONSENT) }) { Icon(Icons.Filled.VerifiedUser, "Consent", tint = Base300) }
                     IconButton(onClick = { navController.navigate(Routes.DOWNLOAD_APK) }) { Icon(Icons.Filled.Download, "Download APK", tint = Base300) }
                     IconButton(onClick = {
                         scope.launch { apiClient.logout() }
                         sessionStore.clear()
+                        MasterAnchorService.stop(context.applicationContext)
                         navController.navigate(Routes.LOGIN) { popUpTo(0) }
-                    }) { Icon(Icons.Filled.Logout, "Keluar", tint = Base300) }
+                    }) { Icon(Icons.AutoMirrored.Filled.Logout, "Keluar", tint = Base300) }
                 },
             )
         },

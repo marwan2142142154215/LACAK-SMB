@@ -62,7 +62,7 @@ native OS di luar cakupan alat uji browser yang dipakai.
 
 ## Penanggung jawab
 - Tim            : Internal
-- Developer      : Marwan (dengan Claude Code)
+- Developer      : Marwan
 - Divisi pengguna: Pemilik sistem (aset perusahaan / parental control)
 
 ## Tautan terkait

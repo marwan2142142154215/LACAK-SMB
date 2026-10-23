@@ -22,6 +22,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver
 import com.lacaksmb.tracker.data.DeviceIdentityStore
@@ -80,7 +81,9 @@ class LockActivity : ComponentActivity() {
                     WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
             )
         }
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        // Perilaku resize saat keyboard muncul diatur lewat
+        // android:windowSoftInputMode="adjustResize" di AndroidManifest.xml
+        // (API setSoftInputMode terprogram sudah deprecated).
 
         setContentView(buildLockView(currentReason))
         requestLockTask()
@@ -157,7 +160,7 @@ class LockActivity : ComponentActivity() {
     private fun applyImmersiveMode() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.setDecorFitsSystemWindows(false)
+            WindowCompat.setDecorFitsSystemWindows(window, false)
             window.insetsController?.let { controller ->
                 controller.hide(
                     WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars(),

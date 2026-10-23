@@ -18,6 +18,14 @@ dua runtime yang membacanya.
 - Socket.IO 4
 - `@adonisjs/lucid` + `pg` (PostgreSQL, sama dengan backend-api)
 
+## Library utama
+
+- `socket.io`: server WebSocket untuk namespace `/device` dan `/ops`
+- `@adonisjs/lucid`: ORM baca/tulis ke tabel milik backend-api (lihat catatan di atas)
+- `pg`: driver PostgreSQL untuk Lucid
+- `luxon`: tanggal/waktu di sisi AdonisJS (dipakai internal framework)
+- `axios`: panggilan HTTP ke backend-api
+
 ## Arsitektur singkat
 
 ```
@@ -67,29 +75,32 @@ APK pelacak (device) --[Socket.IO /device]--> Gateway --[Socket.IO /ops]--> Dash
 
 ### `/device` (dari APK pelacak)
 
-| Event             | Arah   | Payload                                                                                      |
-| ----------------- | ------ | -------------------------------------------------------------------------------------------- |
-| `device:hello`    | kirim  | `{ deviceUuid, siteCode, appBuildVersion?, checksumSha256? }`                                |
-| `device:accepted` | terima | `{ deviceId, status }`                                                                       |
-| `device:rejected` | terima | `{ message }`                                                                                |
-| `device:location` | kirim  | `{ source, latitude?, longitude?, bleDistanceMeters?, bleRssi?, batteryLevel?, ssid?, ip? }` |
-| `command:push`    | terima | `{ command_id, command_type, reason_note }`                                                  |
-| `command:ack`     | kirim  | `{ commandId }`                                                                              |
+| Event             | Arah   | Payload                                                                                                                                      |
+| ----------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `device:hello`    | kirim  | `{ deviceUuid, siteCode, appBuildVersion?, checksumSha256? }`                                                                                |
+| `device:accepted` | terima | `{ deviceId, status }`                                                                                                                       |
+| `device:rejected` | terima | `{ message }`                                                                                                                                |
+| `device:location` | kirim  | `{ source, latitude?, longitude?, bleDistanceMeters?, bleRssi?, batteryLevel?, ssid?, ip?, nearbyBeaconUuid?, nearbyBeaconDistanceMeters? }` |
+| `command:push`    | terima | `{ command_id, command_type, reason_note }`                                                                                                  |
+| `command:ack`     | kirim  | `{ commandId }`                                                                                                                              |
 
 ### `/ops` (dari web dashboard / APK master)
 
-| Event                                        | Arah   | Payload                   |
-| -------------------------------------------- | ------ | ------------------------- |
-| `subscribe:organization`                     | kirim  | `organizationId` (number) |
-| `subscribe:confirmed` / `subscribe:rejected` | terima | `{ organizationId }`      |
-| `radar:update`                               | terima | posisi device terbaru     |
-| `violation:alert`                            | terima | pelanggaran geofence      |
-| `device:status`                              | terima | perubahan status device   |
+| Event                                        | Arah   | Payload                                                                         |
+| -------------------------------------------- | ------ | ------------------------------------------------------------------------------- |
+| `subscribe:organization`                     | kirim  | `organizationId` (number)                                                       |
+| `subscribe:confirmed` / `subscribe:rejected` | terima | `{ organizationId }`                                                            |
+| `radar:update`                               | terima | posisi device terbaru                                                           |
+| `violation:alert`                            | terima | pelanggaran geofence                                                            |
+| `device:status`                              | terima | perubahan status device                                                         |
+| `master:beacon:start`                        | kirim  | `{ beaconUuid }` (APK Master jadi anchor bergerak, butuh izin `devices.unlock`) |
+| `master:beacon:stop`                         | kirim  | -                                                                               |
+| `session:expired`                            | terima | `{ message }` (sesi idle habis, dicek ulang tiap 5 menit)                       |
 
 ## Penanggung jawab
 
 - Tim : Internal
-- Developer : Marwan (dengan Claude Code)
+- Developer : Marwan
 - Divisi pengguna: Pemilik sistem (aset perusahaan / parental control)
 
 ## Tautan terkait

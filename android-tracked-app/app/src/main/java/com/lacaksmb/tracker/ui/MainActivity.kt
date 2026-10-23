@@ -337,6 +337,7 @@ private fun EnrollmentScreen(
     DisposableEffect(Unit) {
         scope.launch {
             deviceUuid = identityStore.ensureDeviceUuid()
+            identityStore.ensureDeviceSecretFromBuild()
             val snapshot = identityStore.snapshot()
             alreadyEnrolled = snapshot.isEnrolled
             // Jaga-jaga: kalau device sudah pernah di-enroll tapi service
