@@ -245,6 +245,9 @@ async function copyText(text, message) {
                         label="Email atau username"
                         placeholder="nama@perusahaan.com"
                         autocomplete="username"
+                        autocapitalize="none"
+                        autocorrect="off"
+                        spellcheck="false"
                         required
                     />
                     <BaseInput v-model="password" label="Password" type="password" autocomplete="current-password" required />

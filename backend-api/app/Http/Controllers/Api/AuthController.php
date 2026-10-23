@@ -94,7 +94,8 @@ class AuthController extends Controller
                 return $this->fail('Akun Account Center Anda belum terdaftar di Lacak SMB. Hubungi super admin.', null, 403);
             }
         } else {
-            $user = User::where('username', $identifier)->first();
+            // Tidak peka huruf besar/kecil: keyboard HP sering mengapitalkan huruf pertama.
+            $user = User::whereRaw('LOWER(username) = ?', [mb_strtolower($identifier)])->first();
 
             if (! $user || ! Hash::check($credentials['password'], $user->password)) {
                 return $this->fail('Username atau password salah', null, 401);

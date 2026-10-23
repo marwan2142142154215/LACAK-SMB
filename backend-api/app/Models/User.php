@@ -5,6 +5,7 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -49,6 +50,16 @@ class User extends Authenticatable
             'is_active' => 'boolean',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Username selalu disimpan huruf kecil -- keyboard HP sering membuat
+     * huruf pertama kapital, dan "Staf.a1" harus tetap akun yang sama
+     * dengan "staf.a1".
+     */
+    protected function username(): Attribute
+    {
+        return Attribute::make(set: fn (?string $value) => $value === null ? null : mb_strtolower(trim($value)));
     }
 
     public function organization(): BelongsTo

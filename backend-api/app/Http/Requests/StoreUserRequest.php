@@ -12,6 +12,17 @@ class StoreUserRequest extends FormRequest
         return $this->user()->can('users.manage');
     }
 
+    /**
+     * Username disamakan jadi huruf kecil SEBELUM dicek unique, supaya
+     * "Budi" tidak bisa dibuat kalau "budi" sudah ada.
+     */
+    protected function prepareForValidation(): void
+    {
+        if (is_string($this->input('username'))) {
+            $this->merge(['username' => mb_strtolower(trim($this->input('username')))]);
+        }
+    }
+
     public function rules(): array
     {
         return [

@@ -20,6 +20,38 @@ test('login salah password ditolak 401', function () {
         ->assertJson(['success' => false]);
 });
 
+test('username tidak peka huruf besar saat login dan selalu disimpan huruf kecil', function () {
+    $user = User::factory()->create(['username' => 'Staf.A1', 'password' => bcrypt('password-benar')]);
+
+    expect($user->fresh()->username)->toBe('staf.a1');
+
+    // Keyboard HP mengapitalkan huruf pertama -- tetap harus bisa masuk.
+    foreach (['Staf.a1', 'STAF.A1', ' staf.a1 '] as $typed) {
+        $this->postJson('/api/v1/auth/login', ['username' => $typed, 'password' => 'password-benar'])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+    }
+});
+
+test('membuat staf dengan username huruf besar disimpan huruf kecil dan tidak bisa menduplikasi', function () {
+    $root = User::factory()->create();
+    $root->assignRole('super_admin');
+    User::factory()->create(['username' => 'budi']);
+
+    $payload = ['name' => 'Budi Dua', 'email' => 'budi2@example.com', 'password' => 'rahasia-panjang', 'role' => 'admin'];
+
+    $this->actingAs($root, 'sanctum')
+        ->postJson('/api/v1/users', [...$payload, 'username' => 'Budi'])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('username');
+
+    $this->actingAs($root, 'sanctum')
+        ->postJson('/api/v1/users', [...$payload, 'username' => 'Budi.Dua'])
+        ->assertCreated();
+
+    expect(User::where('username', 'budi.dua')->exists())->toBeTrue();
+});
+
 test('login pertama kali (belum confirm 2FA) balas QR setup, bukan token', function () {
     $user = User::factory()->create([
         'password' => bcrypt('password-benar'),
