@@ -174,6 +174,22 @@ Dipakai via **Spatie Activity Log** (standar 1.4) — bukan tabel custom.
 Mencatat setiap perubahan `devices`, `device_commands`, `consent_documents`,
 `geofence_rules`, login 2FA, dan perubahan role user.
 
+### `work_sessions` (Live Kerja — sesi "Mulai Kerja" s/d "Selesai Kerja")
+| kolom | tipe | keterangan |
+|---|---|---|
+| id | bigint PK | |
+| user_id | bigint FK users | staf yang menyiarkan kamera |
+| organization_id | bigint FK organizations | disalin saat sesi dibuka; menentukan room LiveKit `site-{id}` |
+| started_at | timestamp | |
+| last_heartbeat_at | timestamp | diperbarui dashboard tiap 30 detik |
+| ended_at | timestamp, nullable | null = sedang live |
+| end_reason | varchar(20), nullable | `manual` (Selesai Kerja) / `timeout` (heartbeat berhenti) |
+| created_at / updated_at | timestamp | |
+
+Partial unique index `(user_id) WHERE ended_at IS NULL`: satu staf maksimal
+satu sesi terbuka. Video **tidak direkam** — tabel ini hanya audit siapa live,
+kapan, di site mana.
+
 ## Prinsip yang ditegakkan skema ini
 
 1. **Tidak ada device tanpa consent** — FK `consent_document_id` NOT NULL.

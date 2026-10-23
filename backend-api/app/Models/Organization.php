@@ -56,6 +56,11 @@ class Organization extends Model
         return $this->hasMany(TelegramBinding::class);
     }
 
+    public function workSessions(): HasMany
+    {
+        return $this->hasMany(WorkSession::class);
+    }
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()

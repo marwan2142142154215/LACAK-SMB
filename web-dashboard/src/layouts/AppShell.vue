@@ -1,11 +1,13 @@
 <script setup>
-import { Building2, FileSignature, LogOut, MapPinned, Menu, PackageOpen, Radar, Send, ShieldCheck, Smartphone, Users, X } from '@lucide/vue'
+import { Building2, FileSignature, LogOut, MapPinned, Menu, PackageOpen, Radar, Send, ShieldCheck, Smartphone, Users, Video, X } from '@lucide/vue'
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth'
+import { useLiveStore } from '@/stores/live'
 
 const auth = useAuthStore()
+const live = useLiveStore()
 const router = useRouter()
 const route = useRoute()
 const loggingOut = ref(false)
@@ -21,6 +23,7 @@ watch(
 
 const navItems = [
     { to: { name: 'radar' }, label: 'Radar', icon: Radar },
+    { to: { name: 'live' }, label: 'Live Kerja', icon: Video },
     { to: { name: 'devices' }, label: 'Device', icon: Smartphone },
     { to: { name: 'consent-documents' }, label: 'Dokumen Consent', icon: FileSignature },
     { to: { name: 'geofence-rules' }, label: 'Aturan Geofence', icon: MapPinned },
@@ -31,6 +34,10 @@ const navItems = [
 async function handleLogout() {
     loggingOut.value = true
     try {
+        // Logout = selesai kerja juga -- jangan tinggalkan kamera menyiarkan
+        // atas nama akun yang sudah keluar.
+        if (live.isBroadcasting) await live.endWork().catch(() => {})
+        await live.disconnect()
         await auth.logout()
         router.push({ name: 'login' })
     } catch {
@@ -146,6 +153,16 @@ async function handleLogout() {
                 </button>
                 <p class="text-sm font-semibold text-base-100">Lacak Master</p>
             </div>
+
+            <!-- Pengingat siaran aktif, tampil di semua halaman selama staf live -->
+            <router-link
+                v-if="live.isBroadcasting && route.name !== 'live'"
+                :to="{ name: 'live' }"
+                class="flex items-center gap-2 bg-danger-500/15 px-4 py-2 text-xs font-medium text-danger-400"
+            >
+                <span class="size-2 animate-pulse rounded-full bg-danger-500" />
+                Kamera Anda sedang disiarkan (Live Kerja) -- buka untuk berhenti
+            </router-link>
 
             <main class="min-w-0 flex-1 overflow-y-auto">
                 <router-view />

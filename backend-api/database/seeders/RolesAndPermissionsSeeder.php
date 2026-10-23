@@ -28,6 +28,11 @@ class RolesAndPermissionsSeeder extends Seeder
             'apk-builds.manage',
             'telegram.manage',
             'activity-logs.view',
+            // Live Kerja: broadcast = boleh "Mulai Kerja" & menyiarkan kamera
+            // ke rekan se-site, watch = boleh menonton siaran site yang
+            // memang boleh diakses (lihat WorkSessionController).
+            'live.broadcast',
+            'live.watch',
         ];
 
         foreach ($permissions as $permission) {
@@ -50,6 +55,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'apk-builds.manage',
             'telegram.manage',
             'activity-logs.view',
+            'live.broadcast',
+            'live.watch',
         ]);
 
         // admin & leader: TIDAK terkunci ke satu organization_id seperti
@@ -60,16 +67,20 @@ class RolesAndPermissionsSeeder extends Seeder
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $admin->syncPermissions([
             'devices.view',
+            'live.watch',
         ]);
 
         $leader = Role::firstOrCreate(['name' => 'leader', 'guard_name' => 'web']);
         $leader->syncPermissions([
             'devices.view',
+            'live.watch',
         ]);
 
         $staffViewer = Role::firstOrCreate(['name' => 'staff_viewer', 'guard_name' => 'web']);
         $staffViewer->syncPermissions([
             'devices.view',
+            'live.broadcast',
+            'live.watch',
         ]);
 
         // Dipakai satu-satunya oleh akun layanan bot Telegram (lihat

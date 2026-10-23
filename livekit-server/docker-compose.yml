@@ -1,0 +1,11 @@
+# Media server Live Kerja (SFU). Lihat README.md untuk kebutuhan port & DNS.
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.9
+    command: --config /etc/livekit.yaml
+    restart: unless-stopped
+    # network_mode host: WebRTC butuh IP publik mesin ini apa adanya --
+    # NAT Docker bridge membuat kandidat ICE salah dan video gagal tersambung.
+    network_mode: host
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro

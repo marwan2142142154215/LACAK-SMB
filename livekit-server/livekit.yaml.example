@@ -1,0 +1,17 @@
+# Salin jadi livekit.yaml (JANGAN di-commit -- berisi secret, sudah di .gitignore).
+port: 7880            # signaling WebSocket (lewat reverse proxy/Cloudflare -> wss://live.lacaksmbbot.com)
+rtc:
+  tcp_port: 7881      # fallback media lewat TCP kalau UDP diblokir jaringan kantor
+  udp_port: 7882      # media utama, satu port UDP untuk semua peserta
+  use_external_ip: true
+keys:
+  # <LIVEKIT_API_KEY>: <LIVEKIT_API_SECRET> -- harus sama dengan backend-api/.env
+  # Secret minimal 32 karakter: openssl rand -base64 48
+  GANTI_API_KEY: GANTI_SECRET_MINIMAL_32_KARAKTER
+room:
+  # Room site-* dibuat otomatis saat staf pertama masuk, dihapus 5 menit
+  # setelah kosong.
+  empty_timeout: 300
+  max_participants: 0
+logging:
+  level: info

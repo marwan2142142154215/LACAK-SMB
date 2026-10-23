@@ -18,6 +18,11 @@ const routes = [
                 component: () => import('@/views/RadarView.vue'),
             },
             {
+                path: 'live',
+                name: 'live',
+                component: () => import('@/views/LiveView.vue'),
+            },
+            {
                 path: 'devices',
                 name: 'devices',
                 component: () => import('@/views/DevicesView.vue'),

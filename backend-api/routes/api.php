@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\TelegramBindingController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\ViolationLogController;
+use App\Http\Controllers\Api\WorkSessionController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -90,5 +91,14 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
         Route::apiResource('telegram-bindings', TelegramBindingController::class)->only(['index', 'store', 'destroy']);
         Route::get('/telegram-bindings-lookup', [TelegramBindingController::class, 'lookup']);
+
+        // Live Kerja (livestream kamera per site lewat LiveKit) -- lihat
+        // WorkSessionController untuk aturan isolasi antar-site.
+        Route::get('/live/sites', [WorkSessionController::class, 'sites']);
+        Route::get('/live/sessions', [WorkSessionController::class, 'index']);
+        Route::post('/live/sessions/start', [WorkSessionController::class, 'start'])->middleware('throttle:10,1');
+        Route::post('/live/sessions/heartbeat', [WorkSessionController::class, 'heartbeat']);
+        Route::post('/live/sessions/end', [WorkSessionController::class, 'end']);
+        Route::post('/live/watch-token', [WorkSessionController::class, 'watchToken'])->middleware('throttle:30,1');
     });
 });

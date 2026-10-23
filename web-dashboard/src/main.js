@@ -43,3 +43,9 @@ api.interceptors.response.use(
 )
 
 app.mount('#app')
+
+// PWA: wajib ada service worker terdaftar supaya browser menawarkan
+// "Install aplikasi" (lihat public/sw.js -- tidak meng-cache apa pun).
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+}
