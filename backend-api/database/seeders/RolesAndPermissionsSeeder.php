@@ -33,6 +33,9 @@ class RolesAndPermissionsSeeder extends Seeder
             // memang boleh diakses (lihat WorkSessionController).
             'live.broadcast',
             'live.watch',
+            // Pengaturan keamanan sistem (mis. wajib/tidaknya 2FA saat login)
+            // -- hanya super_admin, lihat SecuritySettingController.
+            'security.manage',
         ];
 
         foreach ($permissions as $permission) {

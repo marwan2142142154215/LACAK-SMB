@@ -96,6 +96,9 @@ async function handleCredentialsSubmit() {
         } else if (data.requires_2fa) {
             challengeToken.value = data.challenge_token
             step.value = 'verify_2fa'
+        } else if (data.access_token) {
+            // 2FA sedang dimatikan super_admin -- sesi sudah disiapkan store.
+            enter()
         }
     } catch (err) {
         errorMessage.value = err.response?.data?.message ?? 'Server tidak merespons. Periksa koneksi lalu coba lagi.'
@@ -249,7 +252,7 @@ async function copyText(text, message) {
                     <BaseButton type="submit" class="w-full" :loading="loading">Lanjut</BaseButton>
                     <p class="flex items-start gap-2 border-t border-base-800 pt-5 text-xs text-base-500">
                         <LockKeyhole class="mt-px size-3.5 shrink-0 text-copper-400" />
-                        Setiap login wajib dikonfirmasi dengan kode dari aplikasi authenticator.
+                        Bila 2FA aktif, login dilanjutkan dengan kode dari aplikasi authenticator.
                     </p>
                 </form>
 
