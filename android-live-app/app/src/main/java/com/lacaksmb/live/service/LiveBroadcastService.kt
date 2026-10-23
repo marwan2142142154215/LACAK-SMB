@@ -1,0 +1,474 @@
+package com.lacaksmb.live.service
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
+import android.os.Build
+import android.os.IBinder
+import android.os.PowerManager
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
+import com.lacaksmb.live.data.ApiClient
+import com.lacaksmb.live.data.ApiResult
+import com.lacaksmb.live.data.SessionStore
+import com.lacaksmb.live.ui.MainActivity
+import io.livekit.android.AudioOptions
+import io.livekit.android.ConnectOptions
+import io.livekit.android.LiveKit
+import io.livekit.android.LiveKitOverrides
+import io.livekit.android.RoomOptions
+import io.livekit.android.audio.NoAudioHandler
+import io.livekit.android.events.DisconnectReason
+import io.livekit.android.events.RoomEvent
+import io.livekit.android.room.Room
+import io.livekit.android.room.participant.VideoTrackPublishDefaults
+import io.livekit.android.room.track.CameraPosition
+import io.livekit.android.room.track.LocalVideoTrack
+import io.livekit.android.room.track.LocalVideoTrackOptions
+import io.livekit.android.room.track.Track
+import io.livekit.android.room.track.VideoPreset169
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import livekit.org.webrtc.VideoSink
+import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * Live Kerja dari HP: menyiarkan kamera depan ke rekan se-site lewat
+ * LiveKit, TETAP JALAN saat staf pindah aplikasi atau layar mati -- hal yang
+ * tidak bisa dilakukan dashboard web/PWA (browser HP menghentikan kamera
+ * begitu halaman masuk latar belakang).
+ *
+ * Kuncinya foreground service bertipe `camera` yang dimulai dari tombol
+ * Mulai kerja (app sedang terlihat): selama service ini hidup, Android
+ * mengizinkan app memakai kamera walau Activity-nya sudah di latar belakang.
+ *
+ * Perilaku dicocokkan dengan web-dashboard/src/stores/live.js: kamera saja
+ * tanpa audio, 720p + simulcast h180/h360, dynacast, tidak berlangganan
+ * video peserta lain, heartbeat tiap 30 detik, dan 404 dari heartbeat =
+ * server sudah menutup sesi -> berhenti. Kontrak API tidak diubah.
+ */
+class LiveBroadcastService : Service() {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private lateinit var sessionStore: SessionStore
+    private lateinit var apiClient: ApiClient
+
+    private var runJob: Job? = null
+    private var room: Room? = null
+    private var userStopped = false
+    private var finished = false
+
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+
+    // Jumlah frame kamera yang benar-benar keluar dari kamera -- dipakai
+    // watchdog untuk tahu kamera macet (mis. direbut aplikasi kamera lain)
+    // walau track LiveKit-nya masih tercatat "terbit".
+    private val frameCount = AtomicLong(0)
+    private val frameCounter = VideoSink { frameCount.incrementAndGet() }
+    private var watchedTrack: LocalVideoTrack? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        sessionStore = SessionStore(applicationContext)
+        apiClient = ApiClient(sessionStore)
+        createNotificationChannel()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopBroadcast(userInitiated = true, error = null)
+            return START_NOT_STICKY
+        }
+
+        // startForeground wajib dipanggil cepat setelah startForegroundService.
+        // Android 14+ melempar SecurityException kalau izin kamera belum
+        // diberikan -- LiveScreen sudah memintanya, ini jaga-jaga saja.
+        try {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                buildNotification("Menyambungkan siaran..."),
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0,
+            )
+        } catch (e: SecurityException) {
+            LiveBroadcastState.setStatus(BroadcastStatus.Idle("Izin kamera belum diberikan ke aplikasi ini"))
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (runJob?.isActive != true) {
+            userStopped = false
+            finished = false
+            acquireLocks()
+            runJob = scope.launch { runBroadcast() }
+        }
+
+        // NOT_STICKY: kalau proses dimatikan sistem, service yang dihidupkan
+        // ulang dari latar belakang tidak diizinkan membuka kamera lagi
+        // (Android 11+). Sesi di server ditutup sendiri oleh timeout heartbeat.
+        return START_NOT_STICKY
+    }
+
+    private suspend fun runBroadcast() {
+        var everLive = false
+        var retry = 0
+
+        while (scope.isActive && !userStopped) {
+            LiveBroadcastState.setStatus(
+                BroadcastStatus.Connecting(if (everLive) "Koneksi terputus, menyambung ulang..." else "Menyambungkan siaran..."),
+            )
+            updateNotification(if (everLive) "Koneksi terputus, menyambung ulang..." else "Menyambungkan siaran...")
+
+            // /start juga dipakai saat menyambung ulang: sesi yang masih
+            // terbuka dilanjutkan dan token LiveKit baru diterbitkan.
+            when (val result = apiClient.startLiveSession()) {
+                is ApiResult.Fail -> {
+                    val fatal = !everLive || result.httpCode in listOf(401, 403, 422)
+                    if (fatal) {
+                        stopBroadcast(userInitiated = false, error = describeStartFailure(result))
+                        return
+                    }
+                }
+                is ApiResult.Ok -> {
+                    val data = result.data
+                    val url = data?.optString("livekit_url").orEmpty()
+                    val token = data?.optString("token").orEmpty()
+                    if (url.isBlank() || token.isBlank()) {
+                        stopBroadcast(userInitiated = false, error = "Respons server tidak lengkap (alamat/token LiveKit kosong)")
+                        return
+                    }
+
+                    val reason = try {
+                        broadcastUntilDisconnected(url, token) { everLive = true; retry = 0 }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        if (!everLive) {
+                            stopBroadcast(userInitiated = false, error = describeConnectFailure(e))
+                            return
+                        }
+                        null
+                    }
+
+                    if (userStopped) return
+                    when (reason) {
+                        DisconnectReason.DUPLICATE_IDENTITY -> {
+                            stopBroadcast(userInitiated = false, error = "Siaran diambil alih oleh perangkat lain yang login dengan akun yang sama")
+                            return
+                        }
+                        DisconnectReason.PARTICIPANT_REMOVED,
+                        DisconnectReason.ROOM_DELETED,
+                        DisconnectReason.ROOM_CLOSED -> {
+                            stopBroadcast(userInitiated = false, error = "Sesi kerja sudah ditutup dari server")
+                            return
+                        }
+                        else -> Unit // jaringan putus -- coba sambung ulang
+                    }
+                }
+            }
+
+            // Backoff 2, 4, 8, 15, 15, ... detik selama staf belum menekan Selesai kerja.
+            delay(minOf(2_000L shl minOf(retry, 3), 15_000L))
+            retry++
+        }
+    }
+
+    /**
+     * Sambung ke room, nyalakan kamera, lalu tunggu sampai room terputus.
+     * [onLive] dipanggil sekali setelah kamera benar-benar terbit.
+     */
+    private suspend fun broadcastUntilDisconnected(url: String, token: String, onLive: () -> Unit): DisconnectReason {
+        val newRoom = LiveKit.create(
+            applicationContext,
+            RoomOptions(
+                // Tidak menonton siapa pun dari HP -- adaptiveStream tidak relevan.
+                adaptiveStream = false,
+                // dynacast: berhenti meng-encode layer yang tidak diminta
+                // penonton -- hemat baterai & kuota selama berjam-jam.
+                dynacast = true,
+                videoTrackCaptureDefaults = LocalVideoTrackOptions(
+                    position = CameraPosition.FRONT,
+                    captureParams = VideoPreset169.H720.capture,
+                ),
+                videoTrackPublishDefaults = VideoTrackPublishDefaults(
+                    videoEncoding = VideoPreset169.H720.encoding,
+                    simulcast = true,
+                    simulcastLayers = listOf(VideoPreset169.H180, VideoPreset169.H360),
+                ),
+            ),
+            // NoAudioHandler: siaran tanpa audio, jadi jangan ambil fokus
+            // audio / ubah mode audio HP (musik & telepon staf tidak terganggu).
+            LiveKitOverrides(audioOptions = AudioOptions(audioHandler = NoAudioHandler())),
+        )
+        room = newRoom
+
+        // Mulai mendengarkan SEBELUM connect: event Disconnected tidak
+        // di-replay, jadi putus di tengah penyiapan tidak boleh terlewat.
+        val disconnectReason = CompletableDeferred<DisconnectReason>()
+        val eventsJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            newRoom.events.events.collect { event ->
+                when (event) {
+                    is RoomEvent.Disconnected -> disconnectReason.complete(event.reason)
+                    is RoomEvent.Reconnecting -> updateNotification("Koneksi tersendat, menyambung ulang...")
+                    is RoomEvent.Reconnected -> updateNotification("Kamera depan disiarkan ke rekan se-site")
+                    else -> Unit
+                }
+            }
+        }
+        var heartbeat: Job? = null
+        var watchdog: Job? = null
+
+        try {
+            newRoom.connect(url, token, ConnectOptions(autoSubscribe = false))
+            if (!newRoom.localParticipant.setCameraEnabled(true)) {
+                throw IllegalStateException("Kamera tidak bisa dinyalakan")
+            }
+            attachFrameCounter(newRoom)
+            LiveBroadcastState.setRoom(newRoom)
+            LiveBroadcastState.setStatus(BroadcastStatus.Live)
+            updateNotification("Kamera depan disiarkan ke rekan se-site")
+            onLive()
+
+            heartbeat = scope.launch { heartbeatLoop() }
+            watchdog = scope.launch { cameraWatchdog(newRoom) }
+            return disconnectReason.await()
+        } finally {
+            eventsJob.cancel()
+            heartbeat?.cancel()
+            watchdog?.cancel()
+            withContext(NonCancellable) { releaseRoom() }
+        }
+    }
+
+    private suspend fun heartbeatLoop() {
+        while (scope.isActive) {
+            delay(HEARTBEAT_INTERVAL_MS)
+            val result = apiClient.heartbeatLiveSession()
+            if (result is ApiResult.Fail) {
+                when (result.httpCode) {
+                    404 -> { stopBroadcast(userInitiated = false, error = "Sesi kerja sudah ditutup server (koneksi sempat terputus terlalu lama)", endSession = false); return }
+                    401 -> { stopBroadcast(userInitiated = false, error = "Sesi login berakhir — keluar lalu masuk lagi", endSession = false); return }
+                    // Gagal jaringan sesaat: abaikan, coba lagi di detak berikutnya.
+                }
+            }
+        }
+    }
+
+    /**
+     * Kamera bisa berhenti tanpa memutus room (aplikasi kamera lain dibuka,
+     * HP mencabut akses sebentar). Kalau tidak ada frame baru sejak cek
+     * sebelumnya, matikan-nyalakan ulang kamera -- foreground service tipe
+     * camera membuat ini tetap diizinkan dari latar belakang.
+     */
+    private suspend fun cameraWatchdog(room: Room) {
+        var lastCount = frameCount.get()
+        while (scope.isActive) {
+            delay(CAMERA_WATCHDOG_MS)
+            val now = frameCount.get()
+            if (now == lastCount && room.state == Room.State.CONNECTED && !userStopped) {
+                updateNotification("Kamera berhenti, menyalakan ulang...")
+                try {
+                    room.localParticipant.setCameraEnabled(false)
+                    room.localParticipant.setCameraEnabled(true)
+                    attachFrameCounter(room)
+                    updateNotification("Kamera depan disiarkan ke rekan se-site")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    updateNotification("Kamera sedang dipakai aplikasi lain, mencoba lagi...")
+                }
+            }
+            lastCount = frameCount.get()
+        }
+    }
+
+    private fun attachFrameCounter(room: Room) {
+        val track = room.localParticipant.getTrackPublication(Track.Source.CAMERA)?.track as? LocalVideoTrack
+        if (track === watchedTrack) return
+        watchedTrack?.removeRenderer(frameCounter)
+        track?.addRenderer(frameCounter)
+        watchedTrack = track
+    }
+
+    private suspend fun releaseRoom() {
+        val current = room ?: return
+        room = null
+        watchedTrack?.removeRenderer(frameCounter)
+        watchedTrack = null
+        // Lepas dari layar dulu supaya pratinjau melepas renderer-nya
+        // sebelum Room (dan EGL context-nya) dibebaskan.
+        LiveBroadcastState.setRoom(null)
+        delay(150)
+        current.disconnect()
+        current.release()
+    }
+
+    /**
+     * Akhiri siaran. [endSession] false bila server sudah menutup sesinya
+     * sendiri (heartbeat 404/401) -- tidak perlu memanggil /end lagi.
+     */
+    private fun stopBroadcast(userInitiated: Boolean, error: String?, endSession: Boolean = true) {
+        if (finished) return
+        finished = true
+        userStopped = true
+        LiveBroadcastState.setStatus(BroadcastStatus.Stopping)
+        updateNotification("Menghentikan siaran...")
+
+        val job = runJob
+        scope.launch {
+            withContext(NonCancellable) {
+                job?.cancel()
+                releaseRoom()
+                if (endSession) {
+                    // 404 = sesi memang sudah tidak ada; selain itu, kalau gagal
+                    // jaringan, timeout heartbeat server yang akan menutupnya.
+                    apiClient.endLiveSession()
+                }
+                LiveBroadcastState.setStatus(BroadcastStatus.Idle(if (userInitiated) null else error))
+                releaseLocks()
+                ServiceCompat.stopForeground(this@LiveBroadcastService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        if (!finished) {
+            // Dihentikan tanpa lewat stopBroadcast (mis. dimatikan dari
+            // pengaturan sistem): bereskan room & beri tahu server sebisanya.
+            finished = true
+            room?.let { it.disconnect(); it.release() }
+            room = null
+            LiveBroadcastState.setRoom(null)
+            LiveBroadcastState.setStatus(BroadcastStatus.Idle("Siaran dihentikan oleh sistem"))
+            val api = apiClient
+            Thread { runBlocking { api.endLiveSession() } }.start()
+            releaseLocks()
+        }
+        scope.cancel()
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    // CPU & Wi-Fi tetap hidup saat layar mati -- tanpa ini encoder video
+    // ikut tertidur dan siaran membeku walau service masih berjalan.
+    @Suppress("DEPRECATION")
+    private fun acquireLocks() {
+        if (wakeLock == null) {
+            wakeLock = getSystemService(PowerManager::class.java)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LacakLive:broadcast")
+                .apply { setReferenceCounted(false); acquire() }
+        }
+        if (wifiLock == null) {
+            wifiLock = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager)
+                .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "LacakLive:broadcast")
+                .apply { setReferenceCounted(false); acquire() }
+        }
+    }
+
+    private fun releaseLocks() {
+        wakeLock?.takeIf { it.isHeld }?.release()
+        wakeLock = null
+        wifiLock?.takeIf { it.isHeld }?.release()
+        wifiLock = null
+    }
+
+    private fun describeStartFailure(result: ApiResult.Fail): String = when (result.httpCode) {
+        401 -> "Sesi login berakhir — keluar lalu masuk lagi"
+        403 -> "Akun ini tidak punya izin menyiarkan Live Kerja"
+        else -> result.message
+    }
+
+    private fun describeConnectFailure(e: Exception): String {
+        val detail = e.message?.takeIf { it.isNotBlank() }
+        return if (detail != null && detail.contains("Kamera")) {
+            "$detail. Tutup aplikasi lain yang memakai kamera, lalu coba lagi."
+        } else {
+            "Gagal tersambung ke server siaran" + (detail?.let { " ($it)" } ?: "")
+        }
+    }
+
+    private fun createNotificationChannel() {
+        val channel = NotificationChannel(CHANNEL_ID, "Siaran Live Kerja", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "Tampil selama kamera sedang disiarkan ke rekan se-site"
+            setShowBadge(false)
+        }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
+    private fun buildNotification(status: String): Notification {
+        val openApp = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val stop = PendingIntent.getService(
+            this,
+            1,
+            Intent(this, LiveBroadcastService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Sedang menyiarkan")
+            .setContentText(status)
+            .setSmallIcon(android.R.drawable.presence_video_online)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setContentIntent(openApp)
+            .addAction(0, "Selesai kerja", stop)
+            .build()
+    }
+
+    private fun updateNotification(status: String) {
+        if (finished && status != "Menghentikan siaran...") return
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(status))
+    }
+
+    companion object {
+        private const val CHANNEL_ID = "live_broadcast"
+        private const val NOTIFICATION_ID = 3001
+        private const val ACTION_START = "com.lacaksmb.live.action.START"
+        private const val ACTION_STOP = "com.lacaksmb.live.action.STOP"
+        private const val HEARTBEAT_INTERVAL_MS = 30_000L
+        private const val CAMERA_WATCHDOG_MS = 10_000L
+
+        /** Harus dipanggil saat app terlihat -- Android melarang FGS kamera dimulai dari latar belakang. */
+        fun start(context: Context) {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, LiveBroadcastService::class.java).setAction(ACTION_START),
+            )
+        }
+
+        fun stop(context: Context) {
+            // Lewat startService (bukan stopService) supaya /end sempat dipanggil
+            // dan Room diputus rapi sebelum service berhenti.
+            context.startService(Intent(context, LiveBroadcastService::class.java).setAction(ACTION_STOP))
+        }
+    }
+}
