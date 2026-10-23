@@ -1,15 +1,19 @@
 <script setup>
-import { FileText, Plus, ShieldOff } from '@lucide/vue'
+import { ExternalLink, FileSignature, Plus, ShieldOff } from '@lucide/vue'
 import dayjs from 'dayjs'
-import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
-import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import Readout from '@/components/ui/Readout.vue'
+import RowMenu from '@/components/ui/RowMenu.vue'
+import StatusDot from '@/components/ui/StatusDot.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
@@ -97,6 +101,20 @@ async function confirmRevoke() {
     }
 }
 
+const SIGNER_ROLES = {
+    hrd: 'HRD',
+    leader: 'Leader',
+    asisten_manager: 'Asisten Manager',
+    manager: 'Manager',
+    cs_line: 'CS Line',
+}
+
+const activeCount = computed(() => documents.value.filter((doc) => doc.is_active).length)
+
+function menuItems(doc) {
+    return [{ label: 'Cabut consent', icon: ShieldOff, onSelect: () => (revokeTarget.value = doc), danger: true, hidden: !doc.is_active }]
+}
+
 onMounted(async () => {
     await Promise.all([loadDocuments(), loadOrganizations()])
 })
@@ -104,107 +122,135 @@ onMounted(async () => {
 
 <template>
     <div>
-        <PageHeader title="Dokumen Consent" subtitle="Dasar hukum setiap device yang dipantau — wajib ada sebelum device bisa dikelola">
+        <PageHeader
+            eyebrow="Perangkat"
+            title="Dokumen consent"
+            subtitle="Persetujuan tertulis dari pemegang device. Tanpa consent yang berlaku, device tidak bisa menerima perintah selain buka kunci."
+        >
             <template #actions>
-                <BaseButton @click="dialogOpen = true"><Plus class="size-4" /> Tambah Consent</BaseButton>
+                <BaseButton @click="dialogOpen = true"><Plus class="size-4" /> Tambah consent</BaseButton>
+            </template>
+            <template v-if="!loading" #readouts>
+                <Readout label="Dokumen" :value="documents.length" />
+                <Readout label="Berlaku" :value="activeCount" led="accent" />
+                <Readout
+                    label="Dicabut"
+                    :value="documents.length - activeCount"
+                    :led="documents.length - activeCount ? 'danger' : 'muted'"
+                />
             </template>
         </PageHeader>
 
-        <div class="p-8">
-            <BaseCard title="Semua Dokumen">
-                <div v-if="loading" class="py-12 text-center text-sm text-base-500">Memuat...</div>
-                <div v-else-if="documents.length === 0" class="py-12 text-center text-sm text-base-500">Belum ada dokumen consent.</div>
-                <div v-else class="space-y-3">
-                    <div
-                        v-for="doc in documents"
-                        :key="doc.id"
-                        class="flex items-center justify-between rounded-xl border border-base-800 bg-base-850/60 p-4"
-                    >
-                        <div class="flex items-center gap-3">
-                            <div class="flex size-10 items-center justify-center rounded-lg bg-base-800">
-                                <FileText class="size-5 text-base-400" />
-                            </div>
-                            <div>
-                                <p class="font-medium text-base-100">{{ doc.subject_name }}</p>
-                                <p class="text-xs text-base-500">
-                                    Ditandatangani {{ doc.signer_name }} ({{ doc.signer_role }}) ·
+        <div class="p-4 sm:p-8">
+            <BaseCard title="Semua dokumen" :count="loading ? null : documents.length" flush>
+                <div v-if="loading" class="px-5 py-12 text-center text-sm text-base-500">Memuat dokumen…</div>
+                <EmptyState
+                    v-else-if="documents.length === 0"
+                    :icon="FileSignature"
+                    title="Belum ada dokumen consent"
+                    description="Unggah surat persetujuan yang sudah ditandatangani sebelum membuat APK pelacak untuk seseorang."
+                >
+                    <BaseButton @click="dialogOpen = true"><Plus class="size-4" /> Tambah consent</BaseButton>
+                </EmptyState>
+                <div v-else class="overflow-x-auto">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Subjek</th>
+                                <th class="hidden md:table-cell">Penandatangan</th>
+                                <th class="hidden sm:table-cell">Ditandatangani</th>
+                                <th class="hidden lg:table-cell">Berlaku sampai</th>
+                                <th>Status</th>
+                                <th class="w-0"><span class="sr-only">Aksi</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="doc in documents" :key="doc.id">
+                                <td>
+                                    <p class="font-medium text-base-50">{{ doc.subject_name }}</p>
+                                    <p v-if="organizations.length > 1" class="text-xs text-base-500">
+                                        {{ organizations.find((o) => o.id === doc.organization_id)?.name }}
+                                    </p>
+                                </td>
+                                <td class="hidden md:table-cell">
+                                    <p class="text-base-200">{{ doc.signer_name }}</p>
+                                    <p class="text-xs text-base-500">{{ SIGNER_ROLES[doc.signer_role] ?? doc.signer_role }}</p>
+                                </td>
+                                <td class="hidden font-mono text-xs text-base-300 tabular-nums sm:table-cell">
                                     {{ dayjs(doc.signed_at).format('DD MMM YYYY') }}
-                                </p>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <BaseBadge :variant="doc.is_active ? 'success' : 'danger'">
-                                {{ doc.is_active ? 'Berlaku' : 'Tidak Berlaku' }}
-                            </BaseBadge>
-                            <a :href="doc.document_url" target="_blank" class="text-xs text-accent-400 hover:underline">Lihat</a>
-                            <BaseButton v-if="doc.is_active" size="sm" variant="danger" @click="revokeTarget = doc">
-                                <ShieldOff class="size-3.5" /> Cabut
-                            </BaseButton>
-                        </div>
-                    </div>
+                                </td>
+                                <td class="hidden font-mono text-xs text-base-400 tabular-nums lg:table-cell">
+                                    {{ doc.valid_until ? dayjs(doc.valid_until).format('DD MMM YYYY') : 'Tanpa batas' }}
+                                </td>
+                                <td>
+                                    <StatusDot
+                                        :status="doc.is_active ? 'active' : 'failed'"
+                                        :label="doc.is_active ? 'Berlaku' : 'Dicabut'"
+                                    />
+                                </td>
+                                <td>
+                                    <div class="flex items-center justify-end gap-1">
+                                        <a
+                                            :href="doc.document_url"
+                                            target="_blank"
+                                            rel="noopener"
+                                            class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-base-700 px-3 text-xs font-medium whitespace-nowrap text-base-100 transition-colors hover:border-base-500 hover:bg-base-850 focus-visible:outline-2 focus-visible:outline-accent-400"
+                                        >
+                                            <ExternalLink class="size-3.5" /> <span class="max-sm:sr-only">Lihat berkas</span>
+                                        </a>
+                                        <RowMenu
+                                            v-if="doc.is_active"
+                                            :items="menuItems(doc)"
+                                            :label="`Aksi untuk consent ${doc.subject_name}`"
+                                        />
+                                        <span v-else class="size-8" aria-hidden="true" />
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </BaseCard>
         </div>
 
-        <DialogRoot :open="dialogOpen" @update:open="(v) => (dialogOpen = v)">
-            <DialogPortal>
-                <DialogOverlay class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
-                <DialogContent
-                    class="fixed top-1/2 left-1/2 z-50 max-h-[90vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
-                >
-                    <DialogTitle class="text-base font-semibold text-base-50">Tambah Dokumen Consent</DialogTitle>
-                    <DialogDescription class="sr-only">Formulir untuk menambah dokumen consent baru</DialogDescription>
-                    <form class="mt-5 space-y-4" @submit.prevent="submitForm">
-                        <label v-if="auth.isSuperAdmin" class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>
-                            <select
-                                v-model="form.organization_id"
-                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                            >
-                                <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
-                            </select>
-                        </label>
-                        <BaseInput v-model="form.subject_name" label="Nama Subjek (anak/staf)" required />
-                        <BaseInput v-model="form.signer_name" label="Nama Penandatangan" required />
-                        <label class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Peran Penandatangan</span>
-                            <select
-                                v-model="form.signer_role"
-                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                            >
-                                <option value="hrd">HRD</option>
-                                <option value="leader">Leader</option>
-                                <option value="asisten_manager">Asisten Manager</option>
-                                <option value="manager">Manager</option>
-                                <option value="cs_line">CS Line</option>
-                            </select>
-                        </label>
-                        <BaseInput v-model="form.signed_at" type="date" label="Tanggal Tanda Tangan" required />
-                        <BaseInput v-model="form.valid_until" type="date" label="Berlaku Sampai (opsional)" />
-                        <label class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Berkas (PDF/JPG/PNG)</span>
-                            <input
-                                type="file"
-                                accept=".pdf,.jpg,.jpeg,.png"
-                                class="block w-full text-sm text-base-300 file:mr-3 file:rounded-lg file:border-0 file:bg-base-800 file:px-3 file:py-2 file:text-xs file:text-base-200"
-                                required
-                                @change="handleFileChange"
-                            />
-                        </label>
-                        <div class="flex justify-end gap-3 pt-2">
-                            <BaseButton type="button" variant="ghost" @click="dialogOpen = false">Batal</BaseButton>
-                            <BaseButton type="submit" :loading="submitting">Simpan</BaseButton>
-                        </div>
-                    </form>
-                </DialogContent>
-            </DialogPortal>
-        </DialogRoot>
+        <BaseDialog
+            :open="dialogOpen"
+            title="Tambah dokumen consent"
+            description="Unggah hasil pindaian atau foto surat yang sudah ditandatangani."
+            @update:open="(v) => (dialogOpen = v)"
+        >
+            <form id="consent-form" class="space-y-4" @submit.prevent="submitForm">
+                <BaseSelect v-if="auth.isSuperAdmin" v-model="form.organization_id" label="Site" required>
+                    <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
+                </BaseSelect>
+                <BaseInput v-model="form.subject_name" label="Nama pemegang device" hint="Orang yang device-nya akan dipantau." required />
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <BaseInput v-model="form.signer_name" label="Nama penandatangan" required />
+                    <BaseSelect v-model="form.signer_role" label="Jabatan penandatangan">
+                        <option v-for="(label, value) in SIGNER_ROLES" :key="value" :value="value">{{ label }}</option>
+                    </BaseSelect>
+                </div>
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <BaseInput v-model="form.signed_at" type="date" label="Tanggal tanda tangan" required />
+                    <BaseInput v-model="form.valid_until" type="date" label="Berlaku sampai" hint="Kosongkan bila tanpa batas." />
+                </div>
+                <label class="block">
+                    <span class="field-label">Berkas surat <span class="text-danger-400" aria-hidden="true">*</span></span>
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" class="file-control" required @change="handleFileChange" />
+                    <span class="field-hint block">PDF, JPG, atau PNG.</span>
+                </label>
+            </form>
+            <template #footer>
+                <BaseButton variant="ghost" @click="dialogOpen = false">Batal</BaseButton>
+                <BaseButton type="submit" form="consent-form" :loading="submitting">Simpan consent</BaseButton>
+            </template>
+        </BaseDialog>
 
         <ConfirmDialog
             :open="!!revokeTarget"
-            title="Cabut dokumen consent ini?"
-            :description="`Device yang terkait ${revokeTarget?.subject_name} tidak akan lagi bisa menerima perintah apa pun kecuali unlock.`"
-            confirm-label="Cabut"
+            :title="`Cabut consent ${revokeTarget?.subject_name ?? ''}?`"
+            description="Device milik orang ini tidak lagi bisa menerima perintah apa pun selain buka kunci."
+            confirm-label="Cabut consent"
             :loading="revoking"
             @update:open="(v) => !v && (revokeTarget = null)"
             @confirm="confirmRevoke"

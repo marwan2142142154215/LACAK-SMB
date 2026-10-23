@@ -1,9 +1,12 @@
 <script setup>
+defineOptions({ inheritAttrs: false })
+
 defineProps({
     modelValue: { type: [String, Number], default: '' },
     label: { type: String, default: null },
     type: { type: String, default: 'text' },
     placeholder: { type: String, default: '' },
+    hint: { type: String, default: null },
     error: { type: String, default: null },
     required: { type: Boolean, default: false },
     disabled: { type: Boolean, default: false },
@@ -16,23 +19,27 @@ defineEmits(['update:modelValue'])
 </script>
 
 <template>
-    <label class="block">
-        <span v-if="label" class="mb-1.5 block text-xs font-medium text-base-300">
+    <!-- class/style dari pemanggil ke <label>, atribut lain (step, minlength) ke <input> -->
+    <label class="block" :class="$attrs.class" :style="$attrs.style">
+        <span v-if="label" class="field-label">
             {{ label }}
-            <span v-if="required" class="text-danger-400">*</span>
+            <span v-if="required" class="text-danger-400" aria-hidden="true">*</span>
         </span>
         <input
+            v-bind="{ ...$attrs, class: undefined, style: undefined }"
             :value="modelValue"
             :type="type"
             :placeholder="placeholder"
             :disabled="disabled"
+            :required="required"
             :autocomplete="autocomplete"
             :maxlength="maxlength"
             :inputmode="inputmode"
-            class="w-full rounded-lg border bg-base-850 px-3.5 py-2.5 text-sm text-base-50 placeholder-base-500 outline-none transition-colors focus:border-accent-500 disabled:cursor-not-allowed disabled:opacity-50"
-            :class="error ? 'border-danger-500' : 'border-base-700'"
+            class="field-control"
+            :class="error && '!border-danger-500'"
             @input="$emit('update:modelValue', $event.target.value)"
         />
         <span v-if="error" class="mt-1.5 block text-xs text-danger-400">{{ error }}</span>
+        <span v-else-if="hint" class="field-hint block">{{ hint }}</span>
     </label>
 </template>

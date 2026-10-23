@@ -41,7 +41,10 @@ onBeforeUnmount(detach)
             <VideoOff class="size-6" />
         </div>
         <div class="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 pt-6 pb-2">
-            <span v-if="live" class="inline-flex items-center gap-1 rounded bg-danger-500 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white">
+            <span
+                v-if="live"
+                class="inline-flex items-center gap-1 rounded bg-danger-500 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-white"
+            >
                 <span class="size-1.5 animate-pulse rounded-full bg-white" />
                 LIVE
             </span>

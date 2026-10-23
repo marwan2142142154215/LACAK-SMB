@@ -1,14 +1,16 @@
 <script setup>
-import { MapPinned, Pencil, Plus, Trash2 } from '@lucide/vue'
-import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
-import { onMounted, ref } from 'vue'
+import { AlertTriangle, MapPinned, Pencil, Plus, Trash2 } from '@lucide/vue'
+import { computed, onMounted, ref } from 'vue'
 
-import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import BaseCard from '@/components/ui/BaseCard.vue'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import Readout from '@/components/ui/Readout.vue'
+import RowMenu from '@/components/ui/RowMenu.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
@@ -140,6 +142,33 @@ async function confirmDelete() {
     }
 }
 
+const activeCount = computed(() => rules.value.filter((rule) => rule.is_active).length)
+const bleCount = computed(() => rules.value.filter((rule) => rule.anchor_device_id).length)
+
+function siteName(rule) {
+    return organizations.value.find((org) => org.id === rule.organization_id)?.name ?? null
+}
+
+// Syarat yang diperiksa satu aturan, ditampilkan sebagai baris readout
+function conditions(rule) {
+    const rows = []
+    if (rule.allowed_ssid) rows.push({ label: 'WiFi', value: rule.allowed_ssid })
+    if (rule.allowed_ip_cidr) rows.push({ label: 'IP', value: rule.allowed_ip_cidr })
+    if (rule.max_distance_meters && rule.anchor_device_id) {
+        rows.push({ label: 'BLE', value: `≤ ${rule.max_distance_meters} m dari ${rule.anchor_device_name ?? 'device anchor'}` })
+    } else if (rule.max_distance_meters) {
+        rows.push({ label: 'GPS', value: `≤ ${rule.max_distance_meters} m dari titik pusat`, warning: rule.center_latitude == null })
+    }
+    return rows
+}
+
+function menuItems(rule) {
+    return [
+        { label: 'Ubah aturan', icon: Pencil, onSelect: () => openEdit(rule) },
+        { label: 'Hapus aturan', icon: Trash2, onSelect: () => (deleteTarget.value = rule), danger: true },
+    ]
+}
+
 onMounted(async () => {
     await Promise.all([loadRules(), loadOrganizations(), loadDevices()])
 })
@@ -147,127 +176,166 @@ onMounted(async () => {
 
 <template>
     <div>
-        <PageHeader title="Aturan Geofence" subtitle="Whitelist WiFi/IP dan radius GPS aman per site — kunci/buka otomatis">
+        <PageHeader
+            eyebrow="Perangkat"
+            title="Aturan geofence"
+            subtitle="Batas aman tiap site lewat WiFi, IP, radius GPS, atau jarak BLE. Device dikunci otomatis saat keluar batas dan dibuka lagi saat kembali."
+        >
             <template #actions>
-                <BaseButton @click="openCreate"><Plus class="size-4" /> Tambah Aturan</BaseButton>
+                <BaseButton @click="openCreate"><Plus class="size-4" /> Tambah aturan</BaseButton>
+            </template>
+            <template v-if="!loading" #readouts>
+                <Readout label="Aturan" :value="rules.length" />
+                <Readout label="Aktif" :value="activeCount" led="accent" />
+                <Readout label="Pakai BLE" :value="bleCount" led="copper" />
             </template>
         </PageHeader>
 
-        <div class="p-8">
-            <BaseCard title="Semua Aturan">
-                <div v-if="loading" class="py-12 text-center text-sm text-base-500">Memuat...</div>
-                <div v-else-if="rules.length === 0" class="py-12 text-center text-sm text-base-500">Belum ada aturan geofence.</div>
-                <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <div v-for="rule in rules" :key="rule.id" class="rounded-xl border border-base-800 bg-base-850/60 p-4">
-                        <div class="flex items-start justify-between">
-                            <div class="flex items-center gap-2">
-                                <MapPinned class="size-4 text-copper-400" />
-                                <p class="font-medium text-base-100">{{ rule.rule_name }}</p>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <button type="button" class="text-base-500 hover:text-accent-400" @click="openEdit(rule)">
-                                    <Pencil class="size-4" />
-                                </button>
-                                <button type="button" class="text-base-500 hover:text-danger-400" @click="deleteTarget = rule">
-                                    <Trash2 class="size-4" />
-                                </button>
-                            </div>
+        <div class="p-4 sm:p-8">
+            <div v-if="loading" class="py-12 text-center text-sm text-base-500">Memuat aturan…</div>
+            <div v-else-if="rules.length === 0" class="rounded-xl border border-base-800 bg-base-900/70">
+                <EmptyState
+                    :icon="MapPinned"
+                    title="Belum ada aturan geofence"
+                    description="Tanpa aturan, device tidak pernah dikunci otomatis. Mulai dari WiFi kantor atau radius GPS di sekitar site."
+                >
+                    <BaseButton @click="openCreate"><Plus class="size-4" /> Tambah aturan</BaseButton>
+                </EmptyState>
+            </div>
+            <ul v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <li
+                    v-for="rule in rules"
+                    :key="rule.id"
+                    class="flex flex-col rounded-xl border bg-base-900/70 p-5 transition-colors"
+                    :class="rule.is_active ? 'border-base-800 hover:border-base-700' : 'border-dashed border-base-800'"
+                >
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p v-if="siteName(rule)" class="eyebrow">{{ siteName(rule) }}</p>
+                            <h2
+                                class="mt-1 font-display text-lg leading-snug font-semibold"
+                                :class="rule.is_active ? 'text-base-50' : 'text-base-400'"
+                            >
+                                {{ rule.rule_name }}
+                            </h2>
                         </div>
-                        <dl class="mt-3 space-y-1 text-xs text-base-400">
-                            <div v-if="rule.allowed_ssid">
-                                <dt class="inline text-base-600">SSID:</dt>
-                                {{ rule.allowed_ssid }}
-                            </div>
-                            <div v-if="rule.allowed_ip_cidr">
-                                <dt class="inline text-base-600">IP:</dt>
-                                {{ rule.allowed_ip_cidr }}
-                            </div>
-                            <div v-if="rule.max_distance_meters && rule.anchor_device_id">
-                                <dt class="inline text-base-600">Radius aman (BLE):</dt>
-                                {{ rule.max_distance_meters }}m dari {{ rule.anchor_device_name ?? 'device anchor' }}
-                            </div>
-                            <div v-else-if="rule.max_distance_meters">
-                                <dt class="inline text-base-600">Radius aman (GPS):</dt>
-                                {{ rule.max_distance_meters }}m
-                                <span v-if="rule.center_latitude == null" class="text-warning-400"> (titik pusat belum diatur — tidak aktif)</span>
-                            </div>
-                        </dl>
-                        <button type="button" @click="toggleActive(rule)">
-                            <BaseBadge class="mt-3" :variant="rule.is_active ? 'success' : 'neutral'">
-                                {{ rule.is_active ? 'Aktif' : 'Nonaktif' }}
-                            </BaseBadge>
+                        <RowMenu :items="menuItems(rule)" :label="`Aksi untuk ${rule.rule_name}`" />
+                    </div>
+
+                    <dl class="mt-4 flex-1 space-y-2">
+                        <div v-for="row in conditions(rule)" :key="row.label" class="flex items-baseline gap-3 text-sm">
+                            <dt class="eyebrow w-10 shrink-0">{{ row.label }}</dt>
+                            <dd class="min-w-0 font-mono text-[13px] break-words text-base-200">
+                                {{ row.value }}
+                                <span v-if="row.warning" class="mt-1 flex items-center gap-1.5 font-sans text-xs text-warning-400">
+                                    <AlertTriangle class="size-3.5" /> Titik pusat belum diisi, radius ini belum berlaku.
+                                </span>
+                            </dd>
+                        </div>
+                        <p v-if="conditions(rule).length === 0" class="text-xs text-base-500">
+                            Belum ada syarat. Ubah aturan untuk menambahkan WiFi, IP, atau radius.
+                        </p>
+                    </dl>
+
+                    <div class="mt-5 flex items-center justify-between border-t border-base-800 pt-4">
+                        <span class="text-xs" :class="rule.is_active ? 'text-base-300' : 'text-base-500'">
+                            {{ rule.is_active ? 'Mengunci otomatis' : 'Tidak dijalankan' }}
+                        </span>
+                        <button
+                            type="button"
+                            role="switch"
+                            :aria-checked="rule.is_active"
+                            :aria-label="`Jalankan aturan ${rule.rule_name}`"
+                            class="relative h-5 w-9 rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-400"
+                            :class="rule.is_active ? 'bg-accent-500' : 'bg-base-700'"
+                            @click="toggleActive(rule)"
+                        >
+                            <span
+                                class="absolute top-0.5 left-0.5 size-4 rounded-full bg-base-50 shadow transition-transform"
+                                :class="rule.is_active ? 'translate-x-4' : 'translate-x-0'"
+                            />
                         </button>
                     </div>
-                </div>
-            </BaseCard>
+                </li>
+            </ul>
         </div>
 
-        <DialogRoot :open="dialogOpen" @update:open="(v) => { dialogOpen = v; if (!v) editTarget = null }">
-            <DialogPortal>
-                <DialogOverlay class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
-                <DialogContent
-                    class="fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
-                >
-                    <DialogTitle class="text-base font-semibold text-base-50">
-                        {{ editTarget ? 'Ubah Aturan Geofence' : 'Tambah Aturan Geofence' }}
-                    </DialogTitle>
-                    <DialogDescription class="sr-only">Formulir untuk mengubah atau menambah aturan geofence</DialogDescription>
-                    <form class="mt-5 space-y-4" @submit.prevent="submitForm">
-                        <label v-if="auth.isSuperAdmin && !editTarget" class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>
-                            <select
-                                v-model="form.organization_id"
-                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                            >
-                                <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
-                            </select>
-                        </label>
-                        <BaseInput v-model="form.rule_name" label="Nama Aturan" placeholder="Kantor Pusat" required />
-                        <BaseInput v-model="form.allowed_ssid" label="SSID WiFi yang Diizinkan" placeholder="WIFI-KANTOR" />
-                        <BaseInput v-model="form.allowed_ip_cidr" label="IP/CIDR yang Diizinkan" placeholder="192.168.1.0/24" />
-                        <div class="grid grid-cols-2 gap-3">
-                            <BaseInput v-model="form.center_latitude" type="number" step="any" label="Latitude Titik Pusat" placeholder="3.5946933" />
-                            <BaseInput v-model="form.center_longitude" type="number" step="any" label="Longitude Titik Pusat" placeholder="98.6727733" />
-                        </div>
-                        <label class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Device Anchor BLE (opsional, presisi jarak dekat)</span>
-                            <select
-                                v-model="form.anchor_device_id"
-                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                            >
-                                <option value="">Tidak pakai BLE (GPS saja)</option>
-                                <option v-for="d in devices" :key="d.id" :value="d.id">{{ d.device_name }}</option>
-                            </select>
-                        </label>
-                        <BaseInput v-model="form.max_distance_meters" type="number" label="Radius Aman (meter)" />
-                        <p class="text-xs text-base-500">
-                            <template v-if="form.anchor_device_id">
-                                Mode BLE: device lain di site ini men-scan sinyal BLE dari device anchor yang dipilih
-                                di atas dan mengunci otomatis kalau jaraknya (estimasi dari kekuatan sinyal) melewati
-                                radius, lalu membuka otomatis kalau kembali dekat — presisi jarak dekat (meteran), tidak
-                                butuh GPS/satelit sama sekali, cocok untuk dalam ruangan.
-                            </template>
-                            <template v-else>
-                                Device dikunci otomatis kalau posisi GPS-nya keluar dari radius ini, dan dibuka otomatis
-                                lagi begitu kembali — isi latitude/longitude titik pusat (ambil dari Google Maps lokasi
-                                kantor/site) supaya aktif. Untuk presisi jarak dekat (dalam ruangan), pilih Device Anchor
-                                BLE di atas sebagai gantinya.
-                            </template>
-                        </p>
-                        <div class="flex justify-end gap-3 pt-2">
-                            <BaseButton type="button" variant="ghost" @click="dialogOpen = false">Batal</BaseButton>
-                            <BaseButton type="submit" :loading="submitting">Simpan</BaseButton>
-                        </div>
-                    </form>
-                </DialogContent>
-            </DialogPortal>
-        </DialogRoot>
+        <BaseDialog
+            :open="dialogOpen"
+            :title="editTarget ? `Ubah aturan ${editTarget.rule_name}` : 'Tambah aturan geofence'"
+            description="Isi minimal satu syarat. Device dianggap aman bila memenuhi syarat yang diisi."
+            @update:open="
+                (v) => {
+                    dialogOpen = v
+                    if (!v) editTarget = null
+                }
+            "
+        >
+            <form id="geofence-form" class="space-y-4" @submit.prevent="submitForm">
+                <BaseSelect v-if="auth.isSuperAdmin && !editTarget" v-model="form.organization_id" label="Site" required>
+                    <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
+                </BaseSelect>
+                <BaseInput v-model="form.rule_name" label="Nama aturan" placeholder="Kantor Pusat" required />
+
+                <fieldset class="space-y-4 border-t border-base-800 pt-4">
+                    <legend class="eyebrow mb-1 pr-2">Jaringan</legend>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <BaseInput v-model="form.allowed_ssid" label="SSID WiFi" placeholder="WIFI-KANTOR" />
+                        <BaseInput v-model="form.allowed_ip_cidr" label="IP / CIDR" placeholder="192.168.1.0/24" />
+                    </div>
+                </fieldset>
+
+                <fieldset class="space-y-4 border-t border-base-800 pt-4">
+                    <legend class="eyebrow mb-1 pr-2">Jarak</legend>
+                    <BaseSelect
+                        v-model="form.anchor_device_id"
+                        label="Ukur dari"
+                        hint="BLE lebih presisi di dalam ruangan dan tidak butuh GPS."
+                    >
+                        <option value="">Titik pusat GPS</option>
+                        <option v-for="d in devices" :key="d.id" :value="d.id">Device anchor BLE: {{ d.device_name }}</option>
+                    </BaseSelect>
+                    <div v-if="!form.anchor_device_id" class="grid gap-4 sm:grid-cols-2">
+                        <BaseInput
+                            v-model="form.center_latitude"
+                            type="number"
+                            step="any"
+                            label="Latitude titik pusat"
+                            placeholder="3.5946933"
+                        />
+                        <BaseInput
+                            v-model="form.center_longitude"
+                            type="number"
+                            step="any"
+                            label="Longitude titik pusat"
+                            placeholder="98.6727733"
+                        />
+                    </div>
+                    <BaseInput
+                        v-model="form.max_distance_meters"
+                        type="number"
+                        label="Radius aman (meter)"
+                        :hint="
+                            form.anchor_device_id
+                                ? 'Device dikunci bila jaraknya ke anchor (perkiraan dari kekuatan sinyal) melebihi radius ini.'
+                                : 'Ambil latitude/longitude dari Google Maps lokasi site. Tanpa titik pusat, radius tidak berlaku.'
+                        "
+                    />
+                </fieldset>
+            </form>
+            <template #footer>
+                <BaseButton variant="ghost" @click="dialogOpen = false">Batal</BaseButton>
+                <BaseButton type="submit" form="geofence-form" :loading="submitting">{{
+                    editTarget ? 'Simpan aturan' : 'Buat aturan'
+                }}</BaseButton>
+            </template>
+        </BaseDialog>
 
         <ConfirmDialog
             :open="!!deleteTarget"
-            title="Hapus aturan geofence ini?"
-            :description="deleteTarget?.rule_name"
-            confirm-label="Hapus"
+            :title="`Hapus aturan ${deleteTarget?.rule_name ?? ''}?`"
+            description="Device di site ini tidak lagi dikunci otomatis berdasarkan aturan ini."
+            confirm-label="Hapus aturan"
             :loading="deleting"
             @update:open="(v) => !v && (deleteTarget = null)"
             @confirm="confirmDelete"

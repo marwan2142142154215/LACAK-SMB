@@ -64,3 +64,149 @@
         scrollbar-width: thin;
     }
 }
+
+/*
+ * Pola "panel operasi" yang dipakai bersama di seluruh dashboard -- label
+ * mono huruf kapital untuk readout/judul bagian, field form, dan lampu
+ * status. Didefinisikan sekali di sini supaya tiap halaman tidak menyalin
+ * deretan class Tailwind yang sama (dan diam-diam mulai berbeda).
+ */
+@layer components {
+    .eyebrow {
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        font-weight: 500;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--color-base-400);
+    }
+
+    .field-label {
+        display: block;
+        margin-bottom: 0.375rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--color-base-300);
+    }
+
+    .field-control {
+        width: 100%;
+        border-radius: 0.5rem;
+        border: 1px solid var(--color-base-700);
+        background-color: var(--color-base-850);
+        padding: 0.625rem 0.875rem;
+        font-size: 0.875rem;
+        color: var(--color-base-50);
+        outline: none;
+        transition:
+            border-color 150ms,
+            box-shadow 150ms;
+    }
+
+    /* Safari iPhone otomatis memperbesar halaman saat kolom ber-font < 16px disentuh */
+    @media (width < 40rem) {
+        .field-control {
+            font-size: 1rem;
+        }
+    }
+
+    .field-control::placeholder {
+        color: var(--color-base-500);
+    }
+
+    .field-control:focus {
+        border-color: var(--color-accent-500);
+        box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent-500) 18%, transparent);
+    }
+
+    .field-control:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+
+    .field-hint {
+        margin-top: 0.375rem;
+        font-size: 0.75rem;
+        line-height: 1.5;
+        color: var(--color-base-500);
+    }
+
+    .file-control {
+        display: block;
+        width: 100%;
+        font-size: 0.875rem;
+        color: var(--color-base-300);
+    }
+
+    .file-control::file-selector-button {
+        margin-right: 0.75rem;
+        border: 1px solid var(--color-base-700);
+        border-radius: 0.5rem;
+        background-color: var(--color-base-800);
+        padding: 0.5rem 0.75rem;
+        font-size: 0.75rem;
+        color: var(--color-base-100);
+        cursor: pointer;
+    }
+
+    /* Tabel data: header mono kecil, baris bergaris tipis, hover halus */
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 0.875rem;
+    }
+
+    .data-table th {
+        padding: 0.625rem 1.25rem;
+        border-bottom: 1px solid var(--color-base-800);
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        font-weight: 500;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--color-base-500);
+        white-space: nowrap;
+    }
+
+    .data-table td {
+        padding: 0.875rem 1.25rem;
+        border-bottom: 1px solid color-mix(in oklab, var(--color-base-800) 70%, transparent);
+        vertical-align: middle;
+    }
+
+    @media (width < 40rem) {
+        .data-table th,
+        .data-table td {
+            padding-left: 1rem;
+            padding-right: 0.75rem;
+        }
+    }
+
+    .data-table tbody tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .data-table tbody tr {
+        transition: background-color 120ms;
+    }
+
+    .data-table tbody tr:hover {
+        background-color: color-mix(in oklab, var(--color-base-850) 70%, transparent);
+    }
+
+    .led {
+        display: inline-block;
+        width: 0.4375rem;
+        height: 0.4375rem;
+        flex-shrink: 0;
+        border-radius: 9999px;
+        background-color: currentColor;
+        box-shadow: 0 0 8px 1px color-mix(in oklab, currentColor 55%, transparent);
+    }
+
+    .led-off {
+        box-shadow: none;
+        opacity: 0.6;
+    }
+}

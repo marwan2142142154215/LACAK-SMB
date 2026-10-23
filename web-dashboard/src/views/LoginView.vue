@@ -104,8 +104,13 @@ async function handleCredentialsSubmit() {
     }
 }
 
+// Kode bisa terkirim dua kali dari satu ketikan: otomatis di digit ke-6
+// (CodeCells @complete) DAN lewat tombol "Go"/isi otomatis kode di keyboard
+// iPhone. Kiriman kedua yang datang setelah yang pertama sukses ditolak
+// backend (410, challenge sudah terpakai) dan dulu membuang user ke langkah
+// awal -- jadi setelah sukses, kiriman berikutnya diabaikan.
 async function handleSetupConfirm() {
-    if (loading.value || code.value.length !== 6) return
+    if (loading.value || recoveryCodes.value || code.value.length !== 6) return
     errorMessage.value = ''
     loading.value = true
     try {
@@ -121,7 +126,7 @@ async function handleSetupConfirm() {
 
 async function handleVerifyConfirm() {
     const submitted = useRecoveryCode.value ? recoveryCode.value.trim() : code.value
-    if (loading.value || !submitted || (!useRecoveryCode.value && submitted.length !== 6)) return
+    if (loading.value || granted.value || !submitted || (!useRecoveryCode.value && submitted.length !== 6)) return
     errorMessage.value = ''
     loading.value = true
     try {

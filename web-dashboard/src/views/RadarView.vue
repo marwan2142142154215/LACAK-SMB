@@ -1,14 +1,17 @@
 <script setup>
-import { Battery, BatteryLow, Lock, LockOpen, Radar as RadarIcon, Wifi, WifiOff } from '@lucide/vue'
+import { MapPin, Radar as RadarIcon, ShieldAlert } from '@lucide/vue'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
-import BaseBadge from '@/components/ui/BaseBadge.vue'
+import RadarScope from '@/components/radar/RadarScope.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import Readout from '@/components/ui/Readout.vue'
+import StatusDot from '@/components/ui/StatusDot.vue'
 import { useGatewaySocket } from '@/composables/useGatewaySocket'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
@@ -80,30 +83,35 @@ onBeforeUnmount(() => {
 
 const RADAR_MAX_METERS = 200
 
-const devicesForRadar = computed(() => {
-    const list = Array.from(devices.values())
-    return list.map((d, index) => {
-        const angle = (index / Math.max(list.length, 1)) * 2 * Math.PI
-        const hasSignal = d.ble_distance_meters != null
-        // Device yang belum pernah kirim jarak BLE (baru enroll / belum ada
-        // sinyal) SENGAJA ditaruh di cincin terluar, bukan radiusRatio=0 —
-        // kalau tidak, semua device tanpa sinyal akan menumpuk persis di
-        // titik tengah (anchor dot), jadi kelihatan seperti "tidak ada titik".
-        const radiusRatio = hasSignal ? Math.min(d.ble_distance_meters, RADAR_MAX_METERS) / RADAR_MAX_METERS : 0.95
-        return {
-            ...d,
-            hasSignal,
-            x: 50 + radiusRatio * 42 * Math.cos(angle),
-            y: 50 + radiusRatio * 42 * Math.sin(angle),
-        }
-    })
+// Urutan daftar: yang perlu perhatian dulu (terkunci), lalu online, lalu sisanya
+const STATUS_ORDER = { locked: 0, online: 1, pending_enrollment: 2, offline: 3 }
+const deviceList = computed(() =>
+    Array.from(devices.values()).sort(
+        (a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9) || (a.device_name ?? '').localeCompare(b.device_name ?? ''),
+    ),
+)
+
+const countByStatus = computed(() => deviceList.value.reduce((counts, d) => ({ ...counts, [d.status]: (counts[d.status] ?? 0) + 1 }), {}))
+
+// Skala radar menyesuaikan device terjauh (kelipatan 50 m, maks 200 m) supaya titik tidak menumpuk di tengah
+const scopeMaxMeters = computed(() => {
+    const farthest = Math.max(0, ...deviceList.value.map((d) => Number(d.ble_distance_meters) || 0))
+    return Math.min(RADAR_MAX_METERS, Math.max(50, Math.ceil(farthest / 50) * 50))
 })
 
-const statusColor = {
-    online: '#2bc4a4',
-    offline: '#4b5568',
-    locked: '#dc3c30',
-    pending_enrollment: '#d89b2c',
+const scopeDevices = computed(() =>
+    deviceList.value.map((d) => ({
+        id: d.device_id,
+        label: d.device_name,
+        status: d.status,
+        distance: d.ble_distance_meters != null ? Number(d.ble_distance_meters) : null,
+    })),
+)
+
+const VIOLATION_LABELS = {
+    wifi_mismatch: 'WiFi di luar daftar',
+    ip_mismatch: 'IP di luar daftar',
+    distance_exceeded: 'Keluar radius aman',
 }
 
 async function loadInitialDevices() {
@@ -140,6 +148,7 @@ async function loadInitialDevices() {
 onMounted(async () => {
     const ok = await loadInitialDevices()
     if (!ok) return
+    selectedDeviceId.value = deviceList.value.find((d) => d.latitude != null && d.status === 'online')?.device_id ?? null
 
     const organizationId = auth.isSuperAdmin ? null : auth.user?.organization_id
     const socket = connect(organizationId)
@@ -172,96 +181,166 @@ onMounted(async () => {
 
 <template>
     <div>
-        <PageHeader title="Radar Pemantauan" subtitle="Posisi & status device secara realtime" />
+        <PageHeader
+            eyebrow="Pantau"
+            title="Radar"
+            subtitle="Jarak tiap device dari anchor, diperbarui langsung dari gateway. Pilih titik atau nama device untuk melihat lokasinya di peta."
+        >
+            <template v-if="!loading" #readouts>
+                <Readout label="Dalam jangkauan" :value="scopeDevices.filter((d) => d.distance != null).length" led="accent" />
+                <Readout label="Tanpa sinyal BLE" :value="scopeDevices.filter((d) => d.distance == null).length" led="muted" />
+                <Readout label="Skala radar" :value="`${scopeMaxMeters} m`" />
+                <Readout label="Pelanggaran sesi ini" :value="violations.length" :led="violations.length ? 'danger' : 'muted'" />
+            </template>
+        </PageHeader>
 
-        <div class="grid grid-cols-1 gap-6 p-8 xl:grid-cols-3">
-            <BaseCard title="Radar" class="xl:col-span-2">
-                <div class="relative mx-auto aspect-square w-full max-w-lg">
-                    <svg viewBox="0 0 100 100" class="size-full">
-                        <circle
-                            v-for="r in [10, 20, 30, 42]"
-                            :key="r"
-                            cx="50"
-                            cy="50"
-                            :r="r"
-                            fill="none"
-                            stroke="#222a37"
-                            stroke-width="0.3"
+        <div class="space-y-6 p-4 sm:p-8">
+            <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+                <BaseCard title="Radar BLE" subtitle="Anchor di tengah · jarak diperkirakan dari kekuatan sinyal BLE">
+                    <div class="mx-auto w-full max-w-[34rem] py-2">
+                        <RadarScope
+                            :devices="scopeDevices"
+                            :selected-id="selectedDeviceId"
+                            :max-meters="scopeMaxMeters"
+                            @select="(id) => (selectedDeviceId = id)"
                         />
-                        <line x1="50" y1="8" x2="50" y2="92" stroke="#222a37" stroke-width="0.3" />
-                        <line x1="8" y1="50" x2="92" y2="50" stroke="#222a37" stroke-width="0.3" />
-                        <circle cx="50" cy="50" r="2" fill="#2bc4a4" />
-
-                        <g v-for="d in devicesForRadar" :key="d.device_id">
-                            <circle
-                                :cx="d.x"
-                                :cy="d.y"
-                                r="2.2"
-                                :fill="d.hasSignal ? (statusColor[d.status] ?? '#4b5568') : 'transparent'"
-                                :stroke="statusColor[d.status] ?? '#4b5568'"
-                                :stroke-width="d.hasSignal ? 0 : 0.6"
-                                :stroke-dasharray="d.hasSignal ? undefined : '1,1'"
-                            >
-                                <title>{{ d.device_name }}{{ d.hasSignal ? '' : ' (belum ada sinyal BLE)' }}</title>
-                            </circle>
-                        </g>
-                    </svg>
-                    <RadarIcon v-if="devices.size === 0 && !loading" class="absolute inset-0 m-auto size-10 text-base-700" />
-                </div>
-                <p class="mt-3 text-center text-xs text-base-500">
-                    Posisi relatif berdasar estimasi jarak BLE (maks {{ RADAR_MAX_METERS }}m dari anchor)
-                </p>
-            </BaseCard>
-
-            <BaseCard title="Pelanggaran Terbaru">
-                <p v-if="violations.length === 0" class="text-sm text-base-500">Belum ada pelanggaran terdeteksi.</p>
-                <ul class="space-y-3">
-                    <li v-for="v in violations" :key="v.id" class="rounded-lg border border-danger-500/20 bg-danger-500/5 p-3">
-                        <p class="text-sm font-medium text-base-100">{{ v.device_name }}</p>
-                        <p class="mt-0.5 text-xs text-base-400">{{ v.violation_type }} — {{ v.detected_value }}</p>
-                        <p class="mt-1 text-[11px] text-base-600">{{ dayjs(v.detected_at).fromNow() }}</p>
-                    </li>
-                </ul>
-            </BaseCard>
-
-            <BaseCard title="Daftar Device" class="xl:col-span-3">
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <div
-                        v-for="d in Array.from(devices.values())"
-                        :key="d.device_id"
-                        class="cursor-pointer rounded-xl border border-base-800 bg-base-850/60 p-4 transition-all hover:border-accent-500/50"
-                        :class="{ 'border-accent-500/80': selectedDeviceId === d.device_id }"
-                        @click="selectedDeviceId = d.device_id"
-                    >
-                        <div class="flex items-start justify-between">
-                            <p class="text-sm font-medium text-base-100">{{ d.device_name }}</p>
-                            <BaseBadge :variant="d.status === 'online' ? 'success' : d.status === 'locked' ? 'danger' : 'neutral'">
-                                <Lock v-if="d.status === 'locked'" class="size-3" />
-                                <LockOpen v-else class="size-3" />
-                                {{ d.status }}
-                            </BaseBadge>
-                        </div>
-                        <div class="mt-3 flex items-center gap-4 text-xs text-base-500">
-                            <span class="flex items-center gap-1">
-                                <Wifi v-if="d.status === 'online'" class="size-3.5" />
-                                <WifiOff v-else class="size-3.5" />
-                                {{ d.ble_distance_meters != null ? `${d.ble_distance_meters}m` : '—' }}
-                            </span>
-                            <span class="flex items-center gap-1">
-                                <BatteryLow v-if="d.battery_level < 20" class="size-3.5" />
-                                <Battery v-else class="size-3.5" />
-                                {{ d.battery_level != null ? `${d.battery_level}%` : '—' }}
-                            </span>
-                        </div>
                     </div>
-                </div>
-            </BaseCard>
+                    <div class="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 border-t border-base-800 pt-4">
+                        <StatusDot status="online" />
+                        <StatusDot status="locked" />
+                        <StatusDot status="pending_enrollment" />
+                        <StatusDot status="offline" />
+                        <span class="flex items-center gap-2 text-xs text-base-400">
+                            <span class="size-2 rounded-full border border-dashed border-base-400" /> Belum ada sinyal BLE
+                        </span>
+                    </div>
+                </BaseCard>
 
-            <BaseCard title="Peta Lokasi" class="xl:col-span-3">
-                <p v-if="!selectedDevice" class="py-6 text-center text-sm text-base-500">Klik satu kartu Device di atas untuk melihat lokasi.</p>
-                <p v-else-if="selectedDevice.latitude == null" class="py-6 text-center text-sm text-base-500">Device ini belum mengirim koordinat GPS.</p>
-                <div v-show="selectedDevice?.latitude != null" ref="mapEl" class="h-96 w-full rounded-xl border border-base-800"></div>
-            </BaseCard>
+                <BaseCard title="Device" :count="loading ? null : deviceList.length" flush>
+                    <div v-if="loading" class="px-5 py-12 text-center text-sm text-base-500">Memuat device…</div>
+                    <EmptyState
+                        v-else-if="deviceList.length === 0"
+                        :icon="RadarIcon"
+                        title="Radar masih kosong"
+                        description="Device muncul di sini setelah APK pelacak terpasang dan terhubung."
+                    />
+                    <ul v-else class="max-h-[36rem] divide-y divide-base-800/70 overflow-y-auto">
+                        <li v-for="d in deviceList" :key="d.device_id">
+                            <button
+                                type="button"
+                                class="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-base-850 focus-visible:bg-base-850 focus-visible:outline-none"
+                                :class="selectedDeviceId === d.device_id && 'bg-base-850 shadow-[inset_2px_0_0_var(--color-accent-400)]'"
+                                :aria-pressed="selectedDeviceId === d.device_id"
+                                @click="selectedDeviceId = d.device_id"
+                            >
+                                <div class="min-w-0 flex-1">
+                                    <p class="truncate text-sm font-medium text-base-50">{{ d.device_name }}</p>
+                                    <div class="mt-1"><StatusDot :status="d.status" /></div>
+                                </div>
+                                <div class="shrink-0 text-right font-mono text-xs tabular-nums">
+                                    <p class="text-base-100">
+                                        {{ d.ble_distance_meters != null ? `${Number(d.ble_distance_meters).toFixed(1)} m` : '—' }}
+                                    </p>
+                                    <p
+                                        class="mt-1"
+                                        :class="d.battery_level != null && d.battery_level < 20 ? 'text-danger-400' : 'text-base-500'"
+                                    >
+                                        {{ d.battery_level != null ? `${d.battery_level}%` : '' }}
+                                    </p>
+                                </div>
+                            </button>
+                        </li>
+                    </ul>
+                </BaseCard>
+            </div>
+
+            <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+                <BaseCard
+                    :title="selectedDevice ? `Lokasi · ${selectedDevice.device_name}` : 'Lokasi'"
+                    :subtitle="selectedDevice?.recorded_at ? `Posisi terakhir ${dayjs(selectedDevice.recorded_at).fromNow()}` : null"
+                    flush
+                >
+                    <EmptyState
+                        v-if="!selectedDevice"
+                        :icon="MapPin"
+                        title="Pilih device"
+                        description="Klik titik di radar atau nama device untuk melihat posisinya di peta."
+                    />
+                    <EmptyState
+                        v-else-if="selectedDevice.latitude == null"
+                        :icon="MapPin"
+                        title="Belum ada koordinat GPS"
+                        description="Device ini belum pernah mengirim lokasi. Minta lokasi sekarang dari menu Device."
+                    />
+                    <div v-show="selectedDevice?.latitude != null" ref="mapEl" class="map h-[22rem] w-full" />
+                </BaseCard>
+
+                <BaseCard title="Pelanggaran" :count="violations.length" subtitle="Sejak halaman ini dibuka" flush>
+                    <EmptyState
+                        v-if="violations.length === 0"
+                        :icon="ShieldAlert"
+                        title="Belum ada pelanggaran"
+                        description="Device yang keluar batas geofence akan tercatat di sini secara langsung."
+                    />
+                    <ol v-else class="divide-y divide-base-800/70">
+                        <li v-for="v in violations" :key="v.id" class="flex gap-3 px-5 py-3.5">
+                            <span class="led mt-1.5 text-danger-400" />
+                            <div class="min-w-0">
+                                <p class="truncate text-sm font-medium text-base-50">{{ v.device_name }}</p>
+                                <p class="text-xs text-base-300">{{ VIOLATION_LABELS[v.violation_type] ?? v.violation_type }}</p>
+                                <p class="mt-0.5 truncate font-mono text-[11px] text-base-500">
+                                    {{ v.detected_value }} · {{ dayjs(v.detected_at).fromNow() }}
+                                </p>
+                            </div>
+                        </li>
+                    </ol>
+                </BaseCard>
+            </div>
         </div>
     </div>
 </template>
+
+<style scoped>
+/* Tile OpenStreetMap dibalik jadi gelap supaya peta menyatu dengan panel */
+.map :deep(.leaflet-tile-pane) {
+    filter: invert(1) hue-rotate(180deg) brightness(0.82) contrast(0.92) saturate(0.6);
+}
+
+.map :deep(.leaflet-container) {
+    background-color: var(--color-base-950);
+    font-family: var(--font-sans);
+}
+
+.map :deep(.leaflet-popup-content-wrapper),
+.map :deep(.leaflet-popup-tip) {
+    background-color: var(--color-base-850);
+    color: var(--color-base-50);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.5);
+}
+
+.map :deep(.leaflet-control-attribution) {
+    background-color: rgb(5 7 10 / 0.7);
+    color: var(--color-base-500);
+}
+
+.map :deep(.leaflet-control-attribution a) {
+    color: var(--color-base-300);
+}
+</style>
+
+<style scoped>
+.map :deep(.leaflet-bar) {
+    border: 1px solid var(--color-base-700);
+    box-shadow: none;
+}
+
+.map :deep(.leaflet-bar a) {
+    background-color: var(--color-base-850);
+    border-bottom-color: var(--color-base-700);
+    color: var(--color-base-100);
+}
+
+.map :deep(.leaflet-bar a:hover) {
+    background-color: var(--color-base-800);
+}
+</style>

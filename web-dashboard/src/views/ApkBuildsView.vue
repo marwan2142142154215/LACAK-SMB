@@ -1,18 +1,26 @@
 <script setup>
-import { Download, Hammer, Loader2, PackageOpen, Trash2, Upload } from '@lucide/vue'
+import { Download, Hammer, PackageOpen, Trash2, Upload } from '@lucide/vue'
 import dayjs from 'dayjs'
-import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
+import relativeTime from 'dayjs/plugin/relativeTime'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import Readout from '@/components/ui/Readout.vue'
+import RowMenu from '@/components/ui/RowMenu.vue'
+import StatusDot from '@/components/ui/StatusDot.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
+
+dayjs.extend(relativeTime)
 
 const auth = useAuthStore()
 const toast = useToast()
@@ -69,15 +77,7 @@ const uploadForm = ref({
 const hasActiveBuild = computed(() => builds.value.some((b) => b.status === 'pending' || b.status === 'building'))
 
 function typeLabel(build) {
-    return build.apk_type === 'master' ? 'APK Master' : (build.apk_type === 'server' ? 'Server' : 'APK Pelacak')
-}
-
-function buildTitle(build) {
-    const base = `${typeLabel(build)} v${build.version}`
-    // APK master bersifat universal -- bukan milik satu site, akses ditentukan
-    // oleh akun yang login. Tidak perlu menampilkan nama/kode site.
-    if (build.apk_type === 'master') return base
-    return `${base} - ${build.organization_name ?? build.embedded_site_code}`
+    return build.apk_type === 'master' ? 'APK Master' : build.apk_type === 'server' ? 'Server' : 'APK Pelacak'
 }
 
 async function confirmDelete() {
@@ -94,17 +94,20 @@ async function confirmDelete() {
     }
 }
 
-const statusLabel = {
-    pending: 'Menunggu antrean',
-    building: 'Sedang build...',
-    success: 'Berhasil',
-    failed: 'Gagal',
+const countByStatus = computed(() =>
+    builds.value.reduce((counts, build) => ({ ...counts, [build.status]: (counts[build.status] ?? 0) + 1 }), {}),
+)
+
+const TYPE_BADGE = { tracker: 'neutral', master: 'accent', server: 'neutral' }
+
+// Untuk siapa paket ini: APK master universal, sisanya milik satu site
+function buildTarget(build) {
+    if (build.apk_type === 'master') return 'Semua site'
+    return build.organization_name ?? build.embedded_site_code
 }
-const statusVariant = {
-    pending: 'neutral',
-    building: 'warning',
-    success: 'success',
-    failed: 'danger',
+
+function menuItems(build) {
+    return [{ label: 'Hapus arsip', icon: Trash2, onSelect: () => (deleteTarget.value = build), danger: true }]
 }
 
 async function loadBuilds() {
@@ -166,12 +169,9 @@ async function submitUpload() {
     }
 }
 
-watch(
-    [() => generateForm.value.apk_type, () => generateForm.value.organization_id, generateDialogOpen],
-    () => {
-        if (generateDialogOpen.value) loadConsentDocuments()
-    },
-)
+watch([() => generateForm.value.apk_type, () => generateForm.value.organization_id, generateDialogOpen], () => {
+    if (generateDialogOpen.value) loadConsentDocuments()
+})
 
 function schedulePoll() {
     if (pollTimer) return
@@ -197,177 +197,172 @@ onBeforeUnmount(() => {
 
 <template>
     <div>
-        <PageHeader title="APK Builds" subtitle="Traker per site, APK master & server universal — build langsung dari server">
+        <PageHeader
+            eyebrow="Perangkat"
+            title="Build APK"
+            subtitle="APK pelacak terikat ke satu device sejak dibuat, APK Master berlaku untuk semua site, dan server untuk komputer kantor."
+        >
             <template #actions>
-                <BaseButton variant="ghost" @click="uploadDialogOpen = true"><Upload class="size-4" /> Unggah Manual</BaseButton>
-                <BaseButton @click="generateDialogOpen = true"><Hammer class="size-4" /> Build & Unduh</BaseButton>
+                <BaseButton variant="outline" @click="uploadDialogOpen = true"><Upload class="size-4" /> Unggah manual</BaseButton>
+                <BaseButton @click="generateDialogOpen = true"><Hammer class="size-4" /> Buat build</BaseButton>
+            </template>
+            <template v-if="!loading" #readouts>
+                <Readout label="Build" :value="builds.length" />
+                <Readout label="Berhasil" :value="countByStatus.success ?? 0" led="accent" />
+                <Readout
+                    label="Sedang build"
+                    :value="(countByStatus.building ?? 0) + (countByStatus.pending ?? 0)"
+                    :led="hasActiveBuild ? 'warning' : 'muted'"
+                />
+                <Readout label="Gagal" :value="countByStatus.failed ?? 0" :led="countByStatus.failed ? 'danger' : 'muted'" />
             </template>
         </PageHeader>
 
-        <div class="p-8">
-            <BaseCard title="Semua Build">
-                <div v-if="loading" class="py-12 text-center text-sm text-base-500">Memuat...</div>
-                <div v-else-if="builds.length === 0" class="py-12 text-center text-sm text-base-500">
-                    Belum ada APK. Tekan "Build & Unduh" untuk membuat yang pertama.
-                </div>
-                <div v-else class="space-y-3">
-                    <div
-                        v-for="build in builds"
-                        :key="build.id"
-                        class="flex items-center justify-between rounded-xl border border-base-800 bg-base-850/60 p-4"
-                    >
-                        <div class="flex items-center gap-3">
-                            <div class="flex size-10 items-center justify-center rounded-lg bg-base-800">
-                                <Loader2 v-if="build.status === 'building' || build.status === 'pending'" class="size-5 animate-spin text-warning-400" />
-                                <PackageOpen v-else class="size-5 text-base-400" />
-                            </div>
-                            <div>
-                                <p class="font-medium text-base-100">
-                                    {{ buildTitle(build) }}
-                                </p>
-                                <p class="font-mono text-xs text-base-500">{{ build.checksum_sha256 ? `${build.checksum_sha256.slice(0, 24)}…` : '—' }}</p>
-                                <p class="text-[11px] text-base-600">{{ dayjs(build.created_at).format('DD MMM YYYY HH:mm') }}</p>
-                                <p v-if="build.status === 'failed' && build.build_log" class="mt-1 max-w-md truncate text-[11px] text-danger-400" :title="build.build_log">
-                                    {{ build.build_log }}
-                                </p>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <BaseBadge :variant="statusVariant[build.status]">{{ statusLabel[build.status] }}</BaseBadge>
-                            <a
-                                v-if="build.download_url"
-                                :href="build.download_url"
-                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-accent-500/50 hover:text-accent-300"
-                            >
-                                <Download class="size-3.5" /> Unduh
-                            </a>
-                            <button
-                                type="button"
-                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-danger-500/50 hover:text-danger-300"
-                                @click="deleteTarget = build"
-                            >
-                                <Trash2 class="size-3.5" /> Hapus
-                            </button>
-                        </div>
-                    </div>
+        <div class="p-4 sm:p-8">
+            <BaseCard title="Riwayat build" :count="loading ? null : builds.length" flush>
+                <div v-if="loading" class="px-5 py-12 text-center text-sm text-base-500">Memuat build…</div>
+                <EmptyState
+                    v-else-if="builds.length === 0"
+                    :icon="PackageOpen"
+                    title="Belum ada APK"
+                    description="Buat APK pelacak untuk satu device, atau APK Master untuk tim. Server menyusunnya dalam 1–2 menit."
+                >
+                    <BaseButton @click="generateDialogOpen = true"><Hammer class="size-4" /> Buat build</BaseButton>
+                </EmptyState>
+                <div v-else class="overflow-x-auto">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Paket</th>
+                                <th class="hidden sm:table-cell">Untuk</th>
+                                <th>Status</th>
+                                <th class="hidden lg:table-cell">Checksum</th>
+                                <th class="hidden md:table-cell">Dibuat</th>
+                                <th class="w-0"><span class="sr-only">Aksi</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="build in builds" :key="build.id">
+                                <td>
+                                    <div class="flex items-center gap-2.5">
+                                        <BaseBadge :variant="TYPE_BADGE[build.apk_type]">{{ typeLabel(build) }}</BaseBadge>
+                                        <span class="font-mono text-sm text-base-50">v{{ build.version }}</span>
+                                    </div>
+                                </td>
+                                <td class="hidden text-base-300 sm:table-cell">{{ buildTarget(build) }}</td>
+                                <td class="max-w-xs">
+                                    <StatusDot :status="build.status" :class="build.status === 'building' && 'animate-pulse'" />
+                                    <p
+                                        v-if="build.status === 'failed' && build.build_log"
+                                        class="mt-1 truncate font-mono text-[11px] text-danger-400/90"
+                                        :title="build.build_log"
+                                    >
+                                        {{ build.build_log }}
+                                    </p>
+                                </td>
+                                <td class="hidden font-mono text-xs text-base-500 lg:table-cell" :title="build.checksum_sha256">
+                                    {{ build.checksum_sha256 ? `${build.checksum_sha256.slice(0, 12)}…` : '—' }}
+                                </td>
+                                <td
+                                    class="hidden text-xs text-base-400 md:table-cell"
+                                    :title="dayjs(build.created_at).format('DD MMM YYYY HH:mm')"
+                                >
+                                    {{ dayjs(build.created_at).fromNow() }}
+                                </td>
+                                <td>
+                                    <div class="flex items-center justify-end gap-1">
+                                        <a
+                                            v-if="build.download_url"
+                                            :href="build.download_url"
+                                            class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-base-700 px-3 text-xs font-medium whitespace-nowrap text-base-100 transition-colors hover:border-base-500 hover:bg-base-850 focus-visible:outline-2 focus-visible:outline-accent-400"
+                                        >
+                                            <Download class="size-3.5" /> <span class="max-sm:sr-only">Unduh</span>
+                                        </a>
+                                        <RowMenu :items="menuItems(build)" :label="`Aksi untuk ${typeLabel(build)} v${build.version}`" />
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </BaseCard>
         </div>
 
-        <DialogRoot :open="generateDialogOpen" @update:open="(v) => (generateDialogOpen = v)">
-            <DialogPortal>
-                <DialogOverlay class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
-                <DialogContent
-                    class="fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
+        <BaseDialog
+            :open="generateDialogOpen"
+            title="Buat build APK"
+            description="Server menyusun APK dengan identitas yang sudah ditanam. Status di daftar diperbarui otomatis."
+            @update:open="(v) => (generateDialogOpen = v)"
+        >
+            <form id="generate-form" class="space-y-4" @submit.prevent="submitGenerate">
+                <BaseSelect v-model="generateForm.apk_type" label="Jenis paket">
+                    <option value="tracker">APK pelacak — untuk satu device di satu site</option>
+                    <option value="master">APK Master — untuk tim, akses mengikuti akun</option>
+                    <option value="server">Server — lacak-server.exe untuk komputer kantor</option>
+                </BaseSelect>
+                <BaseSelect
+                    v-if="auth.isSuperAdmin && generateForm.apk_type !== 'master'"
+                    v-model="generateForm.organization_id"
+                    label="Site"
+                    required
                 >
-                    <DialogTitle class="text-base font-semibold text-base-50">Build APK Baru</DialogTitle>
-                    <DialogDescription class="sr-only">Formulir untuk memulai build APK baru</DialogDescription>
-                    <form class="mt-5 space-y-4" @submit.prevent="submitGenerate">
-                        <label v-if="auth.isSuperAdmin && generateForm.apk_type !== 'master'" class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>
-                            <select
-                                v-model="generateForm.organization_id"
-                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                            >
-                                <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
-                            </select>
-                        </label>
-                        <label class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Tipe APK</span>
-                            <select
-                                v-model="generateForm.apk_type"
-                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                            >
-                                <option value="tracker">APK Pelacak (perangkat target per site)</option>
-                                <option value="master">APK Master (universal — akses ikut akun)</option>
-                                <option value="server">Server (lacak-server.exe)</option>
-                            </select>
-                        </label>
-                        <BaseInput v-model="generateForm.version" label="Versi" placeholder="1.0.0" required />
-
-                        <template v-if="generateForm.apk_type === 'tracker'">
-                            <BaseInput v-model="generateForm.device_name" label="Nama Device" placeholder="Contoh: HP CS Line - Asep" required />
-                            <label class="block">
-                                <span class="mb-1.5 block text-xs font-medium text-base-300">Dokumen Consent</span>
-                                <select
-                                    v-model="generateForm.consent_document_id"
-                                    class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                                    required
-                                >
-                                    <option v-if="consentDocuments.length === 0" :value="null" disabled>Belum ada dokumen consent aktif di site ini</option>
-                                    <option v-for="doc in consentDocuments" :key="doc.id" :value="doc.id">{{ doc.subject_name }}</option>
-                                </select>
-                            </label>
-                            <p class="text-xs text-base-500">
-                                APK ini akan langsung terikat ke satu device (identitas & kunci-nya ditanam saat build) —
-                                begitu di-download & dipasang di HP tujuan, langsung aktif tanpa kode pairing apa pun.
-                                Device otomatis terdaftar di menu Semua Device.
-                            </p>
-                        </template>
-                        <p v-else-if="generateForm.apk_type === 'master'" class="text-xs text-base-400">
-                            APK Master tidak terikat site — satu APK untuk semua site. Site mana yang bisa dilihat
-                            ditentukan oleh akun yang login (peran + akses site), bukan oleh APK-nya.
-                        </p>
-                        <p v-else class="text-xs text-base-500">
-                            Server menjalankan build Gradle sungguhan dengan kode site ditanam otomatis — butuh sekitar
-                            1-2 menit, status diperbarui otomatis di daftar setelah ditutup.
-                        </p>
-                        <div class="flex justify-end gap-3 pt-2">
-                            <BaseButton type="button" variant="ghost" @click="generateDialogOpen = false">Batal</BaseButton>
-                            <BaseButton type="submit" :loading="generating">Mulai Build</BaseButton>
-                        </div>
-                    </form>
-                </DialogContent>
-            </DialogPortal>
-        </DialogRoot>
-
-        <DialogRoot :open="uploadDialogOpen" @update:open="(v) => (uploadDialogOpen = v)">
-            <DialogPortal>
-                <DialogOverlay class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
-                <DialogContent
-                    class="fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
+                    <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
+                </BaseSelect>
+                <BaseInput v-model="generateForm.version" label="Versi" placeholder="1.0.0" required />
+                <template v-if="generateForm.apk_type === 'tracker'">
+                    <BaseInput v-model="generateForm.device_name" label="Nama device" placeholder="Contoh: HP CS Line — Asep" required />
+                    <BaseSelect
+                        v-model="generateForm.consent_document_id"
+                        label="Dokumen consent"
+                        required
+                        hint="Hanya consent yang masih berlaku di site ini. Device otomatis muncul di menu Device setelah APK dipasang."
+                    >
+                        <option v-if="consentDocuments.length === 0" :value="null" disabled>
+                            Belum ada consent yang berlaku di site ini
+                        </option>
+                        <option v-for="doc in consentDocuments" :key="doc.id" :value="doc.id">{{ doc.subject_name }}</option>
+                    </BaseSelect>
+                </template>
+                <p
+                    v-else-if="generateForm.apk_type === 'master'"
+                    class="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-pretty text-base-300"
                 >
-                    <DialogTitle class="text-base font-semibold text-base-50">Unggah APK Manual</DialogTitle>
-                    <DialogDescription class="sr-only">Formulir untuk mengunggah file APK secara manual</DialogDescription>
-                    <form class="mt-5 space-y-4" @submit.prevent="submitUpload">
-                        <label v-if="auth.isSuperAdmin" class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>
-                            <select
-                                v-model="uploadForm.organization_id"
-                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                            >
-                                <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
-                            </select>
-                        </label>
-                        <BaseInput v-model="uploadForm.version" label="Versi" placeholder="1.0.0" required />
-                        <label class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Berkas APK</span>
-                            <input
-                                type="file"
-                                accept=".apk"
-                                class="block w-full text-sm text-base-300 file:mr-3 file:rounded-lg file:border-0 file:bg-base-800 file:px-3 file:py-2 file:text-xs file:text-base-200"
-                                required
-                                @change="handleFileChange"
-                            />
-                        </label>
-                        <p class="text-xs text-base-500">
-                            Untuk APK yang sudah di-build sendiri di luar sistem ini. Kode site ditanam apa adanya dari
-                            site yang dipilih, checksum dihitung server.
-                        </p>
-                        <div class="flex justify-end gap-3 pt-2">
-                            <BaseButton type="button" variant="ghost" @click="uploadDialogOpen = false">Batal</BaseButton>
-                            <BaseButton type="submit" :loading="submitting">Unggah</BaseButton>
-                        </div>
-                    </form>
-                </DialogContent>
-            </DialogPortal>
-        </DialogRoot>
+                    Satu APK Master untuk semua site. Site yang terlihat ditentukan oleh akun yang masuk, bukan oleh APK-nya.
+                </p>
+            </form>
+            <template #footer>
+                <BaseButton variant="ghost" @click="generateDialogOpen = false">Batal</BaseButton>
+                <BaseButton type="submit" form="generate-form" :loading="generating"><Hammer class="size-4" /> Mulai build</BaseButton>
+            </template>
+        </BaseDialog>
+
+        <BaseDialog
+            :open="uploadDialogOpen"
+            title="Unggah APK manual"
+            description="Untuk APK yang di-build di luar sistem ini. Checksum dihitung oleh server."
+            @update:open="(v) => (uploadDialogOpen = v)"
+        >
+            <form id="upload-form" class="space-y-4" @submit.prevent="submitUpload">
+                <BaseSelect v-if="auth.isSuperAdmin" v-model="uploadForm.organization_id" label="Site" required>
+                    <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
+                </BaseSelect>
+                <BaseInput v-model="uploadForm.version" label="Versi" placeholder="1.0.0" required />
+                <label class="block">
+                    <span class="field-label">Berkas APK <span class="text-danger-400" aria-hidden="true">*</span></span>
+                    <input type="file" accept=".apk" class="file-control" required @change="handleFileChange" />
+                </label>
+            </form>
+            <template #footer>
+                <BaseButton variant="ghost" @click="uploadDialogOpen = false">Batal</BaseButton>
+                <BaseButton type="submit" form="upload-form" :loading="submitting"><Upload class="size-4" /> Unggah</BaseButton>
+            </template>
+        </BaseDialog>
 
         <ConfirmDialog
             :open="!!deleteTarget"
-            :title="deleteTarget ? `Hapus ${typeLabel(deleteTarget)} (v${deleteTarget.version})?` : ''"
-            description="File di server juga ikut dibersihkan."
-            confirm-label="Hapus"
+            :title="deleteTarget ? `Hapus ${typeLabel(deleteTarget)} v${deleteTarget.version}?` : ''"
+            description="Berkas APK di server ikut dihapus. Device yang sudah memasangnya tidak terpengaruh."
+            confirm-label="Hapus arsip"
             :loading="deleting"
             @update:open="(v) => !v && (deleteTarget = null)"
             @confirm="confirmDelete"

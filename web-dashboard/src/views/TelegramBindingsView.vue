@@ -1,14 +1,18 @@
 <script setup>
 import { Plus, Send, Trash2, UserCheck } from '@lucide/vue'
-import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { onMounted, ref } from 'vue'
 
-import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import Readout from '@/components/ui/Readout.vue'
+import RowMenu from '@/components/ui/RowMenu.vue'
+import StatusDot from '@/components/ui/StatusDot.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
@@ -137,6 +141,18 @@ async function confirmDelete() {
     }
 }
 
+function siteName(binding) {
+    return organizations.value.find((org) => org.id === binding.organization_id)?.name ?? null
+}
+
+function bindingMenu(binding) {
+    return [{ label: 'Lepas grup', icon: Trash2, onSelect: () => (deleteTarget.value = binding), danger: true }]
+}
+
+function linkMenu(link) {
+    return [{ label: 'Hapus tautan', icon: Trash2, onSelect: () => (linkDeleteTarget.value = link), danger: true }]
+}
+
 onMounted(async () => {
     await Promise.all([loadBindings(), loadOrganizations(), loadStaffLinks(), loadStaffUsers()])
 })
@@ -144,157 +160,147 @@ onMounted(async () => {
 
 <template>
     <div>
-        <PageHeader title="Bot Telegram" subtitle="Hubungkan grup/chat Telegram untuk notifikasi & kontrol">
+        <PageHeader
+            eyebrow="Akses"
+            title="Bot Telegram"
+            subtitle="Grup Telegram menerima peringatan pelanggaran dari site-nya, dan staf yang tertaut bisa mengunci atau membuka device lewat bot."
+        >
             <template #actions>
-                <BaseButton v-if="auth.isSuperAdmin" variant="outline" @click="linkDialogOpen = true">
-                    <UserCheck class="size-4" /> Tautkan Akun Staf
-                </BaseButton>
-                <BaseButton @click="dialogOpen = true"><Plus class="size-4" /> Tambah Binding</BaseButton>
+                <BaseButton v-if="auth.isSuperAdmin" variant="outline" @click="linkDialogOpen = true"
+                    ><UserCheck class="size-4" /> Tautkan staf</BaseButton
+                >
+                <BaseButton @click="dialogOpen = true"><Plus class="size-4" /> Hubungkan grup</BaseButton>
+            </template>
+            <template v-if="!loading" #readouts>
+                <Readout label="Grup terhubung" :value="bindings.length" led="accent" />
+                <Readout label="Staf tertaut" :value="staffLinks.length" :led="staffLinks.length ? 'copper' : 'muted'" />
             </template>
         </PageHeader>
 
-        <div class="space-y-6 p-8">
-            <BaseCard title="Semua Binding">
-                <div v-if="loading" class="py-12 text-center text-sm text-base-500">Memuat...</div>
-                <div v-else-if="bindings.length === 0" class="py-12 text-center text-sm text-base-500">Belum ada binding Telegram.</div>
-                <div v-else class="space-y-3">
-                    <div
-                        v-for="binding in bindings"
-                        :key="binding.id"
-                        class="flex items-center justify-between rounded-xl border border-base-800 bg-base-850/60 p-4"
-                    >
-                        <div class="flex items-center gap-3">
-                            <div class="flex size-10 items-center justify-center rounded-lg bg-base-800">
-                                <Send class="size-5 text-base-400" />
-                            </div>
-                            <div>
-                                <p class="font-mono text-sm text-base-100">{{ binding.telegram_chat_id }}</p>
-                                <p class="font-mono text-xs text-base-500">{{ binding.bot_token_ref_masked }}</p>
-                            </div>
+        <div class="grid items-start gap-6 p-4 sm:p-8 xl:grid-cols-2">
+            <BaseCard title="Grup notifikasi" :count="loading ? null : bindings.length" flush>
+                <div v-if="loading" class="px-5 py-12 text-center text-sm text-base-500">Memuat grup…</div>
+                <EmptyState
+                    v-else-if="bindings.length === 0"
+                    :icon="Send"
+                    title="Belum ada grup terhubung"
+                    description="Tambahkan bot ke grup Telegram tim, lalu hubungkan chat ID grup itu ke site di sini."
+                >
+                    <BaseButton @click="dialogOpen = true"><Plus class="size-4" /> Hubungkan grup</BaseButton>
+                </EmptyState>
+                <ul v-else class="divide-y divide-base-800/70">
+                    <li v-for="binding in bindings" :key="binding.id" class="flex items-center gap-4 px-5 py-4">
+                        <span class="flex size-9 shrink-0 items-center justify-center rounded-md bg-base-800">
+                            <Send class="size-4 text-base-300" />
+                        </span>
+                        <div class="min-w-0 flex-1">
+                            <p class="truncate text-sm font-medium text-base-50">{{ siteName(binding) ?? 'Site Anda' }}</p>
+                            <p class="truncate font-mono text-xs text-base-500">
+                                chat {{ binding.telegram_chat_id }} · {{ binding.bot_token_ref_masked }}
+                            </p>
                         </div>
-                        <div class="flex items-center gap-3">
-                            <BaseBadge :variant="binding.is_active ? 'success' : 'neutral'">
-                                {{ binding.is_active ? 'Aktif' : 'Nonaktif' }}
-                            </BaseBadge>
-                            <button type="button" class="text-base-500 hover:text-danger-400" @click="deleteTarget = binding">
-                                <Trash2 class="size-4" />
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                        <StatusDot :status="binding.is_active ? 'active' : 'inactive'" />
+                        <RowMenu :items="bindingMenu(binding)" :label="`Aksi untuk grup ${binding.telegram_chat_id}`" />
+                    </li>
+                </ul>
             </BaseCard>
 
-            <BaseCard title="Tautan Akun Staf">
-                <p class="mb-4 text-xs text-base-500">
-                    Bot menegakkan izin sesuai role akun staf yang ditautkan ke akun Telegram pribadinya -- staf yang belum ditautkan di
-                    sini tidak bisa pakai perintah apa pun di bot (kecuali /start dan /help).
-                </p>
-                <div v-if="staffLinks.length === 0" class="py-8 text-center text-sm text-base-500">Belum ada akun staf yang ditautkan.</div>
-                <div v-else class="space-y-3">
-                    <div
-                        v-for="link in staffLinks"
-                        :key="link.id"
-                        class="flex items-center justify-between rounded-xl border border-base-800 bg-base-850/60 p-4"
+            <BaseCard
+                title="Staf tertaut"
+                :count="staffLinks.length"
+                subtitle="Bot mengikuti izin akun staf yang tertaut. Staf yang belum tertaut hanya bisa memakai /start dan /help."
+                flush
+            >
+                <EmptyState
+                    v-if="staffLinks.length === 0"
+                    :icon="UserCheck"
+                    title="Belum ada staf tertaut"
+                    description="Minta staf mengirim /start ke bot, lalu tautkan ID Telegram yang dibalas bot ke akun staf mereka."
+                >
+                    <BaseButton v-if="auth.isSuperAdmin" variant="outline" @click="linkDialogOpen = true"
+                        ><UserCheck class="size-4" /> Tautkan staf</BaseButton
                     >
-                        <div class="flex items-center gap-3">
-                            <div class="flex size-10 items-center justify-center rounded-lg bg-base-800">
-                                <UserCheck class="size-5 text-base-400" />
-                            </div>
-                            <div>
-                                <p class="text-sm text-base-100">{{ link.user.name }} ({{ link.user.username }})</p>
-                                <p class="font-mono text-xs text-base-500">
-                                    Telegram: {{ link.telegram_user_id }}<span v-if="link.telegram_username"> · @{{ link.telegram_username }}</span>
-                                </p>
-                            </div>
+                </EmptyState>
+                <ul v-else class="divide-y divide-base-800/70">
+                    <li v-for="link in staffLinks" :key="link.id" class="flex items-center gap-4 px-5 py-4">
+                        <span
+                            class="flex size-9 shrink-0 items-center justify-center rounded-md bg-base-800 font-mono text-sm text-base-200"
+                        >
+                            {{ link.user.name?.charAt(0)?.toUpperCase() }}
+                        </span>
+                        <div class="min-w-0 flex-1">
+                            <p class="truncate text-sm font-medium text-base-50">{{ link.user.name }}</p>
+                            <p class="truncate font-mono text-xs text-base-500">
+                                id {{ link.telegram_user_id }}<span v-if="link.telegram_username"> · @{{ link.telegram_username }}</span>
+                            </p>
                         </div>
-                        <button type="button" class="text-base-500 hover:text-danger-400" @click="linkDeleteTarget = link">
-                            <Trash2 class="size-4" />
-                        </button>
-                    </div>
-                </div>
+                        <RowMenu :items="linkMenu(link)" :label="`Aksi untuk tautan ${link.user.name}`" />
+                    </li>
+                </ul>
             </BaseCard>
         </div>
 
-        <DialogRoot :open="dialogOpen" @update:open="(v) => (dialogOpen = v)">
-            <DialogPortal>
-                <DialogOverlay class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
-                <DialogContent
-                    class="fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
-                >
-                    <DialogTitle class="text-base font-semibold text-base-50">Tambah Binding Telegram</DialogTitle>
-                    <DialogDescription class="sr-only">Formulir untuk menambah binding Telegram baru</DialogDescription>
-                    <form class="mt-5 space-y-4" @submit.prevent="submitForm">
-                        <label v-if="auth.isSuperAdmin" class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>
-                            <select
-                                v-model="form.organization_id"
-                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                            >
-                                <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
-                            </select>
-                        </label>
-                        <BaseInput v-model="form.telegram_chat_id" label="Chat ID Telegram" placeholder="-100123456789" required />
-                        <BaseInput v-model="form.bot_token_ref" label="Referensi Token Bot" placeholder="env:TELEGRAM_BOT_TOKEN" required />
-                        <p class="text-xs text-base-500">
-                            Isi referensi ke secret manager/.env, bukan token asli — token asli tidak pernah disimpan di database.
-                        </p>
-                        <div class="flex justify-end gap-3 pt-2">
-                            <BaseButton type="button" variant="ghost" @click="dialogOpen = false">Batal</BaseButton>
-                            <BaseButton type="submit" :loading="submitting">Simpan</BaseButton>
-                        </div>
-                    </form>
-                </DialogContent>
-            </DialogPortal>
-        </DialogRoot>
+        <BaseDialog
+            :open="dialogOpen"
+            title="Hubungkan grup Telegram"
+            description="Bot harus sudah menjadi anggota grup sebelum dihubungkan."
+            @update:open="(v) => (dialogOpen = v)"
+        >
+            <form id="binding-form" class="space-y-4" @submit.prevent="submitForm">
+                <BaseSelect v-if="auth.isSuperAdmin" v-model="form.organization_id" label="Site" required>
+                    <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
+                </BaseSelect>
+                <BaseInput v-model="form.telegram_chat_id" label="Chat ID grup" placeholder="-100123456789" required />
+                <BaseInput
+                    v-model="form.bot_token_ref"
+                    label="Referensi token bot"
+                    placeholder="env:TELEGRAM_BOT_TOKEN"
+                    required
+                    hint="Nama variabel di .env atau secret manager. Token aslinya tidak pernah disimpan di database."
+                />
+            </form>
+            <template #footer>
+                <BaseButton variant="ghost" @click="dialogOpen = false">Batal</BaseButton>
+                <BaseButton type="submit" form="binding-form" :loading="submitting">Hubungkan grup</BaseButton>
+            </template>
+        </BaseDialog>
 
         <ConfirmDialog
             :open="!!deleteTarget"
-            title="Hapus binding ini?"
-            :description="deleteTarget?.telegram_chat_id"
-            confirm-label="Hapus"
+            :title="`Lepas grup ${deleteTarget?.telegram_chat_id ?? ''}?`"
+            description="Grup ini berhenti menerima peringatan, dan perintah dari grup ini tidak lagi dijalankan."
+            confirm-label="Lepas grup"
             :loading="deleting"
             @update:open="(v) => !v && (deleteTarget = null)"
             @confirm="confirmDelete"
         />
 
-        <DialogRoot :open="linkDialogOpen" @update:open="(v) => (linkDialogOpen = v)">
-            <DialogPortal>
-                <DialogOverlay class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
-                <DialogContent
-                    class="fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
-                >
-                    <DialogTitle class="text-base font-semibold text-base-50">Tautkan Akun Staf ke Telegram</DialogTitle>
-                    <DialogDescription class="sr-only">Formulir untuk menautkan akun Telegram staf</DialogDescription>
-                    <form class="mt-5 space-y-4" @submit.prevent="submitLinkForm">
-                        <label class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Akun Staf</span>
-                            <select
-                                v-model="linkForm.user_id"
-                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                            >
-                                <option v-for="u in staffUsers" :key="u.id" :value="u.id">{{ u.name }} ({{ u.username }})</option>
-                            </select>
-                        </label>
-                        <BaseInput v-model="linkForm.telegram_user_id" label="ID Telegram" placeholder="123456789" required />
-                        <BaseInput v-model="linkForm.telegram_username" label="Username Telegram (opsional)" placeholder="username" />
-                        <p class="text-xs text-base-500">
-                            Minta staf kirim /start ke bot dulu -- ID Telegram-nya ditampilkan di balasan bot, salin dari sana supaya tidak
-                            salah tautan ke orang lain.
-                        </p>
-                        <div class="flex justify-end gap-3 pt-2">
-                            <BaseButton type="button" variant="ghost" @click="linkDialogOpen = false">Batal</BaseButton>
-                            <BaseButton type="submit" :loading="linkSubmitting">Simpan</BaseButton>
-                        </div>
-                    </form>
-                </DialogContent>
-            </DialogPortal>
-        </DialogRoot>
+        <BaseDialog
+            :open="linkDialogOpen"
+            title="Tautkan staf ke Telegram"
+            description="Salin ID Telegram dari balasan bot atas /start, supaya tidak tertaut ke orang yang salah."
+            @update:open="(v) => (linkDialogOpen = v)"
+        >
+            <form id="link-form" class="space-y-4" @submit.prevent="submitLinkForm">
+                <BaseSelect v-model="linkForm.user_id" label="Akun staf" required>
+                    <option v-for="u in staffUsers" :key="u.id" :value="u.id">{{ u.name }} ({{ u.username }})</option>
+                </BaseSelect>
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <BaseInput v-model="linkForm.telegram_user_id" label="ID Telegram" placeholder="123456789" required />
+                    <BaseInput v-model="linkForm.telegram_username" label="Username Telegram" placeholder="opsional" />
+                </div>
+            </form>
+            <template #footer>
+                <BaseButton variant="ghost" @click="linkDialogOpen = false">Batal</BaseButton>
+                <BaseButton type="submit" form="link-form" :loading="linkSubmitting">Tautkan staf</BaseButton>
+            </template>
+        </BaseDialog>
 
         <ConfirmDialog
             :open="!!linkDeleteTarget"
-            title="Hapus tautan ini?"
-            :description="linkDeleteTarget?.user?.name"
-            confirm-label="Hapus"
+            :title="`Hapus tautan ${linkDeleteTarget?.user?.name ?? ''}?`"
+            description="Staf ini tidak bisa lagi memakai perintah bot sampai ditautkan ulang."
+            confirm-label="Hapus tautan"
             :loading="linkDeleting"
             @update:open="(v) => !v && (linkDeleteTarget = null)"
             @confirm="confirmDeleteLink"

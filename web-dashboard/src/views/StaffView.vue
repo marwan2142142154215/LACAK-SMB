@@ -1,14 +1,19 @@
 <script setup>
-import { Ban, CheckCircle2, KeyRound, Pencil, ShieldOff, Trash2, UserPlus } from '@lucide/vue'
-import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
+import { Ban, CheckCircle2, KeyRound, Pencil, ShieldOff, Trash2, UserPlus, Users } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import Readout from '@/components/ui/Readout.vue'
+import RowMenu from '@/components/ui/RowMenu.vue'
+import StatusDot from '@/components/ui/StatusDot.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
 
@@ -207,6 +212,18 @@ async function confirmDelete() {
     }
 }
 
+const activeCount = computed(() => staff.value.filter((user) => user.is_active).length)
+
+function menuItems(user) {
+    return [
+        { label: 'Ganti password', icon: KeyRound, onSelect: () => openPasswordDialog(user) },
+        { label: 'Reset 2FA', icon: ShieldOff, onSelect: () => (resetTwoFactorTarget.value = user) },
+        { label: 'Suspen akun', icon: Ban, onSelect: () => (suspendTarget.value = user), hidden: !user.is_active },
+        { label: 'Aktifkan kembali', icon: CheckCircle2, onSelect: () => reactivate(user), hidden: user.is_active },
+        { label: 'Hapus staf', icon: Trash2, onSelect: () => (deleteTarget.value = user), danger: true },
+    ]
+}
+
 onMounted(async () => {
     await Promise.all([loadStaff(), loadOrganizations()])
 })
@@ -214,175 +231,194 @@ onMounted(async () => {
 
 <template>
     <div>
-        <PageHeader title="Staf" subtitle="Kelola siapa yang bisa login ke web dashboard & APK master">
+        <PageHeader
+            eyebrow="Akses"
+            title="Staf"
+            subtitle="Siapa yang bisa masuk ke dashboard dan APK Master, dengan peran dan site masing-masing."
+        >
             <template #actions>
-                <BaseButton @click="openCreate"><UserPlus class="size-4" /> Tambah Staf</BaseButton>
+                <BaseButton @click="openCreate"><UserPlus class="size-4" /> Tambah staf</BaseButton>
+            </template>
+            <template v-if="!loading" #readouts>
+                <Readout label="Total" :value="staff.length" />
+                <Readout label="Aktif" :value="activeCount" led="accent" />
+                <Readout label="Disuspen" :value="staff.length - activeCount" :led="staff.length - activeCount ? 'danger' : 'muted'" />
             </template>
         </PageHeader>
 
-        <div class="p-8">
-            <BaseCard title="Semua Staf">
-                <div v-if="loading" class="py-12 text-center text-sm text-base-500">Memuat...</div>
-                <div v-else-if="staff.length === 0" class="py-12 text-center text-sm text-base-500">Belum ada staf.</div>
-                <div v-else class="space-y-3">
-                    <div
-                        v-for="user in staff"
-                        :key="user.id"
-                        class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-base-800 bg-base-850/60 p-4"
-                    >
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <p class="font-medium text-base-100">{{ user.name }}</p>
-                                <BaseBadge variant="accent">{{ ROLE_LABELS[user.role] ?? user.role }}</BaseBadge>
-                                <BaseBadge :variant="user.is_active ? 'success' : 'danger'">
-                                    {{ user.is_active ? 'Aktif' : 'Disuspen' }}
-                                </BaseBadge>
-                            </div>
-                            <p class="mt-1 text-xs text-base-500">{{ user.username }} · {{ user.email }}</p>
-                            <p v-if="user.site_access?.length" class="mt-1 text-[11px] text-base-600">
-                                Akses site: {{ user.site_access.map((s) => s.name).join(', ') }}
-                            </p>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <button
-                                type="button"
-                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-accent-500/50 hover:text-accent-300"
-                                @click="openEdit(user)"
-                            >
-                                <Pencil class="size-3.5" /> Edit
-                            </button>
-                            <button
-                                type="button"
-                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-copper-500/50 hover:text-copper-300"
-                                @click="openPasswordDialog(user)"
-                            >
-                                <KeyRound class="size-3.5" /> Ganti Password
-                            </button>
-                            <button
-                                type="button"
-                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-warning-500/50 hover:text-warning-300"
-                                @click="resetTwoFactorTarget = user"
-                            >
-                                <ShieldOff class="size-3.5" /> Reset 2FA
-                            </button>
-                            <button
-                                v-if="user.is_active"
-                                type="button"
-                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-warning-500/50 hover:text-warning-300"
-                                @click="suspendTarget = user"
-                            >
-                                <Ban class="size-3.5" /> Suspen
-                            </button>
-                            <button
-                                v-else
-                                type="button"
-                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-accent-500/50 hover:text-accent-300"
-                                @click="reactivate(user)"
-                            >
-                                <CheckCircle2 class="size-3.5" /> Aktifkan
-                            </button>
-                            <button
-                                type="button"
-                                class="flex items-center gap-1.5 rounded-lg border border-base-700 px-3 py-2 text-xs text-base-300 hover:border-danger-500/50 hover:text-danger-300"
-                                @click="deleteTarget = user"
-                            >
-                                <Trash2 class="size-3.5" /> Hapus
-                            </button>
-                        </div>
-                    </div>
+        <div class="p-4 sm:p-8">
+            <BaseCard title="Semua staf" :count="loading ? null : staff.length" flush>
+                <div v-if="loading" class="px-5 py-12 text-center text-sm text-base-500">Memuat daftar staf…</div>
+                <EmptyState
+                    v-else-if="staff.length === 0"
+                    :icon="Users"
+                    title="Belum ada staf"
+                    description="Tambahkan staf supaya mereka bisa masuk dan memantau site mereka."
+                >
+                    <BaseButton @click="openCreate"><UserPlus class="size-4" /> Tambah staf</BaseButton>
+                </EmptyState>
+                <div v-else class="overflow-x-auto">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Staf</th>
+                                <th class="hidden sm:table-cell">Peran</th>
+                                <th class="hidden md:table-cell">Akses site</th>
+                                <th class="hidden sm:table-cell">Status</th>
+                                <th class="w-0"><span class="sr-only">Aksi</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="user in staff" :key="user.id">
+                                <td>
+                                    <div class="flex items-center gap-3">
+                                        <span
+                                            class="flex size-9 shrink-0 items-center justify-center rounded-md bg-base-800 font-mono text-sm text-base-200"
+                                        >
+                                            {{ user.name?.charAt(0)?.toUpperCase() }}
+                                        </span>
+                                        <div class="min-w-0">
+                                            <p class="truncate font-medium text-base-50">{{ user.name }}</p>
+                                            <p class="truncate font-mono text-xs text-base-500">{{ user.username }} · {{ user.email }}</p>
+                                            <p class="mt-1 text-xs text-base-400 sm:hidden">
+                                                {{ ROLE_LABELS[user.role] ?? user.role }} · {{ user.is_active ? 'Aktif' : 'Disuspen' }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="hidden sm:table-cell">
+                                    <BaseBadge variant="accent">{{ ROLE_LABELS[user.role] ?? user.role }}</BaseBadge>
+                                </td>
+                                <td class="hidden text-xs text-base-400 md:table-cell">
+                                    <template v-if="user.role === 'super_admin'">Semua site</template>
+                                    <template v-else-if="user.site_access?.length">{{
+                                        user.site_access.map((s) => s.name).join(', ')
+                                    }}</template>
+                                    <template v-else>{{ organizations.find((o) => o.id === user.organization_id)?.name ?? '—' }}</template>
+                                </td>
+                                <td class="hidden sm:table-cell">
+                                    <StatusDot
+                                        :status="user.is_active ? 'active' : 'inactive'"
+                                        :label="user.is_active ? 'Aktif' : 'Disuspen'"
+                                    />
+                                </td>
+                                <td>
+                                    <div class="flex items-center justify-end gap-1">
+                                        <BaseButton size="sm" variant="outline" @click="openEdit(user)"
+                                            ><Pencil class="size-3.5" /> <span class="max-sm:sr-only">Ubah</span></BaseButton
+                                        >
+                                        <RowMenu :items="menuItems(user)" :label="`Aksi lain untuk ${user.name}`" />
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </BaseCard>
         </div>
 
-        <DialogRoot :open="dialogOpen" @update:open="(v) => { dialogOpen = v; if (!v) editTarget = null }">
-            <DialogPortal>
-                <DialogOverlay class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
-                <DialogContent
-                    class="fixed top-1/2 left-1/2 z-50 max-h-[85vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
-                >
-                    <DialogTitle class="text-base font-semibold text-base-50">{{ editTarget ? `Ubah Staf: ${editTarget.name}` : 'Tambah Staf Baru' }}</DialogTitle>
-                    <DialogDescription class="sr-only">Formulir untuk mengubah atau menambah staf</DialogDescription>
-                    <form class="mt-5 space-y-4" @submit.prevent="submitForm">
-                        <BaseInput v-model="form.name" label="Nama" required />
-                        <BaseInput v-model="form.username" label="Username" required :disabled="!!editTarget" />
-                        <p v-if="editTarget" class="-mt-2.5 text-[11px] text-base-600">Username tidak bisa diubah setelah dibuat.</p>
-                        <BaseInput v-model="form.email" label="Email" type="email" required />
-                        <BaseInput v-if="!editTarget" v-model="form.password" label="Password" type="password" required minlength="8" />
+        <BaseDialog
+            :open="dialogOpen"
+            :title="editTarget ? `Ubah staf ${editTarget.name}` : 'Tambah staf'"
+            :description="
+                editTarget ? 'Peran dan akses site berlaku di login berikutnya.' : 'Staf baru wajib memasang 2FA saat pertama kali masuk.'
+            "
+            @update:open="
+                (v) => {
+                    dialogOpen = v
+                    if (!v) editTarget = null
+                }
+            "
+        >
+            <form id="staff-form" class="space-y-4" @submit.prevent="submitForm">
+                <BaseInput v-model="form.name" label="Nama" required />
+                <BaseInput
+                    v-model="form.username"
+                    label="Username"
+                    required
+                    :disabled="!!editTarget"
+                    :hint="editTarget ? 'Username tidak bisa diubah setelah dibuat.' : null"
+                />
+                <BaseInput v-model="form.email" label="Email" type="email" required hint="Juga dipakai untuk masuk lewat Account Center." />
+                <BaseInput
+                    v-if="!editTarget"
+                    v-model="form.password"
+                    label="Password awal"
+                    type="password"
+                    required
+                    minlength="8"
+                    autocomplete="new-password"
+                    hint="Minimal 8 karakter."
+                />
 
-                        <label class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Peran</span>
-                            <select
-                                v-model="form.role"
-                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                            >
-                                <option v-for="(desc, role) in roleDescriptions" :key="role" :value="role">{{ desc }}</option>
-                            </select>
+                <BaseSelect v-model="form.role" label="Peran">
+                    <option v-for="(desc, role) in roleDescriptions" :key="role" :value="role">{{ desc }}</option>
+                </BaseSelect>
+
+                <p v-if="form.role === 'super_admin'" class="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-base-300">
+                    Super Admin melihat dan mengelola semua site, jadi tidak perlu memilih site.
+                </p>
+
+                <BaseSelect v-else-if="!needsSiteAccess" v-model="form.organization_id" label="Site" required>
+                    <option :value="null" disabled>Pilih site</option>
+                    <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
+                </BaseSelect>
+
+                <fieldset v-else>
+                    <legend class="field-label">Site yang boleh dilihat</legend>
+                    <div class="max-h-44 space-y-0.5 overflow-y-auto rounded-lg border border-base-700 bg-base-850 p-1.5">
+                        <label
+                            v-for="org in organizations"
+                            :key="org.id"
+                            class="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-base-200 hover:bg-base-800"
+                        >
+                            <input
+                                type="checkbox"
+                                :checked="form.site_access.includes(org.id)"
+                                class="size-4 accent-accent-500"
+                                @change="toggleSiteAccess(org.id)"
+                            />
+                            {{ org.name }}
                         </label>
+                    </div>
+                </fieldset>
+            </form>
+            <template #footer>
+                <BaseButton variant="ghost" @click="dialogOpen = false">Batal</BaseButton>
+                <BaseButton type="submit" form="staff-form" :loading="submitting">{{
+                    editTarget ? 'Simpan perubahan' : 'Buat staf'
+                }}</BaseButton>
+            </template>
+        </BaseDialog>
 
-                        <p v-if="form.role === 'super_admin'" class="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-base-300">
-                            Super Admin punya full akses semua fitur & semua site — tidak perlu memilih site.
-                        </p>
-
-                        <label v-else-if="!needsSiteAccess" class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Site</span>
-                            <select
-                                v-model="form.organization_id"
-                                class="w-full rounded-lg border border-base-700 bg-base-850 px-3.5 py-2.5 text-sm text-base-50 outline-none focus:border-accent-500"
-                            >
-                                <option :value="null" disabled>Pilih site</option>
-                                <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
-                            </select>
-                        </label>
-
-                        <div v-else class="block">
-                            <span class="mb-1.5 block text-xs font-medium text-base-300">Site yang diizinkan dilihat</span>
-                            <div class="max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-base-700 p-3">
-                                <label v-for="org in organizations" :key="org.id" class="flex items-center gap-2 text-sm text-base-200">
-                                    <input
-                                        type="checkbox"
-                                        :checked="form.site_access.includes(org.id)"
-                                        class="rounded border-base-600"
-                                        @change="toggleSiteAccess(org.id)"
-                                    />
-                                    {{ org.name }}
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="flex justify-end gap-3 pt-2">
-                            <BaseButton type="button" variant="ghost" @click="dialogOpen = false">Batal</BaseButton>
-                            <BaseButton type="submit" :loading="submitting">{{ editTarget ? 'Simpan Perubahan' : 'Buat Staf' }}</BaseButton>
-                        </div>
-                    </form>
-                </DialogContent>
-            </DialogPortal>
-        </DialogRoot>
-
-        <DialogRoot :open="passwordDialogOpen" @update:open="(v) => (passwordDialogOpen = v)">
-            <DialogPortal>
-                <DialogOverlay class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
-                <DialogContent
-                    class="fixed top-1/2 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-base-800 bg-base-900 p-6 shadow-2xl"
-                >
-                    <DialogTitle class="text-base font-semibold text-base-50">Ganti Password: {{ passwordTarget?.name }}</DialogTitle>
-                    <DialogDescription class="mt-2 text-sm text-base-400">
-                        Password baru berlaku langsung — semua sesi login akun ini sebaiknya diberi tahu.
-                    </DialogDescription>
-                    <form class="mt-5 space-y-4" @submit.prevent="submitPassword">
-                        <BaseInput v-model="newPassword" label="Password Baru" type="password" required minlength="8" autocomplete="new-password" />
-                        <div class="flex justify-end gap-3 pt-2">
-                            <BaseButton type="button" variant="ghost" @click="passwordDialogOpen = false">Batal</BaseButton>
-                            <BaseButton type="submit" :loading="changingPassword">Ganti Password</BaseButton>
-                        </div>
-                    </form>
-                </DialogContent>
-            </DialogPortal>
-        </DialogRoot>
+        <BaseDialog
+            :open="passwordDialogOpen"
+            :title="`Ganti password ${passwordTarget?.name ?? ''}`"
+            description="Password baru langsung berlaku. Sampaikan ke staf yang bersangkutan secara langsung."
+            size="sm"
+            @update:open="(v) => (passwordDialogOpen = v)"
+        >
+            <form id="password-form" @submit.prevent="submitPassword">
+                <BaseInput
+                    v-model="newPassword"
+                    label="Password baru"
+                    type="password"
+                    required
+                    minlength="8"
+                    autocomplete="new-password"
+                    hint="Minimal 8 karakter."
+                />
+            </form>
+            <template #footer>
+                <BaseButton variant="ghost" @click="passwordDialogOpen = false">Batal</BaseButton>
+                <BaseButton type="submit" form="password-form" :loading="changingPassword">Ganti password</BaseButton>
+            </template>
+        </BaseDialog>
 
         <ConfirmDialog
             :open="!!suspendTarget"
-            :title="suspendTarget ? `Suspen staf ${suspendTarget.name}?` : ''"
-            description="Semua sesi login staf ini akan dicabut, dan akun tidak bisa dipakai sampai diaktifkan kembali."
+            :title="suspendTarget ? `Suspen ${suspendTarget.name}?` : ''"
+            description="Semua sesi login staf ini dicabut, dan akunnya tidak bisa dipakai sampai diaktifkan kembali."
             confirm-label="Suspen"
             :loading="suspending"
             @update:open="(v) => !v && (suspendTarget = null)"
@@ -392,7 +428,7 @@ onMounted(async () => {
         <ConfirmDialog
             :open="!!resetTwoFactorTarget"
             :title="resetTwoFactorTarget ? `Reset 2FA ${resetTwoFactorTarget.name}?` : ''"
-            description="Sesi login yang sedang aktif akan dicabut, dan login berikutnya wajib setup 2FA dari awal (QR code baru)."
+            description="Sesi yang sedang aktif dicabut, dan login berikutnya wajib memasang authenticator dari awal."
             confirm-label="Reset 2FA"
             :loading="resettingTwoFactor"
             @update:open="(v) => !v && (resetTwoFactorTarget = null)"
@@ -401,9 +437,9 @@ onMounted(async () => {
 
         <ConfirmDialog
             :open="!!deleteTarget"
-            :title="deleteTarget ? `Hapus staf ${deleteTarget.name}?` : ''"
-            description="Tindakan ini tidak bisa dibatalkan."
-            confirm-label="Hapus"
+            :title="deleteTarget ? `Hapus ${deleteTarget.name}?` : ''"
+            description="Akun ini dihapus permanen dan tidak bisa dipulihkan."
+            confirm-label="Hapus staf"
             :loading="deleting"
             @update:open="(v) => !v && (deleteTarget = null)"
             @confirm="confirmDelete"

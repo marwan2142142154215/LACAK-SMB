@@ -2,21 +2,31 @@
 defineProps({
     title: { type: String, default: null },
     subtitle: { type: String, default: null },
+    // Jumlah item di dalam kartu, tampil di samping judul
+    count: { type: Number, default: null },
+    // true = isi menempel ke tepi (tabel, daftar bergaris), tanpa padding
+    flush: { type: Boolean, default: false },
 })
 </script>
 
 <template>
-    <section class="rounded-2xl border border-base-800 bg-base-900/60 shadow-xl shadow-black/20">
-        <header v-if="title || $slots.actions" class="flex items-center justify-between gap-4 border-b border-base-800 px-5 py-4">
-            <div>
-                <h2 v-if="title" class="text-sm font-semibold tracking-wide text-base-50">{{ title }}</h2>
-                <p v-if="subtitle" class="mt-0.5 text-xs text-base-400">{{ subtitle }}</p>
+    <section class="overflow-hidden rounded-xl border border-base-800 bg-base-900/70">
+        <header
+            v-if="title || $slots.actions"
+            class="flex flex-wrap items-center justify-between gap-3 border-b border-base-800 px-5 py-3.5"
+        >
+            <div class="min-w-0">
+                <h2 v-if="title" class="eyebrow flex items-center gap-2 !text-base-200">
+                    {{ title }}
+                    <span v-if="count != null" class="text-base-500">{{ count }}</span>
+                </h2>
+                <p v-if="subtitle" class="mt-1 text-xs text-base-500">{{ subtitle }}</p>
             </div>
             <div v-if="$slots.actions" class="flex items-center gap-2">
                 <slot name="actions" />
             </div>
         </header>
-        <div class="p-5">
+        <div :class="flush ? '' : 'p-5'">
             <slot />
         </div>
     </section>

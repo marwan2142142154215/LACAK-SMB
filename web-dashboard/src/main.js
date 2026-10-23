@@ -1,4 +1,6 @@
 import * as Sentry from '@sentry/vue'
+import dayjs from 'dayjs'
+import 'dayjs/locale/id'
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 
@@ -8,6 +10,9 @@ import router from '@/router'
 import { useAuthStore } from '@/stores/auth'
 
 import './style.css'
+
+// Nama hari/bulan & "x menit yang lalu" dalam Bahasa Indonesia di seluruh dashboard
+dayjs.locale('id')
 
 const app = createApp(App)
 const pinia = createPinia()

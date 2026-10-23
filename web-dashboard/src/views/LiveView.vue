@@ -4,10 +4,11 @@ import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRo
 import { computed, onMounted, ref, watch } from 'vue'
 
 import LiveVideoTile from '@/components/live/LiveVideoTile.vue'
-import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import Readout from '@/components/ui/Readout.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
@@ -43,11 +44,7 @@ function cameraTrackOf(participant) {
     return participant.getTrackPublication(CAMERA_SOURCE)?.track ?? null
 }
 
-watch(
-    visibleParticipants,
-    (participants) => live.setVisibleParticipants(participants.map((p) => p.identity)),
-    { immediate: true },
-)
+watch(visibleParticipants, (participants) => live.setVisibleParticipants(participants.map((p) => p.identity)), { immediate: true })
 
 watch(pageCount, (count) => {
     if (page.value >= count) page.value = count - 1
@@ -82,7 +79,10 @@ async function startWork() {
         toast.success('Mulai kerja', 'Kamera Anda sedang disiarkan ke rekan se-site')
     } catch (err) {
         const cameraDenied = err.name === 'NotAllowedError' || err.name === 'NotFoundError'
-        toast.error('Gagal memulai siaran', cameraDenied ? 'Izin kamera ditolak atau kamera tidak ditemukan' : (err.response?.data?.message ?? err.message))
+        toast.error(
+            'Gagal memulai siaran',
+            cameraDenied ? 'Izin kamera ditolak atau kamera tidak ditemukan' : (err.response?.data?.message ?? err.message),
+        )
         // startWork() memutus koneksi tonton yang lama -- sambung lagi supaya
         // staf tetap melihat rekan-rekannya walau siarannya sendiri gagal.
         if (selectedSiteId.value) await selectSite(selectedSiteId.value)
@@ -126,61 +126,86 @@ onMounted(async () => {
 
 <template>
     <div>
-        <PageHeader title="Live Kerja" subtitle="Siaran kamera staf yang sedang bekerja, hanya untuk rekan di site yang sama">
+        <PageHeader
+            eyebrow="Pantau"
+            title="Live Kerja"
+            subtitle="Kamera staf yang sedang bekerja, hanya terlihat oleh rekan di site yang sama. Tanpa suara, tidak direkam."
+        >
             <template #actions>
                 <template v-if="canBroadcast">
                     <BaseButton v-if="!live.isBroadcasting" :loading="live.connecting" @click="confirmStartOpen = true">
                         <Play class="size-4" />
-                        {{ mySession ? 'Lanjutkan Siaran' : 'Mulai Kerja' }}
+                        {{ mySession ? 'Lanjutkan siaran' : 'Mulai kerja' }}
                     </BaseButton>
                     <BaseButton v-else variant="danger" :loading="live.connecting" @click="confirmEndOpen = true">
                         <Square class="size-4" />
-                        Selesai Kerja
+                        Selesai kerja
                     </BaseButton>
                 </template>
+            </template>
+            <template #readouts>
+                <Readout
+                    label="Live di site ini"
+                    :value="live.mode === 'idle' ? '—' : live.remoteParticipants.length"
+                    :led="live.remoteParticipants.length ? 'danger' : 'muted'"
+                />
+                <Readout
+                    v-if="sites.length > 1"
+                    label="Total live"
+                    :value="sites.reduce((total, site) => total + (site.live_count ?? 0), 0)"
+                />
+                <Readout v-if="live.isBroadcasting" label="Siaran Anda" value="Aktif" led="danger" />
             </template>
         </PageHeader>
 
         <div class="space-y-6 p-4 sm:p-8">
             <div
                 v-if="mySession && !live.isBroadcasting"
-                class="rounded-xl border border-warning-500/30 bg-warning-500/10 px-4 py-3 text-sm text-warning-400"
+                class="rounded-lg border border-warning-500/30 bg-warning-500/10 px-4 py-3 text-sm text-pretty text-warning-400"
             >
-                Sesi kerja Anda masih tercatat aktif sejak {{ new Date(mySession.started_at).toLocaleTimeString('id-ID') }}, tapi kamera tidak sedang
-                menyiarkan. Tekan <strong>Lanjutkan Siaran</strong>, atau sesi ditutup otomatis dalam beberapa menit.
+                Sesi kerja Anda masih tercatat aktif sejak {{ new Date(mySession.started_at).toLocaleTimeString('id-ID') }}, tapi kamera
+                tidak sedang menyiarkan. Tekan <strong>Lanjutkan siaran</strong>, atau sesi ditutup otomatis dalam beberapa menit.
             </div>
 
             <!-- Pilihan site: hanya muncul kalau user boleh menonton lebih dari satu site -->
-            <div v-if="sites.length > 1" class="flex flex-wrap gap-2">
+            <div v-if="sites.length > 1" class="flex flex-wrap gap-2" role="group" aria-label="Pilih site">
                 <button
                     v-for="site in sites"
                     :key="site.id"
                     type="button"
                     :disabled="live.isBroadcasting || live.connecting"
-                    class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                    :aria-pressed="selectedSiteId === site.id"
+                    class="inline-flex items-center gap-2.5 rounded-lg border px-3.5 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-accent-400 disabled:cursor-not-allowed disabled:opacity-50"
                     :class="
                         selectedSiteId === site.id
-                            ? 'border-accent-500/60 bg-accent-500/10 text-accent-300'
-                            : 'border-base-700 text-base-300 hover:border-base-500'
+                            ? 'border-accent-500/60 bg-base-850 text-base-50'
+                            : 'border-base-800 text-base-300 hover:border-base-600'
                     "
                     @click="selectSite(site.id)"
                 >
                     {{ site.name }}
-                    <BaseBadge v-if="site.live_count" variant="danger">{{ site.live_count }} live</BaseBadge>
+                    <span
+                        class="flex items-center gap-1.5 font-mono text-[11px] tabular-nums"
+                        :class="site.live_count ? 'text-danger-400' : 'text-base-500'"
+                    >
+                        <span class="led" :class="!site.live_count && 'led-off'" />{{ site.live_count ?? 0 }}
+                    </span>
                 </button>
             </div>
 
             <section v-if="live.isBroadcasting" class="max-w-sm">
-                <p class="mb-2 text-xs font-semibold tracking-wide text-base-400 uppercase">Kamera Anda</p>
+                <p class="eyebrow mb-2">Kamera Anda</p>
                 <LiveVideoTile :track="live.localCameraTrack" :label="auth.user?.name ?? 'Saya'" mirrored live />
-                <p class="mt-2 text-xs text-base-500">Biarkan aplikasi ini tetap terbuka selama bekerja -- kamera berhenti kalau aplikasi ditutup.</p>
+                <p class="mt-2 text-xs text-base-500">
+                    Biarkan aplikasi ini tetap terbuka selama bekerja. Kamera berhenti kalau aplikasi ditutup.
+                </p>
             </section>
 
             <section>
                 <div class="mb-3 flex items-center justify-between gap-3">
-                    <p class="text-xs font-semibold tracking-wide text-base-400 uppercase">
+                    <p class="eyebrow !text-base-200">
                         Rekan yang sedang live
-                        <span class="ml-1 text-base-500">({{ live.remoteParticipants.length }})</span>
+                        <span class="ml-1 text-base-500">{{ live.remoteParticipants.length }}</span>
                     </p>
                     <div v-if="pageCount > 1" class="flex items-center gap-2 text-xs text-base-400">
                         <BaseButton variant="ghost" size="sm" :disabled="page === 0" @click="page--">
@@ -193,21 +218,28 @@ onMounted(async () => {
                     </div>
                 </div>
 
-                <div
-                    v-if="live.mode === 'idle'"
-                    class="flex flex-col items-center gap-2 rounded-xl border border-dashed border-base-800 py-16 text-sm text-base-500"
-                >
-                    <Video class="size-6" />
-                    {{ live.connecting ? 'Menghubungkan…' : 'Belum terhubung ke siaran site mana pun' }}
+                <div v-if="live.mode === 'idle'" class="rounded-xl border border-dashed border-base-800">
+                    <EmptyState
+                        :icon="Video"
+                        :title="live.connecting ? 'Menghubungkan ke siaran site…' : 'Belum terhubung ke siaran'"
+                        :description="live.connecting ? null : 'Pilih site di atas untuk melihat siapa saja yang sedang bekerja.'"
+                    />
                 </div>
-                <div
-                    v-else-if="!live.remoteParticipants.length"
-                    class="rounded-xl border border-dashed border-base-800 py-16 text-center text-sm text-base-500"
-                >
-                    Belum ada rekan yang mulai kerja di site ini
+                <div v-else-if="!live.remoteParticipants.length" class="rounded-xl border border-dashed border-base-800">
+                    <EmptyState
+                        :icon="Video"
+                        title="Belum ada rekan yang mulai kerja"
+                        description="Kamera rekan di site ini muncul di sini begitu mereka menekan Mulai kerja."
+                    />
                 </div>
                 <div v-else class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-                    <button v-for="participant in visibleParticipants" :key="participant.identity" type="button" class="text-left" @click="focusedIdentity = participant.identity">
+                    <button
+                        v-for="participant in visibleParticipants"
+                        :key="participant.identity"
+                        type="button"
+                        class="text-left"
+                        @click="focusedIdentity = participant.identity"
+                    >
                         <LiveVideoTile :track="cameraTrackOf(participant)" :label="participant.name || participant.identity" live />
                     </button>
                 </div>
@@ -217,7 +249,9 @@ onMounted(async () => {
         <DialogRoot :open="!!focused" @update:open="(v) => !v && (focusedIdentity = null)">
             <DialogPortal>
                 <DialogOverlay class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm" />
-                <DialogContent class="fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 focus:outline-none">
+                <DialogContent
+                    class="fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 focus:outline-none"
+                >
                     <div class="mb-2 flex items-center justify-between">
                         <DialogTitle class="text-sm font-semibold text-base-50">{{ focused?.name || focused?.identity }}</DialogTitle>
                         <DialogDescription class="sr-only">Siaran kamera staf dalam ukuran besar</DialogDescription>
@@ -235,7 +269,7 @@ onMounted(async () => {
             v-model:open="confirmStartOpen"
             title="Mulai kerja & nyalakan kamera?"
             description="Kamera Anda akan menyala dan disiarkan langsung ke semua rekan di site Anda sampai Anda menekan Selesai Kerja. Tidak ada suara yang dikirim dan video tidak direkam."
-            confirm-label="Mulai Kerja"
+            confirm-label="Mulai kerja"
             confirm-variant="primary"
             :loading="live.connecting"
             @confirm="startWork"
@@ -245,7 +279,7 @@ onMounted(async () => {
             v-model:open="confirmEndOpen"
             title="Selesai kerja?"
             description="Siaran kamera Anda akan dihentikan."
-            confirm-label="Selesai Kerja"
+            confirm-label="Selesai kerja"
             :loading="live.connecting"
             @confirm="endWork"
         />
