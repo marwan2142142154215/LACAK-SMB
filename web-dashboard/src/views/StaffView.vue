@@ -333,11 +333,15 @@ onMounted(async () => {
             <form id="staff-form" class="space-y-4" @submit.prevent="submitForm">
                 <BaseInput v-model="form.name" label="Nama" required />
                 <BaseInput
-                    v-model="form.username"
+                    :model-value="form.username"
                     label="Username"
                     required
+                    autocapitalize="none"
+                    autocorrect="off"
+                    spellcheck="false"
                     :disabled="!!editTarget"
-                    :hint="editTarget ? 'Username tidak bisa diubah setelah dibuat.' : null"
+                    :hint="editTarget ? 'Username tidak bisa diubah setelah dibuat.' : 'Otomatis huruf kecil.'"
+                    @update:model-value="(value) => (form.username = value.toLowerCase())"
                 />
                 <BaseInput v-model="form.email" label="Email" type="email" required hint="Juga dipakai untuk masuk lewat Account Center." />
                 <BaseInput
