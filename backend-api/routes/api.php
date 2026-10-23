@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\DeviceEnrollmentController;
 use App\Http\Controllers\Api\DeviceOtpController;
 use App\Http\Controllers\Api\GeofenceRuleController;
 use App\Http\Controllers\Api\OrganizationController;
+use App\Http\Controllers\Api\SecuritySettingController;
 use App\Http\Controllers\Api\TelegramBindingController;
 use App\Http\Controllers\Api\TelegramUserLinkController;
 use App\Http\Controllers\Api\UserController;
@@ -109,5 +110,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('/live/watch-token', [WorkSessionController::class, 'watchToken'])->middleware('throttle:30,1');
         Route::apiResource('telegram-user-links', TelegramUserLinkController::class)->only(['index', 'store', 'destroy']);
         Route::get('/telegram-user-links-lookup', [TelegramUserLinkController::class, 'lookup']);
+
+        // Pengaturan keamanan sistem (wajib/tidaknya 2FA) -- super_admin saja.
+        Route::get('/settings/security', [SecuritySettingController::class, 'show']);
+        Route::put('/settings/security', [SecuritySettingController::class, 'update']);
     });
 });

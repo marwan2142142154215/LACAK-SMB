@@ -18,12 +18,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.lacaksmb.master.data.ApiClient
 import com.lacaksmb.master.data.ApiResult
+import com.lacaksmb.master.data.SessionStore
+import com.lacaksmb.master.data.UserProfile
+import com.lacaksmb.master.service.MasterAnchorService
 import com.lacaksmb.master.ui.components.AppButton
 import com.lacaksmb.master.ui.components.AppButtonVariant
 import com.lacaksmb.master.ui.components.SectionCard
@@ -36,12 +40,13 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LoginScreen(apiClient: ApiClient, navController: NavHostController) {
+fun LoginScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: NavHostController) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     Scaffold { padding ->
         Column(
@@ -122,6 +127,16 @@ fun LoginScreen(apiClient: ApiClient, navController: NavHostController) {
                                             AuthFlowState.isSetupMode = false
                                             AuthFlowState.challengeToken = data.optString("challenge_token")
                                             navController.navigate(Routes.TWO_FACTOR)
+                                        }
+                                        // 2FA sedang dimatikan super_admin (Pengaturan di
+                                        // dashboard): server langsung memberi token.
+                                        !data?.optString("access_token").isNullOrBlank() && data?.optJSONObject("user") != null -> {
+                                            sessionStore.saveSession(data.optString("access_token"), UserProfile.fromJson(data.getJSONObject("user")))
+                                            MasterAnchorService.start(context.applicationContext)
+                                            AuthFlowState.clear()
+                                            navController.navigate(Routes.DEVICE_LIST) {
+                                                popUpTo(Routes.LOGIN) { inclusive = true }
+                                            }
                                         }
                                         else -> errorText = "Respons server tidak dikenali"
                                     }

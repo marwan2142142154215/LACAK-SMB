@@ -37,7 +37,11 @@ export const useAuthStore = defineStore('auth', () => {
             password,
             client: 'web_dashboard',
         })
-        return response.data.data
+        const data = response.data.data
+        // 2FA dimatikan super_admin (Pengaturan): token langsung diberikan
+        // tanpa langkah kode authenticator.
+        if (data.access_token) setSession(data.access_token, data.user)
+        return data
     }
 
     async function confirmTwoFactorSetup(setupToken, code) {

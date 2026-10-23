@@ -1,5 +1,19 @@
 <script setup>
-import { Building2, FileSignature, LogOut, MapPinned, Menu, PackageOpen, Radar, Send, Smartphone, Users, Video, X } from '@lucide/vue'
+import {
+    Building2,
+    FileSignature,
+    LogOut,
+    MapPinned,
+    Menu,
+    PackageOpen,
+    Radar,
+    Send,
+    Settings,
+    Smartphone,
+    Users,
+    Video,
+    X,
+} from '@lucide/vue'
 import dayjs from 'dayjs'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -49,6 +63,7 @@ const navGroups = computed(() => [
             { to: { name: 'telegram-bindings' }, label: 'Bot Telegram', icon: Send },
             { to: { name: 'organizations' }, label: 'Site', icon: Building2, hidden: !auth.isSuperAdmin },
             { to: { name: 'staff' }, label: 'Staf', icon: Users, hidden: !auth.isSuperAdmin },
+            { to: { name: 'settings' }, label: 'Pengaturan', icon: Settings, hidden: !auth.isSuperAdmin },
         ],
     },
 ])

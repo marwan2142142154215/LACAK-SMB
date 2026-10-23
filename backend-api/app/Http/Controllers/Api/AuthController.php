@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
 use App\Models\User;
 use App\Services\AccountCenter;
+use App\Support\TwoFactorPolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -72,7 +73,8 @@ class AuthController extends Controller
 
         // Email + Account Center terpasang -> password diverifikasi Account
         // Center, BUKAN password lokal. Username biasa (akun layanan seperti
-        // bot Telegram) tetap memakai password lokal. Dua-duanya wajib 2FA.
+        // bot Telegram) tetap memakai password lokal. Dua-duanya lalu lewat
+        // 2FA, kecuali super_admin mematikannya (lihat TwoFactorPolicy).
         if (str_contains($identifier, '@') && AccountCenter::isConfigured()) {
             $outcome = AccountCenter::login(mb_strtolower($identifier), $credentials['password']);
 
@@ -103,7 +105,18 @@ class AuthController extends Controller
             return $this->fail('Akun Anda dinonaktifkan. Hubungi super admin.', null, 403);
         }
 
-        // 2FA WAJIB untuk setiap login, tanpa pengecualian akun mana pun.
+        // 2FA berlaku untuk SEMUA akun tanpa pengecualian -- kecuali
+        // super_admin mematikannya untuk seluruh sistem (mis. server uji).
+        if (! TwoFactorPolicy::isRequired()) {
+            $token = $user->createToken($this->tokenNameFor($request), ['*'], now()->addHours(self::TOKEN_IDLE_HOURS))->plainTextToken;
+
+            return $this->success('Login berhasil', [
+                'access_token' => $token,
+                'token_type' => 'Bearer',
+                'user' => $this->userPayload($user),
+            ]);
+        }
+
         if (! $user->hasConfirmedTwoFactor()) {
             return $this->beginTwoFactorSetup($user);
         }

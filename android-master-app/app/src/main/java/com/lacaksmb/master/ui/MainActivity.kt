@@ -48,7 +48,7 @@ fun MasterApp(sessionStore: SessionStore, apiClient: ApiClient) {
 
     NavHost(navController = navController, startDestination = startDestination, modifier = Modifier) {
         composable(Routes.LOGIN) {
-            LoginScreen(apiClient = apiClient, navController = navController)
+            LoginScreen(apiClient = apiClient, sessionStore = sessionStore, navController = navController)
         }
         composable(Routes.TWO_FACTOR) {
             TwoFactorScreen(apiClient = apiClient, sessionStore = sessionStore, navController = navController)
