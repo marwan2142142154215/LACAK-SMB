@@ -1,7 +1,7 @@
 <script setup>
 import { ChevronLeft, ChevronRight, Play, Square, Video, X } from '@lucide/vue'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
-import { computed, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 import LiveVideoTile from '@/components/live/LiveVideoTile.vue'
 import BaseBadge from '@/components/ui/BaseBadge.vue'
@@ -26,8 +26,11 @@ const sites = ref([])
 const selectedSiteId = ref(null)
 const mySession = ref(null)
 const page = ref(0)
-// shallowRef: objek peserta LiveKit jangan dibungkus proxy reaktif dalam.
-const focused = shallowRef(null)
+// Disimpan identity-nya, bukan objek peserta: kalau staf itu reconnect
+// (sinyal putus-sambung), LiveKit membuat objek peserta baru dan objek lama
+// tidak punya track lagi -- tampilan besar harus ikut objek yang baru.
+const focusedIdentity = ref(null)
+const focused = computed(() => live.remoteParticipants.find((p) => p.identity === focusedIdentity.value) ?? null)
 const confirmStartOpen = ref(false)
 const confirmEndOpen = ref(false)
 
@@ -80,6 +83,9 @@ async function startWork() {
     } catch (err) {
         const cameraDenied = err.name === 'NotAllowedError' || err.name === 'NotFoundError'
         toast.error('Gagal memulai siaran', cameraDenied ? 'Izin kamera ditolak atau kamera tidak ditemukan' : (err.response?.data?.message ?? err.message))
+        // startWork() memutus koneksi tonton yang lama -- sambung lagi supaya
+        // staf tetap melihat rekan-rekannya walau siarannya sendiri gagal.
+        if (selectedSiteId.value) await selectSite(selectedSiteId.value)
     } finally {
         confirmStartOpen.value = false
     }
@@ -201,21 +207,21 @@ onMounted(async () => {
                     Belum ada rekan yang mulai kerja di site ini
                 </div>
                 <div v-else class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-                    <button v-for="participant in visibleParticipants" :key="participant.identity" type="button" class="text-left" @click="focused = participant">
+                    <button v-for="participant in visibleParticipants" :key="participant.identity" type="button" class="text-left" @click="focusedIdentity = participant.identity">
                         <LiveVideoTile :track="cameraTrackOf(participant)" :label="participant.name || participant.identity" live />
                     </button>
                 </div>
             </section>
         </div>
 
-        <DialogRoot :open="!!focused" @update:open="(v) => !v && (focused = null)">
+        <DialogRoot :open="!!focused" @update:open="(v) => !v && (focusedIdentity = null)">
             <DialogPortal>
                 <DialogOverlay class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm" />
                 <DialogContent class="fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 focus:outline-none">
                     <div class="mb-2 flex items-center justify-between">
                         <DialogTitle class="text-sm font-semibold text-base-50">{{ focused?.name || focused?.identity }}</DialogTitle>
                         <DialogDescription class="sr-only">Siaran kamera staf dalam ukuran besar</DialogDescription>
-                        <button type="button" class="text-base-400 hover:text-base-50" @click="focused = null">
+                        <button type="button" class="text-base-400 hover:text-base-50" @click="focusedIdentity = null">
                             <X class="size-5" />
                         </button>
                     </div>
