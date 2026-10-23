@@ -9,6 +9,8 @@
  */
 @theme {
     --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Bricolage Grotesque', 'Inter', ui-sans-serif, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
     --color-base-950: #05070a;
     --color-base-900: #0a0e14;

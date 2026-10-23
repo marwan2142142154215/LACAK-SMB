@@ -1,20 +1,26 @@
 <script setup>
-import { KeyRound, ShieldCheck } from '@lucide/vue'
-import { computed, ref, watch } from 'vue'
+import { ArrowLeft, Copy, LockKeyhole } from '@lucide/vue'
+import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import CodeCells from '@/components/auth/CodeCells.vue'
+import LoginRadar from '@/components/auth/LoginRadar.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 
-// step: 'credentials' -> 'setup_2fa' (QR, hanya login pertama) -> 'verify_2fa'
+// step: 'credentials' -> 'setup_2fa' (QR, hanya login pertama) -> 'recovery_codes'
+//       'credentials' -> 'verify_2fa' (login berikutnya)
 const step = ref('credentials')
 
 const username = ref('')
 const password = ref('')
 const code = ref('')
+const recoveryCode = ref('')
+const useRecoveryCode = ref(false)
 const loading = ref(false)
+const granted = ref(false)
 const errorMessage = ref('')
 
 const setupToken = ref(null)
@@ -23,28 +29,61 @@ const qrCodeSvg = ref(null)
 const secretManualEntry = ref(null)
 const recoveryCodes = ref(null)
 
-// Kode 2FA cuma boleh 6 digit angka -- maxlength di <input> saja tidak cukup
-// (itu cuma batasi panjang, tidak nyaring karakter non-angka kalau di-paste).
-watch(code, (value) => {
-    const digitsOnly = value.replace(/\D/g, '').slice(0, 6)
-    if (digitsOnly !== value) code.value = digitsOnly
-})
+const codeCells = ref(null)
 
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 const toast = useToast()
 
+const STEPS = [
+    { key: 'account', label: 'Akun' },
+    { key: 'authenticator', label: 'Authenticator' },
+    { key: 'access', label: 'Masuk' },
+]
+
+const stepIndex = computed(() => {
+    if (granted.value) return 2
+    return step.value === 'credentials' ? 0 : 1
+})
+
+const radarPhase = computed(() => ['identity', 'authenticator', 'granted'][stepIndex.value])
+
+const radarStatus = computed(
+    () =>
+        ({
+            identity: 'Menunggu identitas',
+            authenticator: 'Menunggu kode authenticator',
+            granted: 'Akses diberikan',
+        })[radarPhase.value],
+)
+
 const qrDataUri = computed(() => {
     if (!qrCodeSvg.value) return null
     return `data:image/svg+xml;utf8,${encodeURIComponent(qrCodeSvg.value)}`
 })
 
+// Kunci manual dipecah per 4 karakter supaya mudah diketik ulang dari layar.
+const groupedSecret = computed(() => secretManualEntry.value?.match(/.{1,4}/g)?.join(' ') ?? '')
+
+function enter() {
+    granted.value = true
+    router.push(route.query.redirect ?? { name: 'radar' })
+}
+
+async function failCode(err, fallback) {
+    errorMessage.value = err.response?.data?.message ?? fallback
+    code.value = ''
+    await nextTick()
+    codeCells.value?.focus()
+}
+
 async function handleCredentialsSubmit() {
     errorMessage.value = ''
     loading.value = true
     try {
-        const data = await auth.login(username.value, password.value)
+        const data = await auth.login(username.value.trim(), password.value)
+        code.value = ''
 
         if (data.requires_2fa_setup) {
             setupToken.value = data.setup_token
@@ -56,119 +95,297 @@ async function handleCredentialsSubmit() {
             step.value = 'verify_2fa'
         }
     } catch (err) {
-        errorMessage.value = err.response?.data?.message ?? 'Gagal masuk, periksa koneksi Anda'
+        errorMessage.value = err.response?.data?.message ?? 'Server tidak merespons. Periksa koneksi lalu coba lagi.'
     } finally {
         loading.value = false
     }
 }
 
 async function handleSetupConfirm() {
+    if (loading.value || code.value.length !== 6) return
     errorMessage.value = ''
     loading.value = true
     try {
         const data = await auth.confirmTwoFactorSetup(setupToken.value, code.value)
         recoveryCodes.value = data.recovery_codes
-        toast.success('2FA berhasil diaktifkan', 'Simpan kode pemulihan di tempat aman')
+        step.value = 'recovery_codes'
     } catch (err) {
-        errorMessage.value = err.response?.data?.message ?? 'Kode 2FA salah'
+        await failCode(err, 'Kode tidak cocok. Masukkan kode yang sedang tampil di aplikasi authenticator.')
     } finally {
         loading.value = false
     }
 }
 
 async function handleVerifyConfirm() {
+    const submitted = useRecoveryCode.value ? recoveryCode.value.trim() : code.value
+    if (loading.value || !submitted || (!useRecoveryCode.value && submitted.length !== 6)) return
     errorMessage.value = ''
     loading.value = true
     try {
-        await auth.verifyTwoFactor(challengeToken.value, code.value)
-        router.push(route.query.redirect ?? { name: 'radar' })
+        await auth.verifyTwoFactor(challengeToken.value, submitted)
+        enter()
     } catch (err) {
-        errorMessage.value = err.response?.data?.message ?? 'Kode 2FA salah'
+        if (useRecoveryCode.value) {
+            errorMessage.value = err.response?.data?.message ?? 'Kode pemulihan tidak dikenali.'
+        } else {
+            await failCode(err, 'Kode tidak cocok. Masukkan kode yang sedang tampil di aplikasi authenticator.')
+        }
+        // Batas percobaan habis / sesi kedaluwarsa -> harus mulai dari awal.
+        if ([410, 429].includes(err.response?.status)) backToCredentials(false)
     } finally {
         loading.value = false
     }
 }
 
-function finishAfterRecoveryCodes() {
-    router.push(route.query.redirect ?? { name: 'radar' })
+async function toggleRecoveryCode() {
+    useRecoveryCode.value = !useRecoveryCode.value
+    errorMessage.value = ''
+    code.value = ''
+    recoveryCode.value = ''
+    if (!useRecoveryCode.value) {
+        await nextTick()
+        codeCells.value?.focus()
+    }
+}
+
+function backToCredentials(clearError = true) {
+    step.value = 'credentials'
+    password.value = ''
+    code.value = ''
+    recoveryCode.value = ''
+    useRecoveryCode.value = false
+    setupToken.value = null
+    challengeToken.value = null
+    if (clearError) errorMessage.value = ''
+}
+
+async function copyText(text, message) {
+    try {
+        await navigator.clipboard.writeText(text)
+        toast.success(message)
+    } catch {
+        toast.error('Gagal menyalin', 'Salin manual dari layar')
+    }
 }
 </script>
 
 <template>
-    <div class="flex min-h-screen items-center justify-center bg-base-950 px-4">
-        <div class="pointer-events-none fixed inset-0 overflow-hidden">
-            <div class="absolute -top-32 -left-32 size-96 rounded-full bg-accent-500/10 blur-3xl" />
-            <div class="absolute -right-32 -bottom-32 size-96 rounded-full bg-copper-500/10 blur-3xl" />
-        </div>
-
-        <div class="relative w-full max-w-sm">
-            <div class="mb-8 flex flex-col items-center text-center">
-                <div class="mb-4 flex size-14 items-center justify-center rounded-2xl bg-accent-500/15 ring-1 ring-accent-500/30">
-                    <ShieldCheck class="size-7 text-accent-400" />
-                </div>
-                <h1 class="text-xl font-bold text-base-50">Lacak Master</h1>
-                <p class="mt-1 text-sm text-base-400">Masuk untuk mengelola pemantauan & pelacakan</p>
+    <div class="grid min-h-dvh bg-base-950 lg:grid-cols-[minmax(0,1.2fr)_minmax(26rem,1fr)]">
+        <!-- Panel instrumen: radar BLE, sama seperti yang dilihat admin setelah masuk -->
+        <section
+            class="relative isolate flex flex-col overflow-hidden border-b border-base-800 bg-base-900 px-6 pt-6 pb-8 sm:px-10 lg:border-r lg:border-b-0 lg:py-10"
+        >
+            <div class="flex items-center justify-between font-mono text-[11px] tracking-[0.18em] text-base-400 uppercase">
+                <span><span class="text-base-50">Lacak</span> SMB</span>
+                <span class="hidden sm:inline">BLE 2.4 GHz · GPS</span>
             </div>
 
-            <div class="rounded-2xl border border-base-800 bg-base-900/70 p-7 shadow-2xl shadow-black/30 backdrop-blur">
-                <!-- Step 1: username + password -->
-                <form v-if="step === 'credentials'" class="space-y-4" @submit.prevent="handleCredentialsSubmit">
-                    <BaseInput v-model="username" label="Username / Email Account Center" placeholder="nama@perusahaan.com" autocomplete="username" required />
+            <div
+                class="pointer-events-none absolute top-1/2 -right-24 -z-10 w-[19rem] -translate-y-1/2 sm:-right-10 lg:static lg:z-auto lg:mx-auto lg:my-auto lg:w-[min(100%,34rem,calc(100dvh-27rem))] lg:translate-y-0 lg:py-6"
+            >
+                <LoginRadar :phase="radarPhase" />
+            </div>
+
+            <div class="mt-16 max-w-md lg:mt-0">
+                <h1
+                    class="font-display text-[2rem] leading-[1.05] font-semibold tracking-[-0.02em] text-balance text-base-50 sm:text-4xl xl:text-5xl"
+                >
+                    Semua perangkat kantor, dalam satu jangkauan.
+                </h1>
+                <p class="mt-3 max-w-sm text-sm text-pretty text-base-400">
+                    Lokasi, status, dan Live Kerja tiap site — hanya untuk staf yang terdaftar.
+                </p>
+                <p class="mt-6 flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] uppercase" role="status">
+                    <span
+                        class="size-1.5 rounded-full"
+                        :class="granted ? 'bg-accent-300' : stepIndex === 1 ? 'bg-copper-400' : 'bg-base-400'"
+                    />
+                    <span class="text-base-500">Status</span>
+                    <span class="text-base-200">{{ radarStatus }}</span>
+                </p>
+            </div>
+        </section>
+
+        <main class="flex items-center justify-center px-6 py-10 sm:px-10">
+            <div class="w-full max-w-sm">
+                <ol class="mb-10 grid grid-cols-3 gap-2" aria-label="Tahap masuk">
+                    <li v-for="(item, i) in STEPS" :key="item.key" :aria-current="i === stepIndex ? 'step' : undefined">
+                        <span
+                            class="block h-0.5 rounded-full transition-colors duration-500"
+                            :class="i < stepIndex ? 'bg-accent-500/60' : i === stepIndex ? 'bg-accent-400' : 'bg-base-800'"
+                        />
+                        <span
+                            class="mt-2 block font-mono text-[10px] tracking-[0.14em] uppercase transition-colors"
+                            :class="i === stepIndex ? 'text-base-100' : 'text-base-500'"
+                        >
+                            {{ item.label }}
+                        </span>
+                    </li>
+                </ol>
+
+                <!-- Tahap 1: akun -->
+                <form v-if="step === 'credentials'" class="space-y-5" @submit.prevent="handleCredentialsSubmit">
+                    <header>
+                        <h2 class="font-display text-2xl font-semibold tracking-[-0.01em] text-base-50">Masuk</h2>
+                        <p class="mt-1.5 text-sm text-base-400">Pakai email Account Center perusahaan, atau username untuk akun layanan.</p>
+                    </header>
                     <BaseInput
-                        v-model="password"
-                        label="Password"
-                        type="password"
-                        placeholder="••••••••"
-                        autocomplete="current-password"
+                        v-model="username"
+                        label="Email atau username"
+                        placeholder="nama@perusahaan.com"
+                        autocomplete="username"
                         required
                     />
-                    <p v-if="errorMessage" class="text-sm text-danger-400">{{ errorMessage }}</p>
-                    <BaseButton type="submit" class="w-full" :loading="loading">Masuk</BaseButton>
+                    <BaseInput v-model="password" label="Password" type="password" autocomplete="current-password" required />
+                    <p v-if="errorMessage" class="text-sm text-danger-400" role="alert">{{ errorMessage }}</p>
+                    <BaseButton type="submit" class="w-full" :loading="loading">Lanjut</BaseButton>
+                    <p class="flex items-start gap-2 border-t border-base-800 pt-5 text-xs text-base-500">
+                        <LockKeyhole class="mt-px size-3.5 shrink-0 text-copper-400" />
+                        Setiap login wajib dikonfirmasi dengan kode dari aplikasi authenticator.
+                    </p>
                 </form>
 
-                <!-- Step 2a: enrollment 2FA (hanya login pertama kali) -->
-                <div v-else-if="step === 'setup_2fa' && !recoveryCodes" class="space-y-4">
-                    <div class="text-center">
-                        <p class="text-sm font-medium text-base-100">Aktifkan 2FA</p>
-                        <p class="mt-1 text-xs text-base-400">
-                            Scan QR ini dengan Google Authenticator / Authy, lalu masukkan kode 6 digit untuk konfirmasi.
+                <!-- Tahap 2a: pasang authenticator (login pertama) -->
+                <form v-else-if="step === 'setup_2fa'" class="space-y-5" @submit.prevent="handleSetupConfirm">
+                    <header>
+                        <h2 class="font-display text-2xl font-semibold tracking-[-0.01em] text-base-50">Pasang authenticator</h2>
+                        <p class="mt-1.5 text-sm text-base-400">
+                            Pindai QR dengan Google Authenticator atau Authy, lalu masukkan 6 digit yang muncul.
                         </p>
+                    </header>
+
+                    <div class="flex items-center gap-5">
+                        <div class="viewfinder relative shrink-0 rounded-lg bg-white p-2.5">
+                            <img :src="qrDataUri" alt="Kode QR untuk aplikasi authenticator" class="size-36" />
+                        </div>
+                        <div class="min-w-0 text-xs text-base-400">
+                            <p>Tidak bisa memindai? Ketik kunci ini di aplikasi:</p>
+                            <p class="mt-2 font-mono text-[13px] leading-relaxed break-words text-base-100">{{ groupedSecret }}</p>
+                            <button
+                                type="button"
+                                class="mt-2 inline-flex items-center gap-1.5 rounded text-accent-400 hover:text-accent-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-400"
+                                @click="copyText(secretManualEntry, 'Kunci disalin')"
+                            >
+                                <Copy class="size-3.5" /> Salin kunci
+                            </button>
+                        </div>
                     </div>
-                    <div class="flex justify-center rounded-xl bg-white p-3">
-                        <img :src="qrDataUri" alt="QR 2FA" class="size-48" />
-                    </div>
-                    <p class="text-center font-mono text-xs break-all text-base-500">{{ secretManualEntry }}</p>
-                    <form class="space-y-4" @submit.prevent="handleSetupConfirm">
-                        <BaseInput v-model="code" label="Kode 6 digit" placeholder="000000" maxlength="6" inputmode="numeric" required />
-                        <p v-if="errorMessage" class="text-sm text-danger-400">{{ errorMessage }}</p>
-                        <BaseButton type="submit" class="w-full" :loading="loading">Konfirmasi & Aktifkan</BaseButton>
-                    </form>
+
+                    <CodeCells
+                        ref="codeCells"
+                        v-model="code"
+                        label="Kode 6 digit dari authenticator"
+                        :invalid="!!errorMessage"
+                        :disabled="loading"
+                        @complete="handleSetupConfirm"
+                    />
+                    <p v-if="errorMessage" class="text-sm text-danger-400" role="alert">{{ errorMessage }}</p>
+                    <BaseButton type="submit" class="w-full" :loading="loading" :disabled="code.length !== 6">Aktifkan 2FA</BaseButton>
+                    <button type="button" class="back-link" @click="backToCredentials()"><ArrowLeft class="size-3.5" /> Ganti akun</button>
+                </form>
+
+                <!-- Tahap 2a-lanjutan: kode pemulihan, ditampilkan sekali -->
+                <div v-else-if="step === 'recovery_codes'" class="space-y-5">
+                    <header>
+                        <h2 class="font-display text-2xl font-semibold tracking-[-0.01em] text-base-50">Simpan kode pemulihan</h2>
+                        <p class="mt-1.5 text-sm text-base-400">
+                            Dipakai untuk masuk kalau HP authenticator hilang. Tiap kode berlaku sekali, dan daftar ini tidak akan
+                            ditampilkan lagi.
+                        </p>
+                    </header>
+                    <ul
+                        class="grid grid-cols-2 gap-x-6 gap-y-2.5 rounded-lg border border-dashed border-copper-500/40 bg-base-900 px-5 py-4 font-mono text-sm text-base-100"
+                    >
+                        <li v-for="rc in recoveryCodes" :key="rc">{{ rc }}</li>
+                    </ul>
+                    <BaseButton variant="outline" class="w-full" @click="copyText(recoveryCodes.join('\n'), 'Kode pemulihan disalin')">
+                        <Copy class="size-4" /> Salin semua kode
+                    </BaseButton>
+                    <BaseButton class="w-full" @click="enter">Sudah disimpan, masuk</BaseButton>
                 </div>
 
-                <!-- Step 2a-lanjutan: tampilkan recovery codes sekali setelah enrollment -->
-                <div v-else-if="recoveryCodes" class="space-y-4">
-                    <div class="text-center">
-                        <KeyRound class="mx-auto size-8 text-warning-400" />
-                        <p class="mt-2 text-sm font-medium text-base-100">Simpan Kode Pemulihan Anda</p>
-                        <p class="mt-1 text-xs text-base-400">Kode ini hanya ditampilkan sekali. Simpan di tempat aman.</p>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2 rounded-xl bg-base-850 p-4 font-mono text-xs text-base-200">
-                        <span v-for="rc in recoveryCodes" :key="rc">{{ rc }}</span>
-                    </div>
-                    <BaseButton class="w-full" @click="finishAfterRecoveryCodes">Sudah saya simpan, lanjutkan</BaseButton>
-                </div>
+                <!-- Tahap 2b: kode authenticator (login berikutnya) -->
+                <form v-else-if="step === 'verify_2fa'" class="space-y-5" @submit.prevent="handleVerifyConfirm">
+                    <header>
+                        <h2 class="font-display text-2xl font-semibold tracking-[-0.01em] text-base-50">
+                            {{ useRecoveryCode ? 'Kode pemulihan' : 'Kode authenticator' }}
+                        </h2>
+                        <p class="mt-1.5 text-sm text-base-400">
+                            <template v-if="useRecoveryCode"
+                                >Masukkan salah satu kode pemulihan yang Anda simpan saat memasang 2FA.</template
+                            >
+                            <template v-else>
+                                Buka aplikasi authenticator dan masukkan 6 digit untuk <span class="text-base-200">{{ username }}</span
+                                >.
+                            </template>
+                        </p>
+                    </header>
 
-                <!-- Step 2b: verifikasi 2FA (login berikutnya) -->
-                <form v-else-if="step === 'verify_2fa'" class="space-y-4" @submit.prevent="handleVerifyConfirm">
-                    <div class="text-center">
-                        <p class="text-sm font-medium text-base-100">Verifikasi 2FA</p>
-                        <p class="mt-1 text-xs text-base-400">Masukkan kode dari aplikasi authenticator Anda</p>
+                    <BaseInput
+                        v-if="useRecoveryCode"
+                        v-model="recoveryCode"
+                        label="Kode pemulihan"
+                        autocomplete="off"
+                        maxlength="40"
+                        required
+                    />
+                    <CodeCells
+                        v-else
+                        ref="codeCells"
+                        v-model="code"
+                        label="Kode 6 digit dari authenticator"
+                        :invalid="!!errorMessage"
+                        :disabled="loading"
+                        @complete="handleVerifyConfirm"
+                    />
+
+                    <p v-if="errorMessage" class="text-sm text-danger-400" role="alert">{{ errorMessage }}</p>
+                    <BaseButton
+                        type="submit"
+                        class="w-full"
+                        :loading="loading"
+                        :disabled="useRecoveryCode ? !recoveryCode.trim() : code.length !== 6"
+                    >
+                        Verifikasi
+                    </BaseButton>
+                    <div class="flex items-center justify-between">
+                        <button type="button" class="back-link" @click="backToCredentials()">
+                            <ArrowLeft class="size-3.5" /> Ganti akun
+                        </button>
+                        <button type="button" class="back-link" @click="toggleRecoveryCode">
+                            {{ useRecoveryCode ? 'Pakai kode authenticator' : 'Pakai kode pemulihan' }}
+                        </button>
                     </div>
-                    <BaseInput v-model="code" label="Kode 6 digit" placeholder="000000" maxlength="6" inputmode="numeric" required />
-                    <p v-if="errorMessage" class="text-sm text-danger-400">{{ errorMessage }}</p>
-                    <BaseButton type="submit" class="w-full" :loading="loading">Verifikasi</BaseButton>
                 </form>
             </div>
-        </div>
+        </main>
     </div>
 </template>
+
+<style scoped>
+@reference '../style.css';
+
+.back-link {
+    @apply inline-flex items-center gap-1.5 rounded text-xs text-base-400 transition-colors hover:text-base-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-400;
+}
+
+/* Sudut bidik kamera di sekeliling QR -- isyarat "pindai ini" */
+.viewfinder::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    --c: var(--color-copper-400);
+    --l: 14px;
+    background:
+        linear-gradient(var(--c), var(--c)) top left / var(--l) 2px,
+        linear-gradient(var(--c), var(--c)) top left / 2px var(--l),
+        linear-gradient(var(--c), var(--c)) top right / var(--l) 2px,
+        linear-gradient(var(--c), var(--c)) top right / 2px var(--l),
+        linear-gradient(var(--c), var(--c)) bottom left / var(--l) 2px,
+        linear-gradient(var(--c), var(--c)) bottom left / 2px var(--l),
+        linear-gradient(var(--c), var(--c)) bottom right / var(--l) 2px,
+        linear-gradient(var(--c), var(--c)) bottom right / 2px var(--l);
+    background-repeat: no-repeat;
+    pointer-events: none;
+}
+</style>
