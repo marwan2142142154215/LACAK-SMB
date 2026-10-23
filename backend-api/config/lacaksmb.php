@@ -13,6 +13,8 @@ return [
 
     'tracker_project_path' => env('LACAKSMB_TRACKER_PROJECT_PATH', base_path('../android-tracked-app')),
     'master_project_path' => env('LACAKSMB_MASTER_PROJECT_PATH', base_path('../android-master-app')),
+    // APK Live Kerja (siaran kamera staf yang tetap jalan di latar belakang).
+    'live_project_path' => env('LACAKSMB_LIVE_PROJECT_PATH', base_path('../android-live-app')),
 
     'public_gateway_url' => env('LACAKSMB_PUBLIC_GATEWAY_URL', 'https://ws.salahmu.fun'),
     'public_backend_api_url' => env('LACAKSMB_PUBLIC_BACKEND_API_URL', 'https://api.salahmu.fun/api/v1'),

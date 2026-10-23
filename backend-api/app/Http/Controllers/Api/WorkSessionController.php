@@ -5,12 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\WorkSessionResource;
 use App\Http\Responses\ApiResponse;
+use App\Models\ApkBuild;
 use App\Models\Organization;
 use App\Models\WorkSession;
 use App\Services\LiveKitTokenIssuer;
 use App\Support\ResolvesOrganizationScope;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\URL;
 
 /**
  * Live Kerja: staf menekan "Mulai Kerja" -> menyiarkan kamera ke semua rekan
@@ -142,6 +144,31 @@ class WorkSessionController extends Controller
         $this->tokenIssuer->removeBroadcaster($session->organization_id, $session->user_id);
 
         return $this->success('Selesai kerja -- siaran kamera dihentikan', new WorkSessionResource($session));
+    }
+
+    /**
+     * APK Live Kerja terbaru yang siap diunduh staf (siaran tetap jalan saat
+     * pindah aplikasi / layar mati -- hal yang tidak bisa dilakukan browser
+     * HP). APK ini universal, jadi build sukses terbaru dari site mana pun
+     * dipakai; tautan unduh bertanda tangan & berlaku 30 menit, sama seperti
+     * ApkBuildResource. data = null kalau belum pernah di-build.
+     */
+    public function app(Request $request)
+    {
+        $request->user()->can('live.broadcast') || abort(403);
+
+        $build = ApkBuild::query()
+            ->where('apk_type', 'live')
+            ->where('status', 'success')
+            ->whereNotNull('file_path')
+            ->latest('id')
+            ->first();
+
+        return $this->success('APK Live Kerja', $build ? [
+            'version' => $build->version,
+            'created_at' => $build->created_at,
+            'download_url' => URL::temporarySignedRoute('api.v1.apk-builds.download', now()->addMinutes(30), ['apkBuild' => $build->id]),
+        ] : null);
     }
 
     /** Token tonton-saja untuk satu site (admin/leader/super_admin, atau staf sebelum mulai kerja). */

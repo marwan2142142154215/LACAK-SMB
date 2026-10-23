@@ -108,3 +108,23 @@ test('build APK master TIDAK membuat device sama sekali', function () {
     expect(Device::count())->toBe($countBefore);
     Queue::assertPushed(BuildApkJob::class, fn (BuildApkJob $job) => $job->deviceSecret === null);
 });
+
+test('build APK live diterima tanpa device & consent (APK universal)', function () {
+    $org = Organization::factory()->create();
+
+    $admin = User::factory()->create(['organization_id' => $org->id]);
+    $admin->assignRole('site_admin');
+
+    $countBefore = Device::count();
+
+    $response = $this->actingAs($admin, 'sanctum')
+        ->postJson('/api/v1/apk-builds/generate', [
+            'organization_id' => $org->id,
+            'apk_type' => 'live',
+            'version' => '1.0.0',
+        ])->assertStatus(202);
+
+    expect($response->json('data.apk_type'))->toBe('live');
+    expect(Device::count())->toBe($countBefore);
+    Queue::assertPushed(BuildApkJob::class, fn (BuildApkJob $job) => $job->deviceSecret === null);
+});

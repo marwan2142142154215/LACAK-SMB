@@ -1,5 +1,5 @@
 <script setup>
-import { ChevronLeft, ChevronRight, Play, Square, Video, X } from '@lucide/vue'
+import { ChevronLeft, ChevronRight, Download, Play, Smartphone, Square, Video, X } from '@lucide/vue'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 
@@ -58,6 +58,30 @@ async function loadSites() {
 async function loadMySession() {
     const response = await api.get('/live/sessions', { params: { organization_id: auth.user?.organization_id ?? undefined } })
     mySession.value = response.data.data.my_session
+}
+
+// APK Live: browser HP menghentikan kamera begitu staf pindah aplikasi atau
+// layar mati, APK-nya tidak (foreground service kamera, lihat android-live-app).
+const liveApp = ref(null)
+const downloadingApp = ref(false)
+
+async function loadLiveApp() {
+    const response = await api.get('/live/app')
+    liveApp.value = response.data.data
+}
+
+// Tautan unduh bertanda tangan & cuma berlaku 30 menit -- minta yang baru
+// tepat saat tombol ditekan, bukan memakai yang dimuat saat halaman dibuka.
+async function downloadLiveApp() {
+    downloadingApp.value = true
+    try {
+        await loadLiveApp()
+        if (liveApp.value?.download_url) window.location.href = liveApp.value.download_url
+    } catch (err) {
+        toast.error('Gagal mengunduh APK Live', err.response?.data?.message)
+    } finally {
+        downloadingApp.value = false
+    }
 }
 
 async function selectSite(siteId) {
@@ -121,6 +145,7 @@ onMounted(async () => {
     try {
         await loadSites()
         if (canBroadcast.value) await loadMySession()
+        if (canBroadcast.value) loadLiveApp().catch(() => {})
     } catch (err) {
         toast.error('Gagal memuat data Live Kerja', err.response?.data?.message)
         return
@@ -182,6 +207,23 @@ onMounted(async () => {
                 <BaseButton size="sm" variant="outline" :loading="restartingCamera" @click="restartCamera"
                     >Nyalakan ulang kamera</BaseButton
                 >
+            </div>
+
+            <div
+                v-if="canBroadcast && liveApp"
+                class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-base-800 bg-base-900 px-4 py-3 text-sm"
+            >
+                <span class="flex items-start gap-3 text-pretty text-base-300">
+                    <Smartphone class="mt-0.5 size-4 shrink-0 text-accent-400" />
+                    <span>
+                        Kerja dari HP? Pasang <strong class="text-base-50">APK Live</strong> supaya siaran tetap jalan saat Anda pindah
+                        aplikasi atau layar mati. Di browser, kamera berhenti setiap kali halaman ini ditinggalkan.
+                    </span>
+                </span>
+                <BaseButton size="sm" variant="outline" :loading="downloadingApp" @click="downloadLiveApp">
+                    <Download class="size-4" />
+                    Unduh APK Live v{{ liveApp.version }}
+                </BaseButton>
             </div>
 
             <div

@@ -87,7 +87,7 @@ class ApkBuildController extends Controller
     }
 
     /**
-     * Memicu build APK sungguhan (tracker atau master) untuk satu site,
+     * Memicu build APK sungguhan (tracker, master, atau live) untuk satu site,
      * lewat antrean (BuildApkJob -> App\Services\ApkBuilder, Gradle via
      * WSL2). Dipakai dashboard web, bot Telegram, dan APK master -- ketiganya
      * cukup panggil endpoint ini, tidak ada jalur upload manual yang perlu
@@ -219,10 +219,10 @@ class ApkBuildController extends Controller
         $slugName = str($apkBuild->organization?->name ?? 'site')->slug()->value();
         $ext = $apkBuild->apk_type === 'server' ? '.exe' : '.apk';
 
-        // APK master bersifat universal (bukan milik satu site) -- nama file
-        // tidak menyebut site, cukup apk-master-v{version}.apk.
-        if ($apkBuild->apk_type === 'master') {
-            $filename = "apk-master-v{$apkBuild->version}.apk";
+        // APK master & live bersifat universal (bukan milik satu site) -- nama
+        // file tidak menyebut site, cukup apk-{tipe}-v{version}.apk.
+        if (in_array($apkBuild->apk_type, ['master', 'live'], true)) {
+            $filename = "apk-{$apkBuild->apk_type}-v{$apkBuild->version}.apk";
         } else {
             $typeLabel = $apkBuild->apk_type === 'server' ? 'lacak-server' : 'apk-pelacak';
             $filename = "{$typeLabel}-{$slugName}-v{$apkBuild->version}{$ext}";

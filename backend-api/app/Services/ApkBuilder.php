@@ -56,9 +56,11 @@ class ApkBuilder
             return;
         }
 
-        $projectPath = $apkBuild->apk_type === 'master'
-            ? config('lacaksmb.master_project_path')
-            : config('lacaksmb.tracker_project_path');
+        $projectPath = match ($apkBuild->apk_type) {
+            'master' => config('lacaksmb.master_project_path'),
+            'live' => config('lacaksmb.live_project_path'),
+            default => config('lacaksmb.tracker_project_path'),
+        };
 
         $scriptPathWindows = rtrim($projectPath, '/\\').'/scripts/build_only.sh';
         $scriptPathWsl = $this->toWslPath($scriptPathWindows);
@@ -66,9 +68,13 @@ class ApkBuilder
         // APK master bersifat UNIVERSAL -- bukan milik salah satu site. Akses
         // ke site ditentukan oleh akun yang login (role + site_access), bukan
         // dari kode site yang ditanam saat build. Karena itu kode/nama site
-        // generik dipakai biar build tetap bisa lewat skrip yang sama.
-        $siteCode = $apkBuild->apk_type === 'master' ? 'MASTER-UNIVERSAL' : $organization->unique_site_code;
-        $siteName = $apkBuild->apk_type === 'master' ? 'Lacak SMB' : $organization->name;
+        // generik dipakai biar build tetap bisa lewat skrip yang sama. APK Live
+        // sama: siaran selalu ke site akun staf yang login (WorkSessionController).
+        [$siteCode, $siteName] = match ($apkBuild->apk_type) {
+            'master' => ['MASTER-UNIVERSAL', 'Lacak SMB'],
+            'live' => ['LIVE-UNIVERSAL', 'Lacak SMB'],
+            default => [$organization->unique_site_code, $organization->name],
+        };
 
         // `--exec` (bukan `--`): argumen diteruskan langsung ke bash tanpa
         // di-parse ulang oleh shell default WSL, jadi `$(...)`/backtick di
