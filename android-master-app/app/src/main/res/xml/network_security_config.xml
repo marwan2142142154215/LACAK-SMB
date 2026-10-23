@@ -4,7 +4,7 @@
     - 127.0.0.1 / localhost : lewat `adb reverse tcp:3333 tcp:3333` (HP USB)
     - 10.0.2.2              : emulator Android -> host Windows
 
-  Alamat publik (termasuk *.lacaksmbbot.com) TETAP wajib HTTPS — produksi
+  Alamat publik (termasuk *.salahmu.fun) TETAP wajib HTTPS — produksi
   lewat Cloudflare Tunnel selalu https, jadi tidak ada alasan melonggarkan
   aturan ini. Tanpa file ini Android 9+ menolak mentah-mentah koneksi
   http:// ke gateway ("CLEARTEXT communication not permitted") sehingga

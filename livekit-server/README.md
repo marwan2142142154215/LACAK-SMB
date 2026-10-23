@@ -19,7 +19,7 @@ docker compose up -d
 Isi nilai yang sama di `backend-api/.env`:
 
 ```
-LIVEKIT_URL=wss://live.lacaksmbbot.com
+LIVEKIT_URL=wss://live.salahmu.fun
 LIVEKIT_API_KEY=...
 LIVEKIT_API_SECRET=...
 ```
@@ -28,7 +28,7 @@ LIVEKIT_API_SECRET=...
 
 | Port | Protokol | Untuk |
 |---|---|---|
-| 7880 | TCP (WebSocket) | signaling — boleh lewat Cloudflare Tunnel / reverse proxy TLS sebagai `wss://live.lacaksmbbot.com` |
+| 7880 | TCP (WebSocket) | signaling — boleh lewat Cloudflare Tunnel / reverse proxy TLS sebagai `wss://live.salahmu.fun` |
 | 7882 | **UDP** | video — **harus** terbuka langsung ke internet (IP publik) |
 | 7881 | TCP | cadangan video kalau UDP diblokir jaringan |
 

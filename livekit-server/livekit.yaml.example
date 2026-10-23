@@ -1,5 +1,5 @@
 # Salin jadi livekit.yaml (JANGAN di-commit -- berisi secret, sudah di .gitignore).
-port: 7880            # signaling WebSocket (lewat reverse proxy/Cloudflare -> wss://live.lacaksmbbot.com)
+port: 7880            # signaling WebSocket (lewat reverse proxy/Cloudflare -> wss://live.salahmu.fun)
 rtc:
   tcp_port: 7881      # fallback media lewat TCP kalau UDP diblokir jaringan kantor
   udp_port: 7882      # media utama, satu port UDP untuk semua peserta
