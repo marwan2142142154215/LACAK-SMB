@@ -63,14 +63,20 @@ export const useLiveStore = defineStore('live', () => {
             // adaptiveStream: kualitas video tiap peserta otomatis
             // mengikuti ukuran elemen <video> & dijeda saat tidak terlihat
             // -- wajib untuk grid >50 staf supaya kuota/baterai tidak habis.
-            adaptiveStream: true,
+            // pixelDensity 'screen': ukuran elemen dikali kepadatan piksel layar,
+            // jadi layar HP/laptop resolusi tinggi meminta layer yang lebih tajam.
+            adaptiveStream: { pixelDensity: 'screen' },
             // dynacast: pengirim berhenti meng-encode layer resolusi yang
             // tidak ada satu pun penonton yang memintanya.
             dynacast: true,
-            // facingMode user: di HP pakai kamera depan (wajah staf), bukan belakang.
-            videoCaptureDefaults: { resolution: VideoPresets.h540.resolution, facingMode: 'user' },
+            // 720p untuk tampilan besar; facingMode user: di HP pakai kamera
+            // depan (wajah staf), bukan belakang.
+            videoCaptureDefaults: { resolution: VideoPresets.h720.resolution, facingMode: 'user' },
             publishDefaults: {
                 simulcast: true,
+                // Layer kecil untuk grid, 720p hanya dikirim saat ada yang
+                // membuka tampilan besar (dynacast mematikan layer yang tidak diminta).
+                videoEncoding: VideoPresets.h720.encoding,
                 videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
             },
         })
@@ -137,6 +143,9 @@ export const useLiveStore = defineStore('live', () => {
     function handleLocalCameraStopped(publication, participant) {
         if (participant !== room?.localParticipant || publication.source !== CAMERA_SOURCE) return
         if (mode.value !== 'broadcasting') return
+        // Saat staf pindah aplikasi, browser HP memang menghentikan kamera --
+        // itu bukan masalah; kamera dinyalakan ulang otomatis begitu kembali.
+        if (document.visibilityState === 'hidden') return
         cameraProblem.value = 'Kamera berhenti mengirim gambar. Tutup aplikasi lain yang memakai kamera, lalu tekan Nyalakan ulang kamera.'
         bump()
     }
@@ -240,8 +249,18 @@ export const useLiveStore = defineStore('live', () => {
     if (typeof document !== 'undefined') {
         // Wake lock dilepas otomatis oleh browser saat tab disembunyikan --
         // minta lagi begitu staf kembali ke aplikasi.
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible' && mode.value === 'broadcasting') acquireWakeLock()
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState !== 'visible' || mode.value !== 'broadcasting') return
+            acquireWakeLock()
+            // Browser HP menghentikan kamera selama aplikasi di latar belakang.
+            // Beri LiveKit waktu memulihkannya sendiri, lalu nyalakan ulang
+            // kalau masih mati -- staf tidak perlu menekan apa pun.
+            await new Promise((resolve) => setTimeout(resolve, 1500))
+            if (mode.value === 'broadcasting' && !cameraIsLive()) {
+                await restartCamera().catch(() => {
+                    cameraProblem.value = 'Kamera belum menyala lagi setelah kembali ke aplikasi. Tekan Nyalakan ulang kamera.'
+                })
+            }
         })
     }
 
