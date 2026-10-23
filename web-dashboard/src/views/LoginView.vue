@@ -113,7 +113,7 @@ function finishAfterRecoveryCodes() {
             <div class="rounded-2xl border border-base-800 bg-base-900/70 p-7 shadow-2xl shadow-black/30 backdrop-blur">
                 <!-- Step 1: username + password -->
                 <form v-if="step === 'credentials'" class="space-y-4" @submit.prevent="handleCredentialsSubmit">
-                    <BaseInput v-model="username" label="Username" placeholder="marwanmaster" autocomplete="username" required />
+                    <BaseInput v-model="username" label="Username / Email Account Center" placeholder="nama@perusahaan.com" autocomplete="username" required />
                     <BaseInput
                         v-model="password"
                         label="Password"

@@ -27,8 +27,12 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
     Route::prefix('auth')->group(function () {
         Route::post('/login', [AuthController::class, 'login']);
-        Route::post('/2fa/setup/confirm', [AuthController::class, 'confirmTwoFactorSetup']);
-        Route::post('/2fa/verify', [AuthController::class, 'verifyTwoFactor']);
+        // throttle per-IP sebagai lapis pertama anti brute-force (lapis kedua:
+        // hitung percobaan per challenge/device di controller).
+        Route::post('/2fa/setup/confirm', [AuthController::class, 'confirmTwoFactorSetup'])
+            ->middleware('throttle:10,1');
+        Route::post('/2fa/verify', [AuthController::class, 'verifyTwoFactor'])
+            ->middleware('throttle:10,1');
 
         Route::middleware('auth:sanctum')->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);

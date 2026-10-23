@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
 use App\Models\User;
+use App\Services\AccountCenter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -16,7 +17,7 @@ use PragmaRX\Google2FAQRCode\Google2FA;
 
 /**
  * Alur login:
- *  1. POST /auth/login (username, password)
+ *  1. POST /auth/login (username ATAU email Account Center, password)
  *     - belum pernah setup 2FA  -> balas requires_2fa_setup + qr_code_svg + setup_token
  *     - sudah setup 2FA          -> balas requires_2fa + challenge_token
  *  2. POST /auth/2fa/setup/confirm (setup_token, code) -> aktifkan 2FA, keluarkan token akses
@@ -33,6 +34,15 @@ class AuthController extends Controller
 
     private const CHALLENGE_TTL_MINUTES = 5;
 
+    /**
+     * Toleransi waktu TOTP: ±2 periode (±60 detik) supaya jam authenticator
+     * yang sedikit meleset tidak membuat kode selalu ditolak.
+     */
+    private const OTP_WINDOW = 2;
+
+    /** Maksimum percobaan kode salah per challenge sebelum sesi login dibatalkan. */
+    private const MAX_2FA_ATTEMPTS = 5;
+
     public function login(Request $request)
     {
         $credentials = $request->validate([
@@ -41,16 +51,42 @@ class AuthController extends Controller
             'client' => ['nullable', 'string', 'in:web_dashboard,master_app,telegram_bot'],
         ]);
 
-        $user = User::where('username', $credentials['username'])->first();
+        $identifier = trim($credentials['username']);
 
-        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
-            return $this->fail('Username atau password salah', null, 401);
+        // Email + Account Center terpasang -> password diverifikasi Account
+        // Center, BUKAN password lokal. Username biasa (akun layanan seperti
+        // bot Telegram) tetap memakai password lokal. Dua-duanya wajib 2FA.
+        if (str_contains($identifier, '@') && AccountCenter::isConfigured()) {
+            $outcome = AccountCenter::login(mb_strtolower($identifier), $credentials['password']);
+
+            if ($outcome['state'] === AccountCenter::UNAVAILABLE) {
+                return $this->fail('Layanan Account Center sedang tidak dapat dihubungi. Coba lagi beberapa saat lagi.', null, 503);
+            }
+
+            if ($outcome['state'] !== AccountCenter::AUTHENTICATED) {
+                return $this->fail('Email atau password salah', null, 401);
+            }
+
+            // Account Center hanya membuktikan identitas -- akun, role, dan
+            // site tetap harus sudah dibuat admin di sini (tidak dibuat otomatis).
+            $user = User::whereRaw('LOWER(email) = ?', [$outcome['email']])->first();
+
+            if (! $user) {
+                return $this->fail('Akun Account Center Anda belum terdaftar di Lacak SMB. Hubungi super admin.', null, 403);
+            }
+        } else {
+            $user = User::where('username', $identifier)->first();
+
+            if (! $user || ! Hash::check($credentials['password'], $user->password)) {
+                return $this->fail('Username atau password salah', null, 401);
+            }
         }
 
         if (! $user->is_active) {
             return $this->fail('Akun Anda dinonaktifkan. Hubungi super admin.', null, 403);
         }
 
+        // 2FA WAJIB untuk setiap login, tanpa pengecualian akun mana pun.
         if (! $user->hasConfirmedTwoFactor()) {
             return $this->beginTwoFactorSetup($user);
         }
@@ -106,12 +142,21 @@ class AuthController extends Controller
 
         $google2fa = new Google2FA;
 
-        if (! $google2fa->verifyKey($payload['secret'], $data['code'])) {
+        // verifyKeyNewer dengan baseline int 1 -> kembalian int nomor window
+        // (toleransi clock drift lewat OTP_WINDOW). verifyKey biasa akan
+        // mengembalikan true dan window-nya tidak bisa disimpan untuk replay.
+        $matchedTimestamp = $google2fa->verifyKeyNewer($payload['secret'], $data['code'], 1, self::OTP_WINDOW);
+
+        if ($matchedTimestamp === false) {
             return $this->fail('Kode 2FA salah', null, 422);
         }
 
         /** @var User $user */
         $user = User::findOrFail($payload['user_id']);
+
+        // Catat window terpakai supaya kode setup yang sama tidak bisa langsung
+        // dipakai ulang di /2fa/verify (proteksi replay).
+        Cache::put("auth:2fa_last_ts:{$user->id}", (int) $matchedTimestamp, now()->addMinutes(2));
 
         $recoveryCodes = collect(range(1, 8))
             ->map(fn () => Str::random(10))
@@ -141,26 +186,40 @@ class AuthController extends Controller
     {
         $data = $request->validate([
             'challenge_token' => ['required', 'string'],
-            'code' => ['required', 'digits:6'],
+            // Bukan lagi digits:6 -- boleh kode TOTP 6 digit ATAU recovery code.
+            'code' => ['required', 'string', 'max:40'],
         ]);
 
-        $userId = Cache::get("auth:2fa_challenge:{$data['challenge_token']}");
+        $challengeKey = "auth:2fa_challenge:{$data['challenge_token']}";
+        $attemptsKey = "auth:2fa_attempts:{$data['challenge_token']}";
+
+        $userId = Cache::get($challengeKey);
 
         if (! $userId) {
             return $this->fail('Sesi login sudah kedaluwarsa, silakan login ulang', null, 410);
         }
 
+        // Batasi percobaan per challenge: setelah beberapa kali salah, sesi
+        // login dibatalkan supaya kode tidak bisa ditebak beruntun (selain
+        // throttle per-IP di route).
+        if ((int) Cache::get($attemptsKey, 0) >= self::MAX_2FA_ATTEMPTS) {
+            Cache::forget($challengeKey);
+            Cache::forget($attemptsKey);
+
+            return $this->fail('Terlalu banyak percobaan. Silakan login ulang.', null, 429);
+        }
+
         /** @var User $user */
         $user = User::findOrFail($userId);
 
-        $google2fa = new Google2FA;
-        $secret = Crypt::decryptString($user->two_factor_secret);
+        if (! $this->consumeTwoFactorCode($user, $data['code'])) {
+            Cache::put($attemptsKey, (int) Cache::get($attemptsKey, 0) + 1, now()->addMinutes(self::CHALLENGE_TTL_MINUTES));
 
-        if (! $google2fa->verifyKey($secret, $data['code'])) {
             return $this->fail('Kode 2FA salah', null, 422);
         }
 
-        Cache::forget("auth:2fa_challenge:{$data['challenge_token']}");
+        Cache::forget($challengeKey);
+        Cache::forget($attemptsKey);
 
         $token = $user->createToken($this->tokenNameFor($request))->plainTextToken;
 
@@ -169,6 +228,47 @@ class AuthController extends Controller
             'token_type' => 'Bearer',
             'user' => $this->userPayload($user),
         ]);
+    }
+
+    /**
+     * Verifikasi kode login kedua: TOTP (dengan toleransi clock drift + proteksi
+     * replay) atau recovery code (dipakai sekali lalu hangus). True kalau sah.
+     */
+    private function consumeTwoFactorCode(User $user, string $code): bool
+    {
+        // Recovery code bukan 6 digit angka -> cek & konsumsi dari daftar.
+        if (! preg_match('/^\d{6}$/', $code)) {
+            return $user->useRecoveryCode($code);
+        }
+
+        $secret = Crypt::decryptString($user->two_factor_secret);
+        $lastTsKey = "auth:2fa_last_ts:{$user->id}";
+
+        // oldTimestamp WAJIB integer: kalau null, verifyKeyNewer mengembalikan
+        // true (bukan nomor window), sehingga window terpakai tidak bisa
+        // disimpan dan proteksi replay tidak pernah aktif. Baseline 1 aman
+        // (jauh lebih lama dari window mana pun) untuk pemakaian pertama.
+        $oldTimestamp = Cache::get($lastTsKey);
+        if (! is_int($oldTimestamp)) {
+            $oldTimestamp = 1;
+        }
+
+        // Hanya menerima kode valid yang window-nya lebih baru dari kode
+        // terakhir -> kode yang sama tidak bisa dipakai dua kali (replay).
+        $matchedTimestamp = (new Google2FA)->verifyKeyNewer(
+            $secret,
+            $code,
+            $oldTimestamp,
+            self::OTP_WINDOW
+        );
+
+        if ($matchedTimestamp === false) {
+            return false;
+        }
+
+        Cache::put($lastTsKey, (int) $matchedTimestamp, now()->addMinutes(2));
+
+        return true;
     }
 
     public function logout(Request $request)

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Crypt;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -70,6 +71,42 @@ class User extends Authenticatable
     public function hasConfirmedTwoFactor(): bool
     {
         return $this->two_factor_confirmed_at !== null;
+    }
+
+    /**
+     * Recovery code yang masih tersisa (sudah didekripsi).
+     *
+     * @return array<int, string>
+     */
+    public function recoveryCodes(): array
+    {
+        if (! $this->two_factor_recovery_codes) {
+            return [];
+        }
+
+        return json_decode(Crypt::decryptString($this->two_factor_recovery_codes), true) ?: [];
+    }
+
+    /**
+     * Pakai satu recovery code saat login (mis. authenticator hilang). Code
+     * yang cocok langsung dihapus supaya tidak bisa dipakai dua kali.
+     */
+    public function useRecoveryCode(string $code): bool
+    {
+        $codes = $this->recoveryCodes();
+        $index = array_search($code, $codes, true);
+
+        if ($index === false) {
+            return false;
+        }
+
+        unset($codes[$index]);
+
+        $this->forceFill([
+            'two_factor_recovery_codes' => Crypt::encryptString(json_encode(array_values($codes))),
+        ])->save();
+
+        return true;
     }
 
     public function getActivitylogOptions(): LogOptions

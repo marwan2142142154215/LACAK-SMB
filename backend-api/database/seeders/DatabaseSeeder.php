@@ -20,6 +20,8 @@ class DatabaseSeeder extends Seeder
             FortuneSmbSuperAdminSeeder::class,
             SystemAccountSeeder::class,
             TelegramBotAccountSeeder::class,
+            // No-op di luar local (lihat seeder-nya).
+            DummyRootSeeder::class,
         ]);
     }
 }

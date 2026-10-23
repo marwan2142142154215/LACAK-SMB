@@ -24,4 +24,21 @@ return [
     // Tipe 'server' tidak perlu Gradle -- ApkBuilder cukup menyalin
     // lacak-server.exe yang sudah ter-build (server-gui).
     'server_exe_path' => env('LACAKSMB_SERVER_EXE_PATH', base_path('../lacak-server.exe')),
+
+    /*
+    |--------------------------------------------------------------------
+    | Account Center (login terpusat)
+    |--------------------------------------------------------------------
+    | Login dengan email diverifikasi ke Account Center (lihat
+    | App\Services\AccountCenter); 2FA tetap wajib sesudahnya. Kalau uri/
+    | name/secret kosong, login jatuh ke password lokal. Nama variabelnya
+    | sama dengan proyek scatter supaya kredensialnya bisa dipakai bersama.
+    */
+    'account_center' => [
+        'enabled' => (bool) env('ACCOUNTCENTER_ENABLED', true),
+        'uri' => env('ACCOUNTCENTER_URI', ''),
+        'name' => env('ACCOUNTCENTER_NAME', ''),
+        'secret' => env('ACCOUNTCENTER_SECRET', ''),
+        'timeout_ms' => (int) env('ACCOUNTCENTER_TIMEOUT_MS', 8000),
+    ],
 ];

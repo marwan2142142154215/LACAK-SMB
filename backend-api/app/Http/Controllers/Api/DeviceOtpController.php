@@ -8,6 +8,7 @@ use App\Models\Device;
 use App\Models\DeviceOtp;
 use App\Support\ResolvesOrganizationScope;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -20,6 +21,12 @@ use Illuminate\Support\Facades\DB;
 class DeviceOtpController extends Controller
 {
     use ApiResponse, ResolvesOrganizationScope;
+
+    /** Maksimum tebakan OTP salah per device sebelum diblokir sementara. */
+    private const MAX_OTP_ATTEMPTS = 5;
+
+    /** Lama jendela hitungan percobaan OTP (menit); mengikuti masa berlaku OTP. */
+    private const OTP_ATTEMPT_WINDOW_MINUTES = 5;
 
     public function generate(Request $request, Device $device)
     {
@@ -51,6 +58,15 @@ class DeviceOtpController extends Controller
             return $this->fail('Device tidak dikenali', null, 404);
         }
 
+        // Batas percobaan per device (selain throttle per-IP di route): OTP
+        // cuma 6 digit, jadi tanpa ini ribuan tebakan bisa dilakukan selama
+        // OTP berlaku. Setelah batas tercapai, minta OTP baru dari admin.
+        $attemptsKey = "device_otp_attempts:{$device->id}";
+
+        if ((int) Cache::get($attemptsKey, 0) >= self::MAX_OTP_ATTEMPTS) {
+            return $this->fail('Terlalu banyak percobaan OTP. Minta admin membuat OTP baru.', null, 429);
+        }
+
         $otp = $device->otps()
             ->where('purpose', 'self_unlock')
             ->whereNull('used_at')
@@ -58,6 +74,8 @@ class DeviceOtpController extends Controller
             ->first();
 
         if (! $otp || ! $otp->isValid() || ! $otp->matches($data['code'])) {
+            Cache::put($attemptsKey, (int) Cache::get($attemptsKey, 0) + 1, now()->addMinutes(self::OTP_ATTEMPT_WINDOW_MINUTES));
+
             return $this->fail('Kode OTP salah atau sudah kedaluwarsa', null, 422);
         }
 
@@ -65,6 +83,8 @@ class DeviceOtpController extends Controller
             $otp->update(['used_at' => now()]);
             $device->update(['status' => 'online']);
         });
+
+        Cache::forget($attemptsKey);
 
         return $this->success('OTP benar, device dibuka');
     }
