@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ApkBuild;
 use App\Models\Organization;
 use App\Models\User;
 use App\Models\WorkSession;
@@ -190,5 +191,46 @@ class WorkSessionLiveTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $orgB->id);
+    }
+
+    public function test_staff_gets_latest_successful_live_apk(): void
+    {
+        $orgA = Organization::factory()->create();
+        $orgB = Organization::factory()->create();
+        $staff = $this->staffInOrganization($orgA);
+
+        $this->actingAs($staff, 'sanctum')
+            ->getJson('/api/v1/live/app')
+            ->assertOk()
+            ->assertJsonPath('data', null);
+
+        $build = fn (Organization $org, string $type, string $status, string $version) => ApkBuild::create([
+            'organization_id' => $org->id,
+            'apk_type' => $type,
+            'version' => $version,
+            'status' => $status,
+            'file_path' => $status === 'success' ? "apk-builds/{$org->id}/{$type}-{$version}.apk" : null,
+            'embedded_site_code' => 'X',
+            'created_at' => now(),
+        ]);
+
+        // APK Live universal: build dari site lain pun dipakai; gagal & tipe lain diabaikan.
+        $build($orgB, 'live', 'success', '1.0.0');
+        $build($orgA, 'master', 'success', '9.9.9');
+        $build($orgA, 'live', 'failed', '2.0.0');
+
+        $response = $this->actingAs($staff, 'sanctum')
+            ->getJson('/api/v1/live/app')
+            ->assertOk()
+            ->assertJsonPath('data.version', '1.0.0');
+
+        $this->assertStringContainsString('signature=', $response->json('data.download_url'));
+    }
+
+    public function test_live_apk_requires_broadcast_permission(): void
+    {
+        $this->actingAs($this->leaderWithAccessTo(Organization::factory()->create()), 'sanctum')
+            ->getJson('/api/v1/live/app')
+            ->assertForbidden();
     }
 }

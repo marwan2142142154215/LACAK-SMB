@@ -77,7 +77,7 @@ const uploadForm = ref({
 const hasActiveBuild = computed(() => builds.value.some((b) => b.status === 'pending' || b.status === 'building'))
 
 function typeLabel(build) {
-    return build.apk_type === 'master' ? 'APK Master' : build.apk_type === 'server' ? 'Server' : 'APK Pelacak'
+    return TYPE_LABEL[build.apk_type] ?? 'APK Pelacak'
 }
 
 async function confirmDelete() {
@@ -98,11 +98,14 @@ const countByStatus = computed(() =>
     builds.value.reduce((counts, build) => ({ ...counts, [build.status]: (counts[build.status] ?? 0) + 1 }), {}),
 )
 
-const TYPE_BADGE = { tracker: 'neutral', master: 'accent', server: 'neutral' }
+const TYPE_LABEL = { tracker: 'APK Pelacak', master: 'APK Master', live: 'APK Live', server: 'Server' }
+const TYPE_BADGE = { tracker: 'neutral', master: 'accent', live: 'accent', server: 'neutral' }
+// APK Master & Live universal (akses/site mengikuti akun yang login).
+const UNIVERSAL_TYPES = ['master', 'live']
 
-// Untuk siapa paket ini: APK master universal, sisanya milik satu site
+// Untuk siapa paket ini: APK master & live universal, sisanya milik satu site
 function buildTarget(build) {
-    if (build.apk_type === 'master') return 'Semua site'
+    if (UNIVERSAL_TYPES.includes(build.apk_type)) return 'Semua site'
     return build.organization_name ?? build.embedded_site_code
 }
 
@@ -200,7 +203,7 @@ onBeforeUnmount(() => {
         <PageHeader
             eyebrow="Perangkat"
             title="Build APK"
-            subtitle="APK pelacak terikat ke satu device sejak dibuat, APK Master berlaku untuk semua site, dan server untuk komputer kantor."
+            subtitle="APK pelacak terikat ke satu device sejak dibuat, APK Master & APK Live berlaku untuk semua site, dan server untuk komputer kantor."
         >
             <template #actions>
                 <BaseButton variant="outline" @click="uploadDialogOpen = true"><Upload class="size-4" /> Unggah manual</BaseButton>
@@ -298,10 +301,11 @@ onBeforeUnmount(() => {
                 <BaseSelect v-model="generateForm.apk_type" label="Jenis paket">
                     <option value="tracker">APK pelacak — untuk satu device di satu site</option>
                     <option value="master">APK Master — untuk tim, akses mengikuti akun</option>
+                    <option value="live">APK Live — siaran Live Kerja dari HP staf</option>
                     <option value="server">Server — lacak-server.exe untuk komputer kantor</option>
                 </BaseSelect>
                 <BaseSelect
-                    v-if="auth.isSuperAdmin && generateForm.apk_type !== 'master'"
+                    v-if="auth.isSuperAdmin && !UNIVERSAL_TYPES.includes(generateForm.apk_type)"
                     v-model="generateForm.organization_id"
                     label="Site"
                     required
@@ -328,6 +332,13 @@ onBeforeUnmount(() => {
                     class="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-pretty text-base-300"
                 >
                     Satu APK Master untuk semua site. Site yang terlihat ditentukan oleh akun yang masuk, bukan oleh APK-nya.
+                </p>
+                <p
+                    v-else-if="generateForm.apk_type === 'live'"
+                    class="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-pretty text-base-300"
+                >
+                    Satu APK Live untuk semua site: siaran kamera tetap jalan saat staf pindah aplikasi atau layar mati. Build terbaru
+                    otomatis muncul sebagai tombol unduh di halaman Live Kerja.
                 </p>
             </form>
             <template #footer>
