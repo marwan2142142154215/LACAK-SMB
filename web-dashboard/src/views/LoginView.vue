@@ -1,13 +1,14 @@
 <script setup>
 import { ArrowLeft, Copy, LockKeyhole } from '@lucide/vue'
 import { computed, nextTick, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 
 import CodeCells from '@/components/auth/CodeCells.vue'
 import LoginRadar from '@/components/auth/LoginRadar.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import { useToast } from '@/composables/useToast'
+import { LOGIN_REDIRECT_KEY } from '@/router'
 import { useAuthStore } from '@/stores/auth'
 
 // step: 'credentials' -> 'setup_2fa' (QR, hanya login pertama) -> 'recovery_codes'
@@ -33,7 +34,6 @@ const codeCells = ref(null)
 
 const auth = useAuthStore()
 const router = useRouter()
-const route = useRoute()
 const toast = useToast()
 
 const STEPS = [
@@ -68,7 +68,10 @@ const groupedSecret = computed(() => secretManualEntry.value?.match(/.{1,4}/g)?.
 
 function enter() {
     granted.value = true
-    router.push(route.query.redirect ?? { name: 'radar' })
+    const target = sessionStorage.getItem(LOGIN_REDIRECT_KEY)
+    sessionStorage.removeItem(LOGIN_REDIRECT_KEY)
+    // Hanya path internal ("/..."), bukan "//host" -- jangan pernah keluar aplikasi.
+    router.push(target?.startsWith('/') && !target.startsWith('//') ? target : { name: 'radar' })
 }
 
 async function failCode(err, fallback) {

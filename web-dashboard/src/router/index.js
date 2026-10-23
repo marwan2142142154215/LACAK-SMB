@@ -79,6 +79,7 @@ const router = createRouter({
 // guard menghindari seluruh masalah ini sama sekali, tanpa store perlu aktif.
 const TOKEN_STORAGE_KEY = 'lacak_master_token'
 const USER_STORAGE_KEY = 'lacak_master_user'
+export const LOGIN_REDIRECT_KEY = 'lacak_master_login_redirect'
 
 router.beforeEach((to) => {
     const token = localStorage.getItem(TOKEN_STORAGE_KEY)
@@ -92,7 +93,10 @@ router.beforeEach((to) => {
     }
 
     if (to.meta.requiresAuth && !isAuthenticated) {
-        return { name: 'login', query: { redirect: to.fullPath } }
+        // Halaman tujuan diingat di sessionStorage, bukan ?redirect= di URL,
+        // supaya alamat login tetap bersih (/login). Dibaca LoginView.
+        if (to.fullPath !== '/') sessionStorage.setItem(LOGIN_REDIRECT_KEY, to.fullPath)
+        return { name: 'login' }
     }
 
     if (to.meta.guestOnly && isAuthenticated) {
