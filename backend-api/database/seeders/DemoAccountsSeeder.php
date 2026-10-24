@@ -35,7 +35,7 @@ class DemoAccountsSeeder extends Seeder
     ];
 
     /** Staf tambahan per site, untuk menguji dinding Live Kerja & log kerja dengan banyak orang. */
-    private const EXTRA_STAFF = ['A' => [3, 12], 'B' => [2, 11]];
+    private const EXTRA_STAFF = ['A' => [3, 62], 'B' => [2, 11]];
 
     /** @return array<int, array{0: string, 1: string, 2: string, 3: string|null, 4: array<int, string>}> */
     private function accounts(): array
