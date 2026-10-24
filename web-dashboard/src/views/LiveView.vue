@@ -293,8 +293,7 @@ async function toggleScreenShare() {
     try {
         await live.setScreenShare(!live.localScreenTrack)
     } catch (err) {
-        // NotAllowedError = staf menekan Batal di dialog pilih layar -- bukan error.
-        if (err.name !== 'NotAllowedError') toast.error('Gagal membagikan layar', err.message)
+        toast.error('Layar belum dibagikan', err.message)
     } finally {
         togglingScreen.value = false
         // Laporan status dikirim ~0,4 detik setelah track berubah.
@@ -326,9 +325,7 @@ async function startWork() {
         loadStatus()
         toast.success(
             'Mulai kerja',
-            canShareScreen
-                ? 'Kamera Anda tersiar. Tekan Bagikan layar supaya layar kerja ikut terlihat.'
-                : 'Kamera Anda sedang disiarkan ke rekan se-site',
+            canShareScreen ? 'Layar & kamera Anda sedang disiarkan.' : 'Kamera Anda sedang disiarkan ke rekan se-site',
         )
     } catch (err) {
         const cameraMessages = {
@@ -339,7 +336,8 @@ async function startWork() {
         toast.error('Gagal memulai siaran', cameraMessages[err.name] ?? err.response?.data?.message ?? err.message)
         // startWork() memutus koneksi tonton yang lama -- sambung lagi supaya
         // staf tetap melihat rekan-rekannya walau siarannya sendiri gagal.
-        if (selectedSiteId.value) await selectSite(selectedSiteId.value)
+        // (Batal/salah pilih layar terjadi sebelum koneksi tonton diputus.)
+        if (err.name !== 'ScreenShareFailed' && selectedSiteId.value) await selectSite(selectedSiteId.value)
     } finally {
         confirmStartOpen.value = false
     }
@@ -871,8 +869,12 @@ onBeforeUnmount(() => {
 
         <ConfirmDialog
             v-model:open="confirmStartOpen"
-            title="Mulai kerja & nyalakan kamera?"
-            description="Kamera Anda menyala dan disiarkan ke semua rekan di site Anda sampai Anda menekan Selesai kerja. Setelah itu Anda bisa membagikan layar kerja. Tidak ada suara yang dikirim dan tidak ada yang direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja."
+            :title="canShareScreen ? 'Mulai kerja & bagikan seluruh layar?' : 'Mulai kerja & nyalakan kamera?'"
+            :description="
+                canShareScreen
+                    ? 'Setelah menekan Mulai kerja, pilih tab Entire screen (Seluruh layar) lalu tekan Share. Layar dan kamera Anda disiarkan ke rekan di site Anda sampai Anda menekan Selesai kerja. Tanpa suara, tidak direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja.'
+                    : 'Kamera Anda menyala dan disiarkan ke rekan di site Anda sampai Anda menekan Selesai kerja. Tanpa suara, tidak direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja.'
+            "
             confirm-label="Mulai kerja"
             confirm-variant="primary"
             :loading="live.connecting"

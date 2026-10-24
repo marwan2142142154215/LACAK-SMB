@@ -18,6 +18,52 @@ const CONNECTED = 'connected'
 /** Browser ini bisa berbagi layar? (HP: tidak -- iOS/Android browser tidak punya getDisplayMedia.) */
 export const canShareScreen = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia
 
+// Layar kerja: SELURUH layar (bukan satu jendela/tab), tanpa audio. Teks harus
+// terbaca -> 1080p, cukup 15 fps. displaySurface 'monitor' membuat dialog
+// Chrome/Edge langsung terbuka di tab "Entire screen"; staf tetap harus
+// menekan Share sekali -- browser tidak mengizinkan situs melewatinya.
+const SCREEN_CAPTURE_OPTIONS = {
+    audio: false,
+    video: { displaySurface: 'monitor' },
+    contentHint: 'detail',
+    resolution: { width: 1920, height: 1080, frameRate: 15 },
+    selfBrowserSurface: 'exclude',
+    surfaceSwitching: 'include',
+}
+
+/**
+ * Minta staf memilih seluruh layar. Kalau yang dipilih ternyata satu jendela
+ * atau tab, ditolak -- yang dipantau harus layar kerja utuh.
+ */
+async function captureEntireScreen() {
+    const { createLocalScreenTracks } = await import('livekit-client')
+    let tracks
+    try {
+        tracks = await createLocalScreenTracks(SCREEN_CAPTURE_OPTIONS)
+    } catch (err) {
+        const error = new Error(
+            err.name === 'NotAllowedError'
+                ? 'Berbagi layar dibatalkan. Pilih tab "Entire screen" / "Seluruh layar", lalu tekan Share.'
+                : `Layar tidak bisa dibagikan: ${err.message}`,
+        )
+        error.name = 'ScreenShareFailed'
+        throw error
+    }
+    const video = tracks.find((track) => track.kind === 'video')
+    tracks.filter((track) => track !== video).forEach((track) => track.stop())
+    // Firefox lama tidak melaporkan displaySurface -- kalau kosong, diterima.
+    const surface = video?.mediaStreamTrack.getSettings().displaySurface
+    if (!video || (surface && surface !== 'monitor')) {
+        video?.stop()
+        const error = new Error(
+            'Yang dibagikan harus seluruh layar, bukan satu jendela atau tab. Pilih tab "Entire screen" / "Seluruh layar".',
+        )
+        error.name = 'ScreenShareFailed'
+        throw error
+    }
+    return video
+}
+
 /**
  * Koneksi Live Kerja (LiveKit). SENGAJA disimpan di store, bukan di
  * LiveView.vue -- supaya siaran tetap jalan saat staf pindah ke halaman lain
@@ -245,10 +291,21 @@ export const useLiveStore = defineStore('live', () => {
 
     const cameraIsLive = () => trackIsLive(CAMERA_SOURCE)
 
-    /** Panggil langsung dari klik tombol (butuh user gesture untuk izin deteksi idle). */
+    /**
+     * Panggil langsung dari klik tombol: dialog pilih layar & izin deteksi
+     * idle butuh user gesture. Di komputer, layar dibagikan SEBELUM kamera
+     * menyala -- mulai kerja = layar + kamera langsung tersiar.
+     */
     async function startWork() {
         connecting.value = true
         cameraProblem.value = null
+        let screenTrack = null
+        try {
+            if (canShareScreen) screenTrack = await captureEntireScreen()
+        } catch (err) {
+            connecting.value = false
+            throw err
+        }
         const idlePermission = requestIdlePermission()
         try {
             const response = await api.post('/live/sessions/start')
@@ -268,6 +325,7 @@ export const useLiveStore = defineStore('live', () => {
                 error.name = 'CameraNotLive'
                 throw error
             }
+            if (screenTrack) await ownRoom.localParticipant.publishTrack(screenTrack)
             mode.value = 'broadcasting'
             broadcastStartedAt.value = session.started_at ?? new Date().toISOString()
             onBreak.value = !!session.on_break
@@ -278,6 +336,7 @@ export const useLiveStore = defineStore('live', () => {
         } catch (err) {
             // Kamera ditolak / koneksi gagal -- jangan biarkan sesi kerja
             // tercatat aktif padahal tidak ada video yang tersiar.
+            screenTrack?.stop()
             await api.post('/live/sessions/end').catch(() => {})
             await disconnect()
             throw err
@@ -300,20 +359,18 @@ export const useLiveStore = defineStore('live', () => {
     }
 
     /**
-     * Bagikan layar kerja (jendela/seluruh layar yang dipilih staf di dialog
-     * browser). Tanpa audio -- Live Kerja memang tanpa suara. Kalau staf
-     * menekan "Berhenti berbagi" milik browser, LiveKit melepas track-nya
+     * Bagikan lagi / hentikan berbagi seluruh layar di tengah siaran. Kalau
+     * staf menekan "Stop sharing" milik browser, LiveKit melepas track-nya
      * sendiri dan handleLocalTracksChanged() melaporkan "Screen stop".
      */
     async function setScreenShare(enabled) {
         if (!ownRoom || mode.value !== 'broadcasting') return
-        await ownRoom.localParticipant.setScreenShareEnabled(enabled, {
-            audio: false,
-            contentHint: 'detail',
-            resolution: { width: 1920, height: 1080, frameRate: 15 },
-            selfBrowserSurface: 'exclude',
-            surfaceSwitching: 'include',
-        })
+        if (enabled) {
+            const track = await captureEntireScreen()
+            await ownRoom.localParticipant.publishTrack(track)
+        } else {
+            await ownRoom.localParticipant.setScreenShareEnabled(false)
+        }
         handleLocalTracksChanged()
     }
 
