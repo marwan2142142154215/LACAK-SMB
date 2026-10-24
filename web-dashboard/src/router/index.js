@@ -23,10 +23,12 @@ const routes = [
                 component: () => import('@/views/LiveView.vue'),
             },
             {
-                path: 'live/log',
-                name: 'work-log',
-                component: () => import('@/views/WorkLogView.vue'),
+                path: 'aktivitas',
+                name: 'activity',
+                component: () => import('@/views/ActivityView.vue'),
             },
+            // Alamat lama "Log kerja" -- isinya sekarang bagian dari Aktivitas user.
+            { path: 'live/log', name: 'work-log', redirect: { name: 'activity' } },
             {
                 path: 'devices',
                 name: 'devices',

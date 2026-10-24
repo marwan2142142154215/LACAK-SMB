@@ -254,9 +254,10 @@ class WorkSessionController extends Controller
     }
 
     /**
-     * Log kerja satu site dalam satu rentang waktu (biasanya satu hari kalender
-     * menurut jam perangkat penonton -- dashboard yang mengirim from/to),
-     * beserta jam kerja aktual per staf.
+     * Log kerja satu site -- atau semua site yang boleh ditonton (all_sites=1) --
+     * dalam satu rentang waktu (dashboard yang mengirim from/to menurut jam
+     * perangkat penonton), beserta jam kerja aktual per staf dan status tiap
+     * staf tepat sebelum rentang dimulai (dasar garis waktu "pita shift").
      */
     public function activity(Request $request)
     {
@@ -265,14 +266,22 @@ class WorkSessionController extends Controller
 
         $validated = $request->validate([
             'organization_id' => ['nullable', 'integer'],
+            'all_sites' => ['nullable', 'boolean'],
             'from' => ['required', 'date'],
             'to' => ['required', 'date', 'after:from'],
         ]);
 
-        $organizationId = $this->authorizedOrganizationId($user, $validated['organization_id'] ?? null);
+        if ($request->boolean('all_sites')) {
+            $organizationId = null;
+            $siteIds = $this->watchableSites($user)->pluck('id')->all();
+        } else {
+            $organizationId = $this->authorizedOrganizationId($user, $validated['organization_id'] ?? null);
 
-        if ($organizationId === null) {
-            return $this->fail('Anda tidak berwenang melihat log site ini', null, 403);
+            if ($organizationId === null) {
+                return $this->fail('Anda tidak berwenang melihat log site ini', null, 403);
+            }
+
+            $siteIds = [$organizationId];
         }
 
         $from = Carbon::parse($validated['from']);
@@ -284,7 +293,7 @@ class WorkSessionController extends Controller
 
         $events = WorkSessionEvent::query()
             ->with('user:id,name')
-            ->where('organization_id', $organizationId)
+            ->whereIn('organization_id', $siteIds)
             ->whereBetween('occurred_at', [$from, $to])
             ->orderBy('occurred_at')
             ->orderBy('id')
@@ -295,7 +304,7 @@ class WorkSessionController extends Controller
             ->with('user:id,name')
             ->whereIn('id', WorkSessionEvent::query()
                 ->selectRaw('MAX(id)')
-                ->where('organization_id', $organizationId)
+                ->whereIn('organization_id', $siteIds)
                 ->where('occurred_at', '<', $from)
                 ->groupBy('user_id'))
             ->get()
@@ -304,8 +313,10 @@ class WorkSessionController extends Controller
         return $this->success('Log kerja', [
             'organization_id' => $organizationId,
             'summary' => $this->presence->summarize($events, $before, $from, $to),
+            'initial_statuses' => (object) $before->map(fn (WorkSessionEvent $event) => $event->status)->all(),
             'events' => $events->map(fn (WorkSessionEvent $event) => [
                 'id' => $event->id,
+                'organization_id' => $event->organization_id,
                 'user_id' => $event->user_id,
                 'user_name' => $event->user?->name,
                 'type' => $event->type,

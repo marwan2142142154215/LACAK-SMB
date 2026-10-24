@@ -161,6 +161,7 @@ class WorkPresence
             $summary[] = [
                 'user_id' => $userId,
                 'user_name' => $user?->name,
+                'organization_id' => ($userEvents->last() ?? $before->get($userId))?->organization_id,
                 'work_seconds' => $totals[self::WORKING],
                 'break_seconds' => $totals[self::BREAK],
                 'first_login_at' => $userEvents->firstWhere('type', 'login')?->occurred_at?->toIso8601String(),

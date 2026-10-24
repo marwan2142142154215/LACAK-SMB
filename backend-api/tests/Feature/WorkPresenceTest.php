@@ -175,6 +175,42 @@ class WorkPresenceTest extends TestCase
         $this->assertCount(8, $response->json('data.events'));
     }
 
+    public function test_activity_across_all_watchable_sites_with_initial_statuses(): void
+    {
+        $orgA = Organization::factory()->create(['is_active' => true]);
+        $orgB = Organization::factory()->create(['is_active' => true]);
+        $orgC = Organization::factory()->create(['is_active' => true]);
+        $staffA = $this->staffIn($orgA);
+        $staffC = $this->staffIn($orgC);
+
+        // Mulai kerja kemarin -> status sebelum rentang "hari ini" dimulai.
+        $this->travelTo(now()->startOfDay()->subHours(2));
+        $this->actingAs($staffA, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->actingAs($staffA, 'sanctum')->postJson('/api/v1/live/sessions/heartbeat', ['camera_active' => true, 'screen_active' => true]);
+        $this->actingAs($staffC, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->travelBack();
+        $this->actingAs($staffA, 'sanctum')->postJson('/api/v1/live/sessions/heartbeat', ['on_break' => true]);
+
+        $leader = User::factory()->create(['organization_id' => null]);
+        $leader->assignRole('leader');
+        $leader->siteAccess()->attach([$orgA->id, $orgB->id]);
+
+        $data = $this->actingAs($leader, 'sanctum')
+            ->getJson('/api/v1/live/activity?'.http_build_query([
+                'all_sites' => 1,
+                'from' => now()->startOfDay()->toIso8601String(),
+                'to' => now()->endOfDay()->toIso8601String(),
+            ]))
+            ->assertOk()
+            ->json('data');
+
+        // Site C tidak boleh ditonton leader ini -> tidak ikut sama sekali.
+        $this->assertSame(['working'], array_values($data['initial_statuses']));
+        $this->assertSame([$staffA->id], array_unique(array_column($data['events'], 'user_id')));
+        $this->assertSame($orgA->id, $data['events'][0]['organization_id']);
+        $this->assertSame($orgA->id, $data['summary'][0]['organization_id']);
+    }
+
     public function test_activity_log_is_limited_to_watchable_sites(): void
     {
         $staffA = $this->staffIn(Organization::factory()->create());
