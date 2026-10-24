@@ -4,9 +4,11 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.Manifest
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -30,6 +32,7 @@ import io.livekit.android.events.RoomEvent
 import io.livekit.android.room.Room
 import io.livekit.android.room.participant.VideoTrackPublishDefaults
 import io.livekit.android.room.track.CameraPosition
+import io.livekit.android.room.track.LocalTrackPublication
 import io.livekit.android.room.track.LocalVideoTrack
 import io.livekit.android.room.track.LocalVideoTrackOptions
 import io.livekit.android.room.track.Track
@@ -52,17 +55,19 @@ import livekit.org.webrtc.VideoSink
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Live Kerja dari HP: menyiarkan kamera depan ke rekan se-site lewat
+ * Live Kerja dari HP: menyiarkan kamera depan + mikrofon ke rekan se-site lewat
  * LiveKit, TETAP JALAN saat staf pindah aplikasi atau layar mati -- hal yang
  * tidak bisa dilakukan dashboard web/PWA (browser HP menghentikan kamera
  * begitu halaman masuk latar belakang).
  *
- * Kuncinya foreground service bertipe `camera` yang dimulai dari tombol
- * Mulai kerja (app sedang terlihat): selama service ini hidup, Android
- * mengizinkan app memakai kamera walau Activity-nya sudah di latar belakang.
+ * Kuncinya foreground service bertipe `camera` (+ `microphone` kalau izin
+ * mikrofon diberikan) yang dimulai dari tombol Mulai kerja (app sedang
+ * terlihat): selama service ini hidup, Android mengizinkan app memakai
+ * kamera & mikrofon walau Activity-nya sudah di latar belakang.
  *
- * Perilaku dicocokkan dengan web-dashboard/src/stores/live.js: kamera saja
- * tanpa audio, 720p + simulcast h180/h360, dynacast, tidak berlangganan
+ * Perilaku dicocokkan dengan web-dashboard/src/stores/live.js: kamera +
+ * mikrofon (bisa dibisukan staf, pilihan bisu diingat), 720p + simulcast
+ * h180/h360, dynacast, tidak berlangganan
  * video peserta lain, heartbeat tiap 30 detik, dan 404 dari heartbeat =
  * server sudah menutup sesi -> berhenti. Kontrak API tidak diubah.
  */
@@ -99,6 +104,12 @@ class LiveBroadcastService : Service() {
             stopBroadcast(userInitiated = true, error = null)
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_SET_MIC) {
+            // Hanya berlaku untuk siaran yang sedang jalan -- service tidak
+            // boleh dihidupkan oleh tombol mikrofon saja.
+            if (runJob?.isActive == true) setMicMuted(intent.getBooleanExtra(EXTRA_MUTED, false))
+            return START_NOT_STICKY
+        }
 
         // startForeground wajib dipanggil cepat setelah startForegroundService.
         // Android 14+ melempar SecurityException kalau izin kamera belum
@@ -108,7 +119,7 @@ class LiveBroadcastService : Service() {
                 this,
                 NOTIFICATION_ID,
                 buildNotification("Menyambungkan siaran..."),
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0,
+                foregroundServiceType(),
             )
         } catch (e: SecurityException) {
             LiveBroadcastState.setStatus(BroadcastStatus.Idle("Izin kamera belum diberikan ke aplikasi ini"))
@@ -216,8 +227,9 @@ class LiveBroadcastService : Service() {
                     simulcastLayers = listOf(VideoPreset169.H180, VideoPreset169.H360),
                 ),
             ),
-            // NoAudioHandler: siaran tanpa audio, jadi jangan ambil fokus
-            // audio / ubah mode audio HP (musik & telepon staf tidak terganggu).
+            // NoAudioHandler: aplikasi ini hanya MENGIRIM suara, tidak memutar
+            // apa pun -- jangan ambil fokus audio / ubah mode audio HP (musik
+            // & telepon staf tidak terganggu). Perekaman mikrofon tetap jalan.
             LiveKitOverrides(audioOptions = AudioOptions(audioHandler = NoAudioHandler())),
         )
         room = newRoom
@@ -230,7 +242,7 @@ class LiveBroadcastService : Service() {
                 when (event) {
                     is RoomEvent.Disconnected -> disconnectReason.complete(event.reason)
                     is RoomEvent.Reconnecting -> updateNotification("Koneksi tersendat, menyambung ulang...")
-                    is RoomEvent.Reconnected -> updateNotification("Kamera depan disiarkan ke rekan se-site")
+                    is RoomEvent.Reconnected -> updateNotification(liveNotificationText())
                     else -> Unit
                 }
             }
@@ -245,8 +257,9 @@ class LiveBroadcastService : Service() {
             }
             attachFrameCounter(newRoom)
             LiveBroadcastState.setRoom(newRoom)
+            publishMicrophone(newRoom)
             LiveBroadcastState.setStatus(BroadcastStatus.Live)
-            updateNotification("Kamera depan disiarkan ke rekan se-site")
+            updateNotification(liveNotificationText())
             onLive()
 
             heartbeat = scope.launch { heartbeatLoop() }
@@ -291,7 +304,7 @@ class LiveBroadcastService : Service() {
                     room.localParticipant.setCameraEnabled(false)
                     room.localParticipant.setCameraEnabled(true)
                     attachFrameCounter(room)
-                    updateNotification("Kamera depan disiarkan ke rekan se-site")
+                    updateNotification(liveNotificationText())
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -300,6 +313,70 @@ class LiveBroadcastService : Service() {
             }
             lastCount = frameCount.get()
         }
+    }
+
+    private fun hasMicPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    // Tipe microphone hanya kalau izinnya ada -- Android 14+ melempar
+    // SecurityException untuk tipe FGS yang izinnya belum diberikan.
+    private fun foregroundServiceType(): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return 0
+        var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+        if (hasMicPermission()) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        return type
+    }
+
+    private fun micMutedPref(): Boolean =
+        getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_MIC_MUTED, false)
+
+    /**
+     * Terbitkan mikrofon sesuai pilihan bisu staf. Track dimatikan SEBELUM
+     * diterbitkan kalau staf memilih bisu, jadi suaranya tidak pernah
+     * tersiar sesaat pun. Gagal = siaran kamera tetap jalan tanpa suara.
+     */
+    private suspend fun publishMicrophone(room: Room) {
+        if (!hasMicPermission()) {
+            LiveBroadcastState.setMicState(MicState.None)
+            return
+        }
+        val muted = micMutedPref()
+        try {
+            val track = room.localParticipant.createAudioTrack()
+            track.enabled = !muted
+            room.localParticipant.publishAudioTrack(track)
+            if (muted) localMicPublication(room)?.muted = true
+            LiveBroadcastState.setMicState(if (muted) MicState.Muted else MicState.On)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            LiveBroadcastState.setMicState(MicState.None)
+        }
+    }
+
+    private fun localMicPublication(room: Room): LocalTrackPublication? =
+        room.localParticipant.getTrackPublication(Track.Source.MICROPHONE) as? LocalTrackPublication
+
+    /** Bisukan / nyalakan mikrofon tanpa memutus siaran; pilihan diingat untuk siaran berikutnya. */
+    private fun setMicMuted(muted: Boolean) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_MIC_MUTED, muted).apply()
+        val current = room ?: return
+        scope.launch {
+            val publication = localMicPublication(current)
+            if (publication == null) {
+                if (!muted) publishMicrophone(current)
+            } else {
+                publication.muted = muted
+                LiveBroadcastState.setMicState(if (muted) MicState.Muted else MicState.On)
+            }
+            updateNotification(liveNotificationText())
+        }
+    }
+
+    private fun liveNotificationText(): String = when (LiveBroadcastState.micState.value) {
+        MicState.On -> "Kamera depan & suara disiarkan ke rekan se-site"
+        MicState.Muted -> "Kamera depan disiarkan · mikrofon dibisukan"
+        MicState.None -> "Kamera depan disiarkan ke rekan se-site (tanpa suara)"
     }
 
     private fun attachFrameCounter(room: Room) {
@@ -431,7 +508,7 @@ class LiveBroadcastService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Sedang menyiarkan")
             .setContentText(status)
             .setSmallIcon(android.R.drawable.presence_video_online)
@@ -440,8 +517,22 @@ class LiveBroadcastService : Service() {
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(openApp)
-            .addAction(0, "Selesai kerja", stop)
-            .build()
+
+        // Tombol mikrofon langsung di notifikasi -- staf bisa membisukan diri
+        // tanpa membuka aplikasi (mis. saat menerima telepon pribadi).
+        val mic = LiveBroadcastState.micState.value
+        if (room != null && mic != MicState.None) {
+            val muteNext = mic == MicState.On
+            val toggleMic = PendingIntent.getService(
+                this,
+                2,
+                Intent(this, LiveBroadcastService::class.java).setAction(ACTION_SET_MIC).putExtra(EXTRA_MUTED, muteNext),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            builder.addAction(0, if (muteNext) "Bisukan" else "Nyalakan mikrofon", toggleMic)
+        }
+
+        return builder.addAction(0, "Selesai kerja", stop).build()
     }
 
     private fun updateNotification(status: String) {
@@ -454,6 +545,10 @@ class LiveBroadcastService : Service() {
         private const val NOTIFICATION_ID = 3001
         private const val ACTION_START = "com.lacaksmb.live.action.START"
         private const val ACTION_STOP = "com.lacaksmb.live.action.STOP"
+        private const val ACTION_SET_MIC = "com.lacaksmb.live.action.SET_MIC"
+        private const val EXTRA_MUTED = "muted"
+        private const val PREFS = "live_broadcast"
+        private const val PREF_MIC_MUTED = "mic_muted"
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
         private const val CAMERA_WATCHDOG_MS = 10_000L
 
@@ -462,6 +557,13 @@ class LiveBroadcastService : Service() {
             ContextCompat.startForegroundService(
                 context,
                 Intent(context, LiveBroadcastService::class.java).setAction(ACTION_START),
+            )
+        }
+
+        /** Bisukan / nyalakan mikrofon siaran yang sedang jalan. */
+        fun setMicMuted(context: Context, muted: Boolean) {
+            context.startService(
+                Intent(context, LiveBroadcastService::class.java).setAction(ACTION_SET_MIC).putExtra(EXTRA_MUTED, muted),
             )
         }
 

@@ -5,6 +5,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/** Mikrofon siaran: tersiar, dibisukan staf, atau tidak ada (izin ditolak / gagal dibuka). */
+enum class MicState { On, Muted, None }
+
 sealed interface BroadcastStatus {
     /** Tidak menyiarkan. [lastError] = alasan siaran terakhir berhenti sendiri (bukan karena tombol). */
     data class Idle(val lastError: String? = null) : BroadcastStatus
@@ -27,6 +30,9 @@ object LiveBroadcastState {
     /** Room yang sedang tersambung, hanya untuk pratinjau kamera sendiri di layar. */
     val room: StateFlow<Room?> = _room.asStateFlow()
 
+    private val _micState = MutableStateFlow(MicState.None)
+    val micState: StateFlow<MicState> = _micState.asStateFlow()
+
     private val _liveSince = MutableStateFlow<Long?>(null)
     val liveSince: StateFlow<Long?> = _liveSince.asStateFlow()
 
@@ -38,6 +44,11 @@ object LiveBroadcastState {
 
     internal fun setRoom(room: Room?) {
         _room.value = room
+        if (room == null) _micState.value = MicState.None
+    }
+
+    internal fun setMicState(state: MicState) {
+        _micState.value = state
     }
 
     fun clearError() {

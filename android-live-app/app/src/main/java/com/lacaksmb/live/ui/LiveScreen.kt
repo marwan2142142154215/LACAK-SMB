@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.Icon
@@ -52,6 +54,7 @@ import com.lacaksmb.live.data.SessionStore
 import com.lacaksmb.live.service.BroadcastStatus
 import com.lacaksmb.live.service.LiveBroadcastService
 import com.lacaksmb.live.service.LiveBroadcastState
+import com.lacaksmb.live.service.MicState
 import com.lacaksmb.live.ui.components.AppButton
 import com.lacaksmb.live.ui.components.AppButtonVariant
 import com.lacaksmb.live.ui.components.AppTopBar
@@ -79,6 +82,7 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
     val status by LiveBroadcastState.status.collectAsStateWithLifecycle()
     val room by LiveBroadcastState.room.collectAsStateWithLifecycle()
     val liveSince by LiveBroadcastState.liveSince.collectAsStateWithLifecycle()
+    val micState by LiveBroadcastState.micState.collectAsStateWithLifecycle()
     var permissionError by remember { mutableStateOf<String?>(null) }
 
     val canBroadcast = user?.can("live.broadcast") == true
@@ -89,8 +93,8 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
         if (granted[Manifest.permission.CAMERA] == true ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         ) {
-            // Izin notifikasi ditolak tidak menghalangi siaran -- notifikasinya
-            // saja yang tidak tampil (service tetap foreground).
+            // Izin notifikasi / mikrofon ditolak tidak menghalangi siaran --
+            // notifikasinya tidak tampil / siaran tanpa suara.
             LiveBroadcastService.start(context.applicationContext)
         } else {
             permissionError = "Izin kamera dibutuhkan untuk menyiarkan. Buka Pengaturan > Aplikasi > Lacak SMB Live > Izin."
@@ -102,6 +106,7 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
         LiveBroadcastState.clearError()
         val needed = buildList {
             add(Manifest.permission.CAMERA)
+            add(Manifest.permission.RECORD_AUDIO)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
         }.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
 
@@ -182,6 +187,10 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
                     )
                 }
 
+                if (status is BroadcastStatus.Live) {
+                    MicControl(micState, onToggle = { muted -> LiveBroadcastService.setMicMuted(context.applicationContext, muted) })
+                }
+
                 if (active) {
                     AppButton(
                         text = if (status is BroadcastStatus.Stopping) "Menghentikan..." else "Selesai kerja",
@@ -239,6 +248,40 @@ private fun LocalCameraPreview(room: Room) {
     }
     DisposableEffect(room) {
         onDispose { renderer.value?.release() }
+    }
+}
+
+/** Status mikrofon + tombol bisukan. Tanpa izin mikrofon: arahkan ke pengaturan. */
+@Composable
+private fun MicControl(state: MicState, onToggle: (muted: Boolean) -> Unit) {
+    val context = LocalContext.current
+    Text(
+        when (state) {
+            MicState.On -> "Mikrofon menyala — suara Anda terdengar oleh rekan yang mendengarkan."
+            MicState.Muted -> "Mikrofon dibisukan — suara Anda tidak disiarkan."
+            MicState.None -> "Siaran tanpa suara: izin mikrofon belum diberikan atau mikrofon tidak bisa dibuka."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = if (state == MicState.On) Base50 else Base400,
+        modifier = Modifier.padding(top = 12.dp),
+    )
+    when (state) {
+        MicState.None -> AppButton(
+            text = "Buka pengaturan izin",
+            variant = AppButtonVariant.Outline,
+            onClick = {
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                runCatching { context.startActivity(intent) }
+            },
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        )
+        else -> AppButton(
+            text = if (state == MicState.On) "Bisukan mikrofon" else "Nyalakan mikrofon",
+            icon = if (state == MicState.On) Icons.Filled.MicOff else Icons.Filled.Mic,
+            variant = if (state == MicState.On) AppButtonVariant.Outline else AppButtonVariant.Primary,
+            onClick = { onToggle(state == MicState.On) },
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        )
     }
 }
 
@@ -312,8 +355,8 @@ private fun statusVariant(status: BroadcastStatus): BadgeVariant = when (status)
 }
 
 private fun statusDescription(status: BroadcastStatus): String = when (status) {
-    is BroadcastStatus.Idle -> "Tekan Mulai kerja untuk menyiarkan kamera depan ke rekan se-site. Siaran tetap jalan saat Anda pindah aplikasi atau layar mati."
+    is BroadcastStatus.Idle -> "Tekan Mulai kerja untuk menyiarkan kamera depan dan suara ke rekan se-site (mikrofon bisa dibisukan). Siaran tetap jalan saat Anda pindah aplikasi atau layar mati."
     is BroadcastStatus.Connecting -> status.message
-    BroadcastStatus.Live -> "Kamera depan sedang disiarkan, tanpa suara. Anda boleh pindah aplikasi atau mematikan layar — siaran tetap jalan sampai Anda menekan Selesai kerja (di sini atau di notifikasi)."
+    BroadcastStatus.Live -> "Kamera depan sedang disiarkan. Anda boleh pindah aplikasi atau mematikan layar — siaran tetap jalan sampai Anda menekan Selesai kerja (di sini atau di notifikasi)."
     BroadcastStatus.Stopping -> "Menghentikan siaran..."
 }

@@ -17,16 +17,17 @@ latar belakang.
   `POST /live/sessions/start` (→ `livekit_url`, `token`, `room`),
   `POST /live/sessions/heartbeat` tiap 30 detik (404 = sesi ditutup server →
   berhenti), `POST /live/sessions/end`.
-- Perilaku LiveKit sama dengan `web-dashboard/src/stores/live.js`: kamera saja
-  tanpa audio, 720p + simulcast h180/h360, dynacast, tidak berlangganan video
+- Perilaku LiveKit sama dengan `web-dashboard/src/stores/live.js`: kamera +
+  mikrofon (tombol Bisukan di layar & notifikasi, pilihan bisu diingat), 720p + simulcast h180/h360, dynacast, tidak berlangganan video
   peserta lain. Identitas `user-{id}` di room `site-{organization_id}`, jadi
   siaran langsung muncul di halaman Live Kerja dashboard.
 - Tetap hidup di latar belakang: wake lock parsial + Wi-Fi lock selama siaran,
   sambung ulang otomatis kalau jaringan putus (memanggil `/start` lagi untuk
   token baru), dan watchdog kamera yang menyalakan ulang kamera kalau tidak
   ada frame baru dalam 10 detik (mis. kamera sempat direbut aplikasi lain).
-- Izin mikrofon dari livekit-android dibuang di manifest — aplikasi ini
-  memang tidak bisa merekam suara.
+- Izin mikrofon opsional: ditolak = siaran kamera tetap jalan tanpa suara.
+  Foreground service bertipe `camera|microphone` (tipe microphone hanya
+  dipakai kalau izinnya ada).
 
 Catatan: login dengan akun yang sama di dashboard web lalu menekan Mulai kerja
 di sana akan mengambil alih siaran (identitas LiveKit sama); APK akan berhenti
