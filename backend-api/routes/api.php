@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\ApkBuildController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ChatMessageController;
 use App\Http\Controllers\Api\ConsentDocumentController;
 use App\Http\Controllers\Api\DashboardSummaryController;
 use App\Http\Controllers\Api\DeviceCommandController;
@@ -110,6 +111,11 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('/live/sessions/end', [WorkSessionController::class, 'end']);
         Route::get('/live/app', [WorkSessionController::class, 'app']);
         Route::get('/live/activity', [WorkSessionController::class, 'activity']);
+
+        // Chat staf per site -- dipanggil realtime-gateway dengan token user
+        // yang sedang chat (lihat ChatMessageController).
+        Route::get('/chat/messages', [ChatMessageController::class, 'index']);
+        Route::post('/chat/messages', [ChatMessageController::class, 'store'])->middleware('throttle:30,1');
         Route::post('/live/watch-token', [WorkSessionController::class, 'watchToken'])->middleware('throttle:30,1');
         Route::apiResource('telegram-user-links', TelegramUserLinkController::class)->only(['index', 'store', 'destroy']);
         Route::get('/telegram-user-links-lookup', [TelegramUserLinkController::class, 'lookup']);

@@ -16,6 +16,7 @@ import {
     registerMasterBeacon,
     unregisterMasterBeaconsForSocket,
 } from '#services/master_anchor_registry'
+import { chatRoom, fetchChatHistory, postChatMessage } from '#services/chat_relay'
 
 type DeviceHelloPayload = {
     deviceUuid: string
@@ -484,11 +485,117 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
             unregisterMasterBeaconsForSocket(socket.id)
         })
 
+        registerChatHandlers(opsNs, socket, user, token)
+
         socket.on('disconnect', () => {
             clearInterval(revalidate)
             unregisterMasterBeaconsForSocket(socket.id)
         })
 
         logger.info('ops client terhubung', { userId: user.id, username: user.username })
+    })
+}
+
+type OpsNamespace = ReturnType<SocketIoServer['of']>
+type OpsSocket = Parameters<Parameters<OpsNamespace['on']>[1]>[0]
+type ChatAck = (response: Record<string, unknown>) => void
+
+/**
+ * Floating chat staf per site (lihat app/services/chat_relay.ts). Izin masuk
+ * ruang & penyimpanan pesan selalu lewat backend-api dengan token user ini;
+ * gateway hanya menyiarkan ke socket lain di ruang yang sama.
+ */
+function registerChatHandlers(
+    opsNs: OpsNamespace,
+    socket: OpsSocket,
+    user: NonNullable<Awaited<ReturnType<typeof verifyBearerToken>>>,
+    token: string
+) {
+    const joinedRooms = new Set<number>()
+    const ack = (callback: unknown): ChatAck =>
+        typeof callback === 'function' ? (callback as ChatAck) : () => {}
+
+    // Siapa saja yang sedang membuka chat site ini (unik per user, bukan per tab).
+    async function broadcastPresence(organizationId: number) {
+        const sockets = await opsNs.in(chatRoom(organizationId)).fetchSockets()
+        const users = new Map<number, { id: number; name: string }>()
+        for (const peer of sockets) {
+            const peerUser = peer.data.user
+            if (peerUser) users.set(peerUser.id, { id: peerUser.id, name: peerUser.name })
+        }
+        opsNs.to(chatRoom(organizationId)).emit('chat:presence', {
+            organizationId,
+            users: [...users.values()],
+        })
+    }
+
+    socket.on('chat:join', async (payload: { organizationId?: number }, callback?: unknown) => {
+        const organizationId = Number(payload?.organizationId)
+        if (!Number.isInteger(organizationId) || organizationId <= 0) {
+            return ack(callback)({ ok: false, message: 'Site tidak valid' })
+        }
+
+        const history = await fetchChatHistory(token, organizationId)
+        if (!history.ok) return ack(callback)({ ok: false, message: history.message })
+
+        socket.join(chatRoom(organizationId))
+        joinedRooms.add(organizationId)
+        ack(callback)({ ok: true, ...history.data })
+        await broadcastPresence(organizationId)
+    })
+
+    socket.on('chat:leave', async (payload: { organizationId?: number }) => {
+        const organizationId = Number(payload?.organizationId)
+        if (!joinedRooms.delete(organizationId)) return
+        socket.leave(chatRoom(organizationId))
+        await broadcastPresence(organizationId)
+    })
+
+    socket.on(
+        'chat:history',
+        async (payload: { organizationId?: number; beforeId?: number }, callback?: unknown) => {
+            const organizationId = Number(payload?.organizationId)
+            if (!joinedRooms.has(organizationId)) {
+                return ack(callback)({ ok: false, message: 'Buka ruang chat site ini dulu' })
+            }
+            const history = await fetchChatHistory(token, organizationId, Number(payload?.beforeId))
+            ack(callback)(
+                history.ok ? { ok: true, ...history.data } : { ok: false, message: history.message }
+            )
+        }
+    )
+
+    socket.on(
+        'chat:send',
+        async (payload: { organizationId?: number; body?: unknown }, callback?: unknown) => {
+            const organizationId = Number(payload?.organizationId)
+            if (!joinedRooms.has(organizationId)) {
+                return ack(callback)({ ok: false, message: 'Buka ruang chat site ini dulu' })
+            }
+            if (typeof payload?.body !== 'string' || payload.body.trim() === '') {
+                return ack(callback)({ ok: false, message: 'Pesan tidak boleh kosong' })
+            }
+
+            const result = await postChatMessage(token, organizationId, payload.body)
+            if (!result.ok) return ack(callback)({ ok: false, message: result.message })
+
+            // Pengirim menerima pesan lewat ack; socket lain (termasuk tab lain
+            // milik user yang sama) lewat siaran ruang.
+            socket.to(chatRoom(organizationId)).emit('chat:message', result.data)
+            ack(callback)({ ok: true, message: result.data })
+        }
+    )
+
+    socket.on('chat:typing', (payload: { organizationId?: number }) => {
+        const organizationId = Number(payload?.organizationId)
+        if (!joinedRooms.has(organizationId)) return
+        socket.to(chatRoom(organizationId)).emit('chat:typing', {
+            organizationId,
+            user: { id: user.id, name: user.name },
+        })
+    })
+
+    socket.on('disconnect', () => {
+        for (const organizationId of joinedRooms) broadcastPresence(organizationId).catch(() => {})
     })
 }

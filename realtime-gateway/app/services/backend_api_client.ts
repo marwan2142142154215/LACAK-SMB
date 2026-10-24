@@ -6,6 +6,7 @@ import { describeHttpError } from '#services/http_error'
 export type AuthenticatedUser = {
     id: number
     username: string
+    name: string
     organizationId: number | null
     roles: string[]
     permissions: string[]
@@ -16,6 +17,7 @@ type AuthMeResponse = {
     data?: {
         id: number
         username: string
+        name: string
         organization_id: number | null
         roles: string[]
         permissions: string[]
@@ -75,6 +77,7 @@ export async function verifyBearerToken(token: string): Promise<AuthenticatedUse
         return {
             id: body.data.id,
             username: body.data.username,
+            name: body.data.name,
             organizationId: body.data.organization_id,
             roles: body.data.roles,
             permissions: body.data.permissions,
