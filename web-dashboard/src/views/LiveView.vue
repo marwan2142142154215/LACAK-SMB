@@ -1,9 +1,25 @@
 <script setup>
-import { ChevronLeft, ChevronRight, Download, Maximize2, Play, RefreshCw, Smartphone, Square, Video, X } from '@lucide/vue'
+import {
+    ArrowLeftRight,
+    ChevronLeft,
+    ChevronRight,
+    Coffee,
+    Download,
+    Maximize,
+    Minimize,
+    MonitorUp,
+    MonitorX,
+    Play,
+    RefreshCw,
+    Smartphone,
+    Square,
+    Video,
+    X,
+} from '@lucide/vue'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import LiveVideoTile from '@/components/live/LiveVideoTile.vue'
+import LivePairTile from '@/components/live/LivePairTile.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -11,13 +27,9 @@ import Readout from '@/components/ui/Readout.vue'
 import { formatElapsed, useNow } from '@/composables/useNow'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
+import { WORK_STATUS, workStatus } from '@/lib/workStatus'
 import { useAuthStore } from '@/stores/auth'
-import { CAMERA_SOURCE, useLiveStore } from '@/stores/live'
-
-// Grid dibatasi per halaman: hanya peserta di halaman yang tampil yang
-// di-subscribe (lihat live.setVisibleParticipants), jadi menonton site
-// dengan 100+ staf tidak berarti mengunduh 100+ video sekaligus.
-const PAGE_SIZE = 12
+import { CAMERA_SOURCE, SCREEN_SOURCE, canShareScreen, useLiveStore } from '@/stores/live'
 
 const auth = useAuthStore()
 const live = useLiveStore()
@@ -38,56 +50,117 @@ const confirmEndOpen = ref(false)
 
 const canBroadcast = computed(() => auth.hasPermission('live.broadcast') && !!auth.user?.organization_id)
 
-const pageCount = computed(() => Math.max(1, Math.ceil(live.remoteParticipants.length / PAGE_SIZE)))
-const visibleParticipants = computed(() => live.remoteParticipants.slice(page.value * PAGE_SIZE, (page.value + 1) * PAGE_SIZE))
-
-function cameraTrackOf(participant) {
-    return participant.getTrackPublication(CAMERA_SOURCE)?.track ?? null
+// ---- Tata letak dinding: 1 / 2 / 4 staf per halaman, tukar layar <-> kamera.
+// Disimpan per browser (kebiasaan tiap penonton beda), tidak wajib ada.
+function readPref(key, fallback) {
+    try {
+        return JSON.parse(localStorage.getItem(key)) ?? fallback
+    } catch {
+        return fallback
+    }
 }
 
-// Kapan tiap rekan mulai kerja (dari sesi kerja di server). Kalau belum
-// termuat, pakai waktu bergabung ke room LiveKit sebagai perkiraan.
-const sessionStartByIdentity = ref({})
-
-function liveSince(participant) {
-    return sessionStartByIdentity.value[participant.identity] ?? participant.joinedAt ?? null
+function writePref(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value))
+    } catch {
+        // mode privat / penyimpanan diblokir -- cukup tidak diingat
+    }
 }
 
-async function loadSiteSessions(siteId) {
+const LAYOUTS = [1, 2, 4]
+const layout = ref(LAYOUTS.includes(readPref('lacak_live_layout', 4)) ? readPref('lacak_live_layout', 4) : 4)
+const swapped = ref(readPref('lacak_live_swapped', false) === true)
+watch(layout, (value) => {
+    writePref('lacak_live_layout', value)
+    page.value = 0
+})
+watch(swapped, (value) => writePref('lacak_live_swapped', value))
+
+// Hanya peserta di halaman yang tampil yang di-subscribe (lihat
+// live.setVisibleParticipants), jadi menonton site dengan 100+ staf tidak
+// berarti mengunduh 100+ video sekaligus.
+const pageCount = computed(() => Math.max(1, Math.ceil(live.remoteParticipants.length / layout.value)))
+const visibleParticipants = computed(() => live.remoteParticipants.slice(page.value * layout.value, (page.value + 1) * layout.value))
+const wallGridClass = computed(() => (layout.value === 4 ? '2xl:grid-cols-2' : 'grid-cols-1'))
+
+watch(visibleParticipants, (participants) => live.setVisibleParticipants(participants.map((p) => p.identity)), { immediate: true })
+watch(pageCount, (count) => {
+    if (page.value >= count) page.value = count - 1
+})
+
+function trackOf(participant, source) {
+    return participant.getTrackPublication(source)?.track ?? null
+}
+
+// ---- Layar penuh untuk dinding pantau (mis. ditayangkan di monitor ruang kontrol).
+const wallEl = ref(null)
+const isFullscreen = ref(false)
+
+function syncFullscreen() {
+    isFullscreen.value = document.fullscreenElement === wallEl.value && !!wallEl.value
+}
+
+async function toggleFullscreen() {
+    try {
+        if (document.fullscreenElement) await document.exitFullscreen()
+        else await wallEl.value?.requestFullscreen()
+    } catch {
+        toast.error('Layar penuh tidak tersedia', 'Browser ini tidak mengizinkan mode layar penuh.')
+    }
+}
+
+// ---- Status staf se-site (dari server), diperbarui berkala.
+const roster = ref([])
+const sessionByIdentity = ref({})
+let statusTimer = null
+
+async function loadSiteStatus(siteId) {
     try {
         const response = await api.get('/live/sessions', { params: { organization_id: siteId } })
-        sessionStartByIdentity.value = Object.fromEntries(
-            response.data.data.items.map((session) => [session.participant_identity, session.started_at]),
-        )
+        if (siteId !== selectedSiteId.value) return
+        roster.value = response.data.data.roster ?? []
+        sessionByIdentity.value = Object.fromEntries(response.data.data.items.map((session) => [session.participant_identity, session]))
     } catch {
-        // Hanya untuk durasi -- tanpa data ini ubin tetap tampil.
+        // Hanya untuk status & durasi -- tanpa data ini video tetap tampil.
     }
 }
 
 watch(
     () => live.remoteParticipants.map((p) => p.identity),
     (identities) => {
-        if (selectedSiteId.value && identities.some((id) => !(id in sessionStartByIdentity.value))) {
-            loadSiteSessions(selectedSiteId.value)
+        if (selectedSiteId.value && identities.some((id) => !(id in sessionByIdentity.value))) {
+            loadSiteStatus(selectedSiteId.value)
         }
     },
+)
+
+function statusOf(participant) {
+    return sessionByIdentity.value[participant.identity]?.status ?? null
+}
+
+// Kapan tiap rekan mulai kerja. Kalau belum termuat, pakai waktu bergabung
+// ke room LiveKit sebagai perkiraan.
+function liveSince(participant) {
+    return sessionByIdentity.value[participant.identity]?.started_at ?? participant.joinedAt ?? null
+}
+
+const statusCounts = computed(() =>
+    Object.keys(WORK_STATUS)
+        .map((key) => ({ key, ...WORK_STATUS[key], count: roster.value.filter((staff) => staff.status === key).length }))
+        .filter((entry) => entry.count),
 )
 
 const focusedSince = computed(() => (focused.value ? liveSince(focused.value) : null))
 const currentSiteName = computed(() => sites.value.find((site) => site.id === live.organizationId)?.name ?? null)
 const broadcastElapsed = computed(() => formatElapsed(live.broadcastStartedAt, now.value))
+const myStatusMeta = computed(() => (live.myStatus ? workStatus(live.myStatus) : null))
 // Dibaca ulang tiap detik (ikut `now`) -- kamera HP bisa menurunkan resolusi
 // sendiri saat panas atau cahaya kurang.
 const cameraSettings = computed(() => {
     now.value
     live.localCameraTrack
     return live.isBroadcasting ? live.localCameraSettings() : null
-})
-
-watch(visibleParticipants, (participants) => live.setVisibleParticipants(participants.map((p) => p.identity)), { immediate: true })
-
-watch(pageCount, (count) => {
-    if (page.value >= count) page.value = count - 1
 })
 
 async function loadSites() {
@@ -128,7 +201,9 @@ async function selectSite(siteId) {
     if (live.isBroadcasting) return // siaran terkunci ke site sendiri
     selectedSiteId.value = siteId
     page.value = 0
-    sessionStartByIdentity.value = {}
+    roster.value = []
+    sessionByIdentity.value = {}
+    loadSiteStatus(siteId)
     try {
         await live.watchSite(siteId)
     } catch (err) {
@@ -149,12 +224,50 @@ async function restartCamera() {
     }
 }
 
+const togglingScreen = ref(false)
+
+async function toggleScreenShare() {
+    togglingScreen.value = true
+    try {
+        await live.setScreenShare(!live.localScreenTrack)
+    } catch (err) {
+        // NotAllowedError = staf menekan Batal di dialog pilih layar -- bukan error.
+        if (err.name !== 'NotAllowedError') toast.error('Gagal membagikan layar', err.message)
+    } finally {
+        togglingScreen.value = false
+        // Laporan status dikirim ~0,4 detik setelah track berubah.
+        setTimeout(() => loadSiteStatus(selectedSiteId.value), 1000)
+    }
+}
+
+const togglingBreak = ref(false)
+
+async function toggleBreak() {
+    togglingBreak.value = true
+    try {
+        await live.setBreak(!live.onBreak)
+        toast.success(
+            live.onBreak ? 'Istirahat dimulai' : 'Kembali bekerja',
+            live.onBreak ? 'Jam istirahat tidak dihitung sebagai jam kerja.' : null,
+        )
+    } finally {
+        togglingBreak.value = false
+        loadSiteStatus(selectedSiteId.value)
+    }
+}
+
 async function startWork() {
     try {
         await live.startWork()
         selectedSiteId.value = live.organizationId
         mySession.value = null
-        toast.success('Mulai kerja', 'Kamera Anda sedang disiarkan ke rekan se-site')
+        loadSiteStatus(live.organizationId)
+        toast.success(
+            'Mulai kerja',
+            canShareScreen
+                ? 'Kamera Anda tersiar. Tekan Bagikan layar supaya layar kerja ikut terlihat.'
+                : 'Kamera Anda sedang disiarkan ke rekan se-site',
+        )
     } catch (err) {
         const cameraMessages = {
             NotAllowedError: 'Izin kamera ditolak. Izinkan kamera untuk situs ini di pengaturan browser, lalu coba lagi.',
@@ -173,7 +286,7 @@ async function startWork() {
 async function endWork() {
     try {
         await live.endWork()
-        toast.success('Selesai kerja', 'Siaran kamera dihentikan')
+        toast.success('Selesai kerja', 'Siaran kamera & layar dihentikan')
         if (selectedSiteId.value) await selectSite(selectedSiteId.value)
     } catch (err) {
         toast.error('Gagal menghentikan siaran', err.response?.data?.message)
@@ -183,6 +296,9 @@ async function endWork() {
 }
 
 onMounted(async () => {
+    document.addEventListener('fullscreenchange', syncFullscreen)
+    statusTimer = setInterval(() => selectedSiteId.value && loadSiteStatus(selectedSiteId.value), 15_000)
+
     try {
         await loadSites()
         if (canBroadcast.value) await loadMySession()
@@ -196,12 +312,17 @@ onMounted(async () => {
     // sambung ulang kalau memang sudah terhubung.
     if (live.mode !== 'idle') {
         selectedSiteId.value = live.organizationId
-        loadSiteSessions(live.organizationId)
+        loadSiteStatus(live.organizationId)
         return
     }
 
     const defaultSite = sites.value.find((s) => s.id === auth.user?.organization_id) ?? sites.value[0]
     if (defaultSite) await selectSite(defaultSite.id)
+})
+
+onBeforeUnmount(() => {
+    document.removeEventListener('fullscreenchange', syncFullscreen)
+    clearInterval(statusTimer)
 })
 </script>
 
@@ -210,7 +331,7 @@ onMounted(async () => {
         <PageHeader
             eyebrow="Pantau"
             title="Live Kerja"
-            subtitle="Kamera staf yang sedang bekerja, hanya terlihat oleh rekan di site yang sama. Tanpa suara, tidak direkam."
+            subtitle="Layar kerja & kamera staf, hanya terlihat oleh rekan di site yang sama. Tanpa suara, tidak direkam."
         >
             <template #actions>
                 <template v-if="canBroadcast">
@@ -226,12 +347,13 @@ onMounted(async () => {
                     :value="live.mode === 'idle' ? '—' : live.remoteParticipants.length"
                     :led="live.remoteParticipants.length ? 'danger' : 'muted'"
                 />
+                <Readout v-if="roster.length" label="Staf site" :value="roster.length" />
                 <Readout
                     v-if="sites.length > 1"
                     label="Total live"
                     :value="sites.reduce((total, site) => total + (site.live_count ?? 0), 0)"
                 />
-                <Readout v-if="live.isBroadcasting" label="Siaran Anda" value="Aktif" led="danger" />
+                <Readout v-if="live.isBroadcasting" label="Siaran Anda" :value="myStatusMeta?.label ?? 'Aktif'" led="danger" />
             </template>
         </PageHeader>
 
@@ -248,7 +370,7 @@ onMounted(async () => {
             </div>
 
             <div
-                v-if="canBroadcast && liveApp"
+                v-if="canBroadcast && liveApp && !canShareScreen"
                 class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-base-800 bg-base-900 px-4 py-3 text-sm"
             >
                 <span class="flex items-start gap-3 text-pretty text-base-300">
@@ -298,23 +420,23 @@ onMounted(async () => {
                 </button>
             </div>
 
-            <!-- Monitor siaran sendiri: gambar besar + instrumen kamera -->
+            <!-- Monitor siaran sendiri: layar + kamera saya, dan kendali kerja -->
             <section
                 v-if="live.isBroadcasting"
                 aria-label="Siaran Anda"
-                class="grid gap-4 rounded-2xl border border-base-800 bg-base-900/60 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_18rem]"
+                class="grid gap-4 rounded-2xl border border-base-800 bg-base-900/60 p-3 sm:p-4 xl:grid-cols-[minmax(0,1fr)_18rem]"
             >
-                <LiveVideoTile
-                    :track="live.localCameraTrack"
-                    :label="auth.user?.name ?? 'Saya'"
-                    :since="live.broadcastStartedAt"
-                    fit="contain"
-                    mirrored
-                    live
-                    framed
+                <LivePairTile
+                    class="self-start"
+                    :name="auth.user?.name ?? 'Saya'"
+                    :screen-track="live.localScreenTrack"
+                    :camera-track="live.localCameraTrack"
+                    :status="live.myStatus"
+                    :swapped="swapped"
+                    mirror-camera
                 />
 
-                <aside class="flex flex-col gap-5 px-1 pb-1 lg:py-2 lg:pr-2">
+                <aside class="flex flex-col gap-5 px-1 pb-1 xl:py-2 xl:pr-2">
                     <div>
                         <p class="eyebrow flex items-center gap-2">
                             <span class="led text-danger-400" />
@@ -328,33 +450,41 @@ onMounted(async () => {
 
                     <dl class="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-base-800 bg-base-800 text-sm">
                         <div class="bg-base-900 px-3 py-2.5">
-                            <dt class="eyebrow">Gambar</dt>
+                            <dt class="eyebrow">Kamera</dt>
                             <dd class="mt-1 font-mono text-base-50 tabular-nums">
-                                {{ cameraSettings ? `${cameraSettings.width}×${cameraSettings.height}` : '—' }}
+                                {{ cameraSettings ? `${cameraSettings.height}p · ${cameraSettings.frameRate}fps` : '—' }}
                             </dd>
                         </div>
                         <div class="bg-base-900 px-3 py-2.5">
-                            <dt class="eyebrow">Frame</dt>
-                            <dd class="mt-1 font-mono text-base-50 tabular-nums">
-                                {{ cameraSettings?.frameRate ? `${cameraSettings.frameRate} fps` : '—' }}
-                            </dd>
-                        </div>
-                        <div class="col-span-2 bg-base-900 px-3 py-2.5">
-                            <dt class="eyebrow">Kamera</dt>
-                            <dd class="mt-1 flex items-center gap-2" :class="live.cameraProblem ? 'text-danger-400' : 'text-accent-300'">
-                                <span class="led" />
-                                {{ live.cameraProblem ? 'Tidak mengirim gambar' : 'Mengirim gambar' }}
+                            <dt class="eyebrow">Layar</dt>
+                            <dd class="mt-1 font-mono tabular-nums" :class="live.localScreenTrack ? 'text-base-50' : 'text-orange-300'">
+                                {{ live.localScreenTrack ? 'Dibagikan' : 'Tidak' }}
                             </dd>
                         </div>
                     </dl>
 
-                    <p class="text-xs text-pretty text-base-500">
-                        Biarkan halaman ini tetap terbuka selama bekerja. Rekan hanya melihat gambar, tanpa suara, dan tidak ada yang
-                        direkam.
-                    </p>
+                    <div class="grid gap-2">
+                        <BaseButton
+                            v-if="canShareScreen"
+                            :variant="live.localScreenTrack ? 'outline' : 'primary'"
+                            size="sm"
+                            :loading="togglingScreen"
+                            @click="toggleScreenShare"
+                        >
+                            <component :is="live.localScreenTrack ? MonitorX : MonitorUp" class="size-4" />
+                            {{ live.localScreenTrack ? 'Hentikan berbagi layar' : 'Bagikan layar' }}
+                        </BaseButton>
+                        <p v-else class="text-xs text-pretty text-base-500">
+                            Berbagi layar hanya bisa dari browser komputer (Chrome/Edge/Firefox). Dari HP, yang tersiar hanya kamera.
+                        </p>
+                        <BaseButton :variant="live.onBreak ? 'primary' : 'outline'" size="sm" :loading="togglingBreak" @click="toggleBreak">
+                            <component :is="live.onBreak ? Play : Coffee" class="size-4" />
+                            {{ live.onBreak ? 'Lanjut kerja' : 'Istirahat' }}
+                        </BaseButton>
+                    </div>
 
                     <div class="mt-auto flex flex-wrap gap-2">
-                        <BaseButton variant="outline" size="sm" :loading="restartingCamera" @click="restartCamera">
+                        <BaseButton variant="ghost" size="sm" :loading="restartingCamera" @click="restartCamera">
                             <RefreshCw class="size-4" />
                             Nyalakan ulang kamera
                         </BaseButton>
@@ -366,13 +496,130 @@ onMounted(async () => {
                 </aside>
             </section>
 
+            <!-- Papan status: semua staf site ini, termasuk yang belum mulai kerja -->
+            <section v-if="roster.length" aria-labelledby="live-status-title">
+                <div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <h2 id="live-status-title" class="eyebrow !text-base-200">Status staf</h2>
+                    <span
+                        v-for="entry in statusCounts"
+                        :key="entry.key"
+                        class="flex items-center gap-1.5 font-mono text-[11px] text-base-400 tabular-nums"
+                    >
+                        <span class="led" :class="entry.led" />{{ entry.label }} {{ entry.count }}
+                    </span>
+                </div>
+                <ul class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                    <li
+                        v-for="staff in roster"
+                        :key="staff.user_id"
+                        class="flex items-center gap-3 rounded-lg border border-base-800 bg-base-900 px-3 py-2"
+                    >
+                        <span
+                            class="led"
+                            :class="[workStatus(staff.status).led, staff.status === 'alert' && 'motion-safe:animate-pulse']"
+                        />
+                        <span class="min-w-0 flex-1 truncate text-sm text-base-100">{{ staff.name }}</span>
+                        <span class="shrink-0 font-mono text-[10.5px] tracking-[0.1em] text-base-400 uppercase">
+                            {{ workStatus(staff.status).label }}
+                        </span>
+                    </li>
+                </ul>
+            </section>
+
             <section aria-labelledby="live-wall-title">
-                <div class="mb-3 flex items-center justify-between gap-3">
+                <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <h2 id="live-wall-title" class="eyebrow !text-base-200">
                         Rekan yang sedang live
                         <span class="ml-1 text-base-500 tabular-nums">{{ live.remoteParticipants.length }}</span>
                     </h2>
-                    <div v-if="pageCount > 1" class="flex items-center gap-1 font-mono text-xs text-base-400 tabular-nums">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="flex rounded-lg border border-base-800 p-0.5" role="radiogroup" aria-label="Jumlah staf per tampilan">
+                            <button
+                                v-for="count in LAYOUTS"
+                                :key="count"
+                                type="button"
+                                role="radio"
+                                :aria-checked="layout === count"
+                                class="rounded-md px-2.5 py-1 font-mono text-xs transition-colors focus-visible:outline-2 focus-visible:outline-accent-400"
+                                :class="layout === count ? 'bg-base-800 text-base-50' : 'text-base-400 hover:text-base-100'"
+                                @click="layout = count"
+                            >
+                                {{ count }} layar
+                            </button>
+                        </div>
+                        <BaseButton variant="outline" size="sm" :aria-pressed="swapped" @click="swapped = !swapped">
+                            <ArrowLeftRight class="size-4" />
+                            {{ swapped ? 'Kamera ↔ Layar' : 'Layar ↔ Kamera' }}
+                        </BaseButton>
+                        <BaseButton variant="outline" size="sm" @click="toggleFullscreen">
+                            <Maximize class="size-4" />
+                            Layar penuh
+                        </BaseButton>
+                    </div>
+                </div>
+
+                <div ref="wallEl" :class="isFullscreen && 'overflow-auto bg-base-950 p-4'">
+                    <div v-if="isFullscreen" class="mb-3 flex items-center justify-between gap-3">
+                        <p class="eyebrow !text-base-200">
+                            Live Kerja<template v-if="currentSiteName"> · {{ currentSiteName }}</template>
+                        </p>
+                        <BaseButton variant="outline" size="sm" @click="toggleFullscreen">
+                            <Minimize class="size-4" />
+                            Keluar layar penuh
+                        </BaseButton>
+                    </div>
+
+                    <div
+                        v-if="live.mode === 'idle' || !live.remoteParticipants.length"
+                        class="flex items-center gap-4 rounded-xl border border-dashed border-base-800 px-5 py-5"
+                    >
+                        <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-base-850 text-base-400">
+                            <Video class="size-5" />
+                        </span>
+                        <div class="min-w-0">
+                            <p class="text-sm font-medium text-base-100">
+                                <template v-if="live.mode === 'idle'">
+                                    {{ live.connecting ? 'Menghubungkan ke siaran site…' : 'Belum terhubung ke siaran' }}
+                                </template>
+                                <template v-else>Belum ada rekan yang mulai kerja</template>
+                            </p>
+                            <p v-if="!live.connecting" class="mt-0.5 text-xs text-pretty text-base-500">
+                                {{
+                                    live.mode === 'idle'
+                                        ? 'Pilih site di atas untuk melihat siapa saja yang sedang bekerja.'
+                                        : 'Layar & kamera rekan di site ini muncul di sini begitu mereka menekan Mulai kerja.'
+                                }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Bingkai dibuat lebar: adaptiveStream memilih layer resolusi dari
+                         ukuran video, jadi bingkai besar = gambar lebih tajam. -->
+                    <div v-else class="grid gap-4" :class="wallGridClass">
+                        <button
+                            v-for="participant in visibleParticipants"
+                            :key="participant.identity"
+                            type="button"
+                            class="rounded-xl text-left transition-shadow hover:ring-2 hover:ring-accent-400/60 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none"
+                            :aria-label="`Perbesar ${participant.name || participant.identity}`"
+                            @click="focusedIdentity = participant.identity"
+                        >
+                            <LivePairTile
+                                :name="participant.name || participant.identity"
+                                :screen-track="trackOf(participant, SCREEN_SOURCE)"
+                                :camera-track="trackOf(participant, CAMERA_SOURCE)"
+                                :status="statusOf(participant)"
+                                :since="liveSince(participant)"
+                                :quality="participant.connectionQuality"
+                                :swapped="swapped"
+                            />
+                        </button>
+                    </div>
+
+                    <div
+                        v-if="pageCount > 1"
+                        class="mt-4 flex items-center justify-center gap-1 font-mono text-xs text-base-400 tabular-nums"
+                    >
                         <BaseButton variant="ghost" size="sm" :disabled="page === 0" aria-label="Halaman sebelumnya" @click="page--">
                             <ChevronLeft class="size-4" />
                         </BaseButton>
@@ -388,56 +635,6 @@ onMounted(async () => {
                         </BaseButton>
                     </div>
                 </div>
-
-                <div
-                    v-if="live.mode === 'idle' || !live.remoteParticipants.length"
-                    class="flex items-center gap-4 rounded-xl border border-dashed border-base-800 px-5 py-5"
-                >
-                    <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-base-850 text-base-400">
-                        <Video class="size-5" />
-                    </span>
-                    <div class="min-w-0">
-                        <p class="text-sm font-medium text-base-100">
-                            <template v-if="live.mode === 'idle'">
-                                {{ live.connecting ? 'Menghubungkan ke siaran site…' : 'Belum terhubung ke siaran' }}
-                            </template>
-                            <template v-else>Belum ada rekan yang mulai kerja</template>
-                        </p>
-                        <p v-if="!live.connecting" class="mt-0.5 text-xs text-pretty text-base-500">
-                            {{
-                                live.mode === 'idle'
-                                    ? 'Pilih site di atas untuk melihat siapa saja yang sedang bekerja.'
-                                    : 'Kamera rekan di site ini muncul di sini begitu mereka menekan Mulai kerja.'
-                            }}
-                        </p>
-                    </div>
-                </div>
-
-                <!-- Ubin dibuat lebar (maks 3 kolom): adaptiveStream memilih layer
-                     resolusi dari ukuran ubin, jadi ubin besar = gambar lebih tajam. -->
-                <div v-else class="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
-                    <button
-                        v-for="participant in visibleParticipants"
-                        :key="participant.identity"
-                        type="button"
-                        class="group relative rounded-xl text-left transition-shadow hover:ring-2 hover:ring-accent-400/60 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none"
-                        :aria-label="`Perbesar kamera ${participant.name || participant.identity}`"
-                        @click="focusedIdentity = participant.identity"
-                    >
-                        <LiveVideoTile
-                            :track="cameraTrackOf(participant)"
-                            :label="participant.name || participant.identity"
-                            :since="liveSince(participant)"
-                            live
-                        />
-                        <span
-                            class="pointer-events-none absolute top-2.5 left-2.5 flex items-center gap-1 rounded bg-black/65 px-1.5 py-1 text-[11px] text-base-100 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-                        >
-                            <Maximize2 class="size-3" />
-                            Perbesar
-                        </span>
-                    </button>
-                </div>
             </section>
         </div>
 
@@ -445,31 +642,38 @@ onMounted(async () => {
             <DialogPortal>
                 <DialogOverlay class="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm" />
                 <DialogContent
-                    class="fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-[min(80rem,calc((100dvh-7rem)*16/9))] -translate-x-1/2 -translate-y-1/2 focus:outline-none"
+                    class="fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[min(110rem,calc((100dvh-9rem)*32/9))] -translate-x-1/2 -translate-y-1/2 overflow-auto focus:outline-none"
                 >
                     <div class="mb-3 flex items-center justify-between gap-4">
                         <div class="min-w-0">
-                            <DialogTitle class="truncate font-display text-lg font-semibold text-base-50">
-                                {{ focused?.name || focused?.identity }}
-                            </DialogTitle>
+                            <DialogTitle class="sr-only">{{ focused?.name || focused?.identity }}</DialogTitle>
                             <DialogDescription class="font-mono text-xs text-base-400 tabular-nums">
-                                Live sejak {{ focusedSince ? new Date(focusedSince).toLocaleTimeString('id-ID') : '—' }}
+                                Live sejak {{ focusedSince ? new Date(focusedSince).toLocaleTimeString('id-ID') : '—' }} · kualitas
+                                menyesuaikan koneksi otomatis
                             </DialogDescription>
                         </div>
-                        <BaseButton variant="ghost" size="icon" aria-label="Tutup" @click="focusedIdentity = null">
-                            <X class="size-5" />
-                        </BaseButton>
+                        <div class="flex items-center gap-2">
+                            <BaseButton variant="outline" size="sm" :aria-pressed="swapped" @click="swapped = !swapped">
+                                <ArrowLeftRight class="size-4" />
+                                Tukar
+                            </BaseButton>
+                            <BaseButton variant="ghost" size="icon" aria-label="Tutup" @click="focusedIdentity = null">
+                                <X class="size-5" />
+                            </BaseButton>
+                        </div>
                     </div>
                     <!-- Track yang sama terpasang di ubin grid & di sini; adaptiveStream
-                         memakai elemen terbesar, jadi tampilan ini meminta layer 720p. -->
-                    <LiveVideoTile
+                         memakai elemen terbesar, jadi tampilan ini meminta layer tertinggi. -->
+                    <LivePairTile
                         v-if="focused"
-                        :track="cameraTrackOf(focused)"
-                        :label="focused.name || focused.identity"
+                        :name="focused.name || focused.identity"
+                        :screen-track="trackOf(focused, SCREEN_SOURCE)"
+                        :camera-track="trackOf(focused, CAMERA_SOURCE)"
+                        :status="statusOf(focused)"
                         :since="focusedSince"
-                        fit="contain"
-                        live
-                        framed
+                        :quality="focused.connectionQuality"
+                        :swapped="swapped"
+                        large
                     />
                 </DialogContent>
             </DialogPortal>
@@ -478,7 +682,7 @@ onMounted(async () => {
         <ConfirmDialog
             v-model:open="confirmStartOpen"
             title="Mulai kerja & nyalakan kamera?"
-            description="Kamera Anda akan menyala dan disiarkan langsung ke semua rekan di site Anda sampai Anda menekan Selesai Kerja. Tidak ada suara yang dikirim dan video tidak direkam."
+            description="Kamera Anda menyala dan disiarkan ke semua rekan di site Anda sampai Anda menekan Selesai kerja. Setelah itu Anda bisa membagikan layar kerja. Tidak ada suara yang dikirim dan tidak ada yang direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja."
             confirm-label="Mulai kerja"
             confirm-variant="primary"
             :loading="live.connecting"
@@ -488,7 +692,7 @@ onMounted(async () => {
         <ConfirmDialog
             v-model:open="confirmEndOpen"
             title="Selesai kerja?"
-            description="Siaran kamera Anda akan dihentikan."
+            description="Siaran kamera dan layar Anda dihentikan, dan jam selesai kerja dicatat."
             confirm-label="Selesai kerja"
             :loading="live.connecting"
             @confirm="endWork"

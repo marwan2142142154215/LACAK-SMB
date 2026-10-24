@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
 use App\Models\User;
+use App\Models\WorkSession;
 use App\Services\AccountCenter;
+use App\Services\LiveKitTokenIssuer;
+use App\Services\WorkPresence;
 use App\Support\TwoFactorPolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -109,7 +112,7 @@ class AuthController extends Controller
         // 2FA berlaku untuk SEMUA akun tanpa pengecualian -- kecuali
         // super_admin mematikannya untuk seluruh sistem (mis. server uji).
         if (! TwoFactorPolicy::isRequired()) {
-            $token = $user->createToken($this->tokenNameFor($request), ['*'], now()->addHours(self::TOKEN_IDLE_HOURS))->plainTextToken;
+            $token = $this->issueLoginToken($user, $request);
 
             return $this->success('Login berhasil', [
                 'access_token' => $token,
@@ -200,7 +203,7 @@ class AuthController extends Controller
                 'two_factor_confirmed_at' => now(),
             ])->save();
 
-            return $user->createToken($this->tokenNameFor($request), ['*'], now()->addHours(self::TOKEN_IDLE_HOURS))->plainTextToken;
+            return $this->issueLoginToken($user, $request);
         });
 
         Cache::forget("auth:2fa_setup:{$data['setup_token']}");
@@ -252,7 +255,7 @@ class AuthController extends Controller
         Cache::forget($challengeKey);
         Cache::forget($attemptsKey);
 
-        $token = $user->createToken($this->tokenNameFor($request), ['*'], now()->addHours(self::TOKEN_IDLE_HOURS))->plainTextToken;
+        $token = $this->issueLoginToken($user, $request);
 
         return $this->success('Login berhasil', [
             'access_token' => $token,
@@ -304,7 +307,20 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+
+        // Logout = selesai kerja: sesi Live Kerja yang masih terbuka ditutup
+        // sekarang, bukan menunggu heartbeat-nya habis.
+        if ($session = WorkSession::open()->where('user_id', $user->id)->first()) {
+            app(WorkPresence::class)->closeSession($session, 'logout', 'work_end');
+            app(LiveKitTokenIssuer::class)->removeBroadcaster($session->organization_id, $session->user_id);
+        }
+
+        if ($user->can('live.broadcast')) {
+            app(WorkPresence::class)->record($user, 'logout');
+        }
+
+        $user->currentAccessToken()->delete();
 
         return $this->success('Berhasil logout');
     }
@@ -322,6 +338,21 @@ class AuthController extends Controller
     public function session(Request $request)
     {
         return $this->success('Sesi masih berlaku', $this->userPayload($request->user()));
+    }
+
+    /**
+     * Token login + catat "Login" di log kerja (hanya akun yang bisa Live
+     * Kerja -- log ini untuk jam kerja staf, bukan akun admin/bot).
+     */
+    private function issueLoginToken(User $user, Request $request): string
+    {
+        $token = $user->createToken($this->tokenNameFor($request), ['*'], now()->addHours(self::TOKEN_IDLE_HOURS))->plainTextToken;
+
+        if ($user->can('live.broadcast')) {
+            app(WorkPresence::class)->record($user, 'login', WorkSession::open()->where('user_id', $user->id)->first());
+        }
+
+        return $token;
     }
 
     private function tokenNameFor(Request $request): string

@@ -23,6 +23,11 @@ const routes = [
                 component: () => import('@/views/LiveView.vue'),
             },
             {
+                path: 'live/log',
+                name: 'work-log',
+                component: () => import('@/views/WorkLogView.vue'),
+            },
+            {
                 path: 'devices',
                 name: 'devices',
                 component: () => import('@/views/DevicesView.vue'),

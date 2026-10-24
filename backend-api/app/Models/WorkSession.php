@@ -19,12 +19,22 @@ class WorkSession extends Model
         'last_heartbeat_at',
         'ended_at',
         'end_reason',
+        'camera_active',
+        'screen_active',
+        'on_break',
+        'idle',
+        'disconnected_at',
     ];
 
     protected $casts = [
         'started_at' => 'datetime',
         'last_heartbeat_at' => 'datetime',
         'ended_at' => 'datetime',
+        'disconnected_at' => 'datetime',
+        'camera_active' => 'boolean',
+        'screen_active' => 'boolean',
+        'on_break' => 'boolean',
+        'idle' => 'boolean',
     ];
 
     public function user(): BelongsTo

@@ -105,9 +105,10 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::get('/live/sites', [WorkSessionController::class, 'sites']);
         Route::get('/live/sessions', [WorkSessionController::class, 'index']);
         Route::post('/live/sessions/start', [WorkSessionController::class, 'start'])->middleware('throttle:10,1');
-        Route::post('/live/sessions/heartbeat', [WorkSessionController::class, 'heartbeat']);
+        Route::post('/live/sessions/heartbeat', [WorkSessionController::class, 'heartbeat'])->middleware('throttle:60,1');
         Route::post('/live/sessions/end', [WorkSessionController::class, 'end']);
         Route::get('/live/app', [WorkSessionController::class, 'app']);
+        Route::get('/live/activity', [WorkSessionController::class, 'activity']);
         Route::post('/live/watch-token', [WorkSessionController::class, 'watchToken'])->middleware('throttle:30,1');
         Route::apiResource('telegram-user-links', TelegramUserLinkController::class)->only(['index', 'store', 'destroy']);
         Route::get('/telegram-user-links-lookup', [TelegramUserLinkController::class, 'lookup']);

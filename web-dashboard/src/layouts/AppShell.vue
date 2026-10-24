@@ -1,6 +1,7 @@
 <script setup>
 import {
     Building2,
+    ClipboardList,
     FileSignature,
     LogOut,
     MapPinned,
@@ -46,6 +47,7 @@ const navGroups = computed(() => [
         items: [
             { to: { name: 'radar' }, label: 'Radar', icon: Radar },
             { to: { name: 'live' }, label: 'Live Kerja', icon: Video, live: live.isBroadcasting },
+            { to: { name: 'work-log' }, label: 'Log kerja', icon: ClipboardList, hidden: !auth.hasPermission('live.watch') },
         ],
     },
     {
