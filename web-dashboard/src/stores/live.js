@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
 import api from '@/lib/api'
+import { useAuthStore } from '@/stores/auth'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 // Tanpa keyboard/mouse selama ini (atau layar komputer terkunci) -> IDLE.
@@ -91,6 +92,7 @@ let idleDetector = null
 let idleAbort = null
 
 export const useLiveStore = defineStore('live', () => {
+    const auth = useAuthStore()
     const mode = ref('idle') // idle | watching | broadcasting
     const organizationId = ref(null)
     const connecting = ref(false)
@@ -300,17 +302,20 @@ export const useLiveStore = defineStore('live', () => {
      * idle butuh user gesture. Di komputer, layar dibagikan SEBELUM kamera
      * menyala -- mulai kerja = layar + kamera langsung tersiar.
      */
-    async function startWork() {
+    async function startWork({ resuming = false } = {}) {
         connecting.value = true
         cameraProblem.value = null
         let screenTrack = null
+        // Melanjutkan otomatis setelah reload tidak punya klik user, dan
+        // browser menolak dialog pilih layar tanpa klik -- layar dibagikan
+        // lewat kunci "Layar wajib dibagikan" (ScreenShareLock) sesudahnya.
         try {
-            if (canShareScreen) screenTrack = await captureEntireScreen()
+            if (canShareScreen && !resuming) screenTrack = await captureEntireScreen()
         } catch (err) {
             connecting.value = false
             throw err
         }
-        const idlePermission = requestIdlePermission()
+        const idlePermission = resuming ? idlePermissionAlreadyGranted() : requestIdlePermission()
         try {
             const response = await api.post('/live/sessions/start')
             const { livekit_url, token, session } = response.data.data
@@ -330,7 +335,7 @@ export const useLiveStore = defineStore('live', () => {
                 throw error
             }
             if (screenTrack) await ownRoom.localParticipant.publishTrack(screenTrack)
-            screenRequired.value = !!screenTrack
+            screenRequired.value = canShareScreen
             mode.value = 'broadcasting'
             broadcastStartedAt.value = session.started_at ?? new Date().toISOString()
             onBreak.value = !!session.on_break
@@ -340,14 +345,46 @@ export const useLiveStore = defineStore('live', () => {
             await sendHeartbeat()
         } catch (err) {
             // Kamera ditolak / koneksi gagal -- jangan biarkan sesi kerja
-            // tercatat aktif padahal tidak ada video yang tersiar.
+            // tercatat aktif padahal tidak ada video yang tersiar. Kecuali saat
+            // melanjutkan otomatis: sesi dibiarkan, staf masih bisa menekan
+            // "Lanjutkan siaran" (atau sesi ditutup sendiri oleh timeout).
             screenTrack?.stop()
-            await api.post('/live/sessions/end').catch(() => {})
+            if (!resuming) await api.post('/live/sessions/end').catch(() => {})
             await disconnect()
             throw err
         } finally {
             connecting.value = false
         }
+    }
+
+    /**
+     * Setelah halaman dimuat ulang (refresh, buka tab lagi), sambungkan lagi
+     * siaran yang sesi kerjanya masih terbuka di server -- staf tidak perlu
+     * menekan apa pun. Dipanggil AppShell & LiveView; dijalankan sekali per
+     * pemuatan halaman (pemanggil berikutnya menunggu hasil yang sama).
+     *
+     * @returns {Promise<{ resumed: boolean, error?: Error }>}
+     */
+    let resumeTask = null
+    let resumeUserId = null
+    function resumeIfBroadcasting() {
+        // Per user: logout lalu login akun lain tanpa reload harus dicek ulang.
+        if (resumeUserId !== auth.user?.id) resumeTask = null
+        resumeUserId = auth.user?.id
+        resumeTask ??= (async () => {
+            if (mode.value !== 'idle' || !auth.hasPermission('live.broadcast') || !auth.user?.organization_id) {
+                return { resumed: false }
+            }
+            try {
+                const response = await api.get('/live/sessions', { params: { organization_id: auth.user.organization_id } })
+                if (!response.data.data.my_session) return { resumed: false }
+                await startWork({ resuming: true })
+                return { resumed: true }
+            } catch (error) {
+                return { resumed: false, error }
+            }
+        })()
+        return resumeTask
     }
 
     /** Matikan lalu nyalakan lagi kamera tanpa memutus siaran. */
@@ -441,6 +478,17 @@ export const useLiveStore = defineStore('live', () => {
     // IDLE pakai Idle Detection API (Chrome/Edge desktop): mendeteksi tidak
     // ada input di SELURUH komputer, bukan cuma di tab ini, dan layar
     // terkunci. Browser lain tidak mendukung -> status IDLE tidak dipakai.
+    // Izin deteksi idle yang sudah diberikan sebelumnya tetap berlaku setelah
+    // reload, jadi tidak perlu klik untuk memintanya lagi.
+    async function idlePermissionAlreadyGranted() {
+        if (!('IdleDetector' in window)) return false
+        try {
+            return (await navigator.permissions.query({ name: 'idle-detection' })).state === 'granted'
+        } catch {
+            return false
+        }
+    }
+
     async function requestIdlePermission() {
         if (!('IdleDetector' in window)) return false
         try {
@@ -540,6 +588,7 @@ export const useLiveStore = defineStore('live', () => {
         watchSite,
         watchSites,
         startWork,
+        resumeIfBroadcasting,
         endWork,
         restartCamera,
         setScreenShare,
