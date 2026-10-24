@@ -43,4 +43,31 @@ trait ServesDocumentsDiskFiles
 
         return redirect()->away($temporaryUrl);
     }
+
+    /**
+     * Gambar untuk ditampilkan langsung (<img>), bukan diunduh. Content-Type
+     * dipaksa dari tipe yang tervalidasi saat unggah + nosniff, supaya
+     * browser tidak pernah menafsirkan berkas sebagai HTML/skrip.
+     */
+    protected function serveDocumentsDiskImage(string $path, string $mimeType): RedirectResponse|StreamedResponse
+    {
+        $diskName = config('filesystems.documents_disk');
+        $storage = Storage::disk($diskName);
+
+        if (config("filesystems.disks.{$diskName}.driver") !== 's3') {
+            return $storage->response($path, null, [
+                'Content-Type' => $mimeType,
+                'Content-Disposition' => 'inline',
+                'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'private, max-age=3600',
+            ]);
+        }
+
+        $temporaryUrl = $storage->temporaryUrl($path, now()->addMinutes(self::TEMPORARY_FILE_URL_MINUTES), [
+            'ResponseContentType' => $mimeType,
+            'ResponseContentDisposition' => 'inline',
+        ]);
+
+        return redirect()->away($temporaryUrl);
+    }
 }

@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
 use App\Models\ChatMessage;
 use App\Support\ResolvesOrganizationScope;
+use App\Support\ServesDocumentsDiskFiles;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Chat staf per site. Satu ruang chat = satu site; siapa yang boleh membaca
@@ -14,15 +17,20 @@ use Illuminate\Http\Request;
  * ResolvesOrganizationScope): staf hanya site-nya sendiri, admin/leader
  * site yang diberikan, super_admin semua site.
  *
- * Realtime-gateway memanggil kedua endpoint ini dengan token user yang
- * sedang chat (bukan token sistem), jadi gateway tidak pernah memutuskan
- * sendiri siapa boleh masuk ruang chat mana.
+ * Realtime-gateway memanggil endpoint ini dengan token user yang sedang
+ * chat (bukan token sistem), jadi gateway tidak pernah memutuskan sendiri
+ * siapa boleh masuk ruang chat mana. Pesan bergambar dikirim dashboard
+ * langsung ke sini (multipart), lalu gateway mengambil pesan jadi lewat
+ * show() sebelum menyiarkannya -- isi siaran selalu dari backend.
  */
 class ChatMessageController extends Controller
 {
-    use ApiResponse, ResolvesOrganizationScope;
+    use ApiResponse, ResolvesOrganizationScope, ServesDocumentsDiskFiles;
 
     private const PAGE_SIZE = 50;
+
+    /** Batas ukuran gambar (KB); dashboard sudah mengecilkan foto sebelum mengunggah. */
+    private const MAX_IMAGE_KB = 5120;
 
     /** Riwayat pesan terbaru (urut lama -> baru); before_id untuk memuat yang lebih lama. */
     public function index(Request $request)
@@ -42,7 +50,7 @@ class ChatMessageController extends Controller
         }
 
         $messages = ChatMessage::query()
-            ->with('user:id,name')
+            ->with(['user:id,name', 'replyTo.user:id,name'])
             ->where('organization_id', $organizationId)
             ->when($validated['before_id'] ?? null, fn ($query, $beforeId) => $query->where('id', '<', $beforeId))
             ->latest('id')
@@ -58,6 +66,19 @@ class ChatMessageController extends Controller
         ]);
     }
 
+    /** Satu pesan -- dipakai gateway untuk menyiarkan pesan bergambar yang baru diunggah. */
+    public function show(Request $request, ChatMessage $chatMessage)
+    {
+        $user = $request->user();
+        $user->can('live.watch') || abort(403);
+
+        if ($this->authorizedOrganizationId($user, $chatMessage->organization_id) !== $chatMessage->organization_id) {
+            return $this->fail('Anda tidak berwenang membuka chat site ini', null, 403);
+        }
+
+        return $this->success('Pesan', $chatMessage->load(['user:id,name', 'replyTo.user:id,name'])->toPayload());
+    }
+
     public function store(Request $request)
     {
         $user = $request->user();
@@ -65,12 +86,16 @@ class ChatMessageController extends Controller
 
         $validated = $request->validate([
             'organization_id' => ['nullable', 'integer'],
-            'body' => ['required', 'string', 'max:1000'],
+            'body' => ['nullable', 'string', 'max:1000'],
+            'reply_to_id' => ['nullable', 'integer'],
+            // Daftar tertutup (tanpa SVG -- bisa berisi skrip) & dicek dari isi berkas.
+            'image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'mimetypes:image/jpeg,image/png,image/webp,image/gif', 'max:'.self::MAX_IMAGE_KB, 'dimensions:max_width=10000,max_height=10000'],
         ]);
 
-        $body = trim($validated['body']);
+        $body = trim($validated['body'] ?? '');
+        $image = $request->file('image');
 
-        if ($body === '') {
+        if ($body === '' && ! $image) {
             return $this->fail('Pesan tidak boleh kosong', null, 422);
         }
 
@@ -80,12 +105,64 @@ class ChatMessageController extends Controller
             return $this->fail('Anda tidak berwenang mengirim pesan ke site ini', null, 403);
         }
 
+        // Yang dibalas harus pesan di ruang chat yang sama.
+        $replyToId = $validated['reply_to_id'] ?? null;
+        if ($replyToId !== null && ! ChatMessage::where('id', $replyToId)->where('organization_id', $organizationId)->exists()) {
+            return $this->fail('Pesan yang dibalas tidak ditemukan', null, 422);
+        }
+
+        $imageAttributes = [];
+        if ($image) {
+            [$width, $height] = @getimagesize($image->getRealPath()) ?: [null, null];
+            try {
+                $path = $this->documentsDisk()->putFileAs(
+                    "chat/{$organizationId}",
+                    $image,
+                    Str::uuid().'.'.$image->extension(),
+                );
+            } catch (Throwable $exception) {
+                report($exception);
+                $path = false;
+            }
+
+            if ($path === false) {
+                return $this->fail('Gambar gagal disimpan ke penyimpanan server, coba lagi sebentar lagi', null, 503);
+            }
+
+            $imageAttributes = [
+                'image_path' => $path,
+                'image_mime' => $image->getMimeType(),
+                'image_width' => $width,
+                'image_height' => $height,
+            ];
+        }
+
         $message = ChatMessage::create([
             'organization_id' => $organizationId,
             'user_id' => $user->id,
-            'body' => $body,
-        ])->setRelation('user', $user);
+            'reply_to_id' => $replyToId,
+            'body' => $body === '' ? null : $body,
+            ...$imageAttributes,
+        ])->setRelation('user', $user)->load('replyTo.user:id,name');
 
         return $this->success('Pesan terkirim', $message->toPayload(), 201);
+    }
+
+    /**
+     * Gambar chat lewat tautan bertanda tangan (route tanpa auth:sanctum,
+     * supaya bisa dipakai langsung di <img>); tautannya dibuat hanya untuk
+     * user yang boleh membaca ruang chat itu.
+     */
+    public function image(Request $request, ChatMessage $chatMessage)
+    {
+        if (! $request->hasValidSignature()) {
+            return $this->fail('Tautan kedaluwarsa atau tidak valid', null, 403);
+        }
+
+        if (! $this->documentsDiskFileExists($chatMessage->image_path)) {
+            return $this->fail('Gambar tidak ditemukan', null, 404);
+        }
+
+        return $this->serveDocumentsDiskImage($chatMessage->image_path, $chatMessage->image_mime ?? 'application/octet-stream');
     }
 }

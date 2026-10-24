@@ -16,7 +16,14 @@ export type ChatMessagePayload = {
     organization_id: number
     user_id: number
     user_name: string | null
-    body: string
+    body: string | null
+    image: { url: string; width: number | null; height: number | null } | null
+    reply_to: {
+        id: number
+        user_name: string | null
+        body: string | null
+        has_image: boolean
+    } | null
     created_at: string
 }
 
@@ -35,12 +42,13 @@ export function chatRoom(organizationId: number) {
 async function callBackend<T>(
     token: string,
     method: 'get' | 'post',
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
+    path = ''
 ): Promise<BackendResult<T>> {
     try {
         const response = await axios.request({
             method,
-            url: `${env.get('BACKEND_API_URL')}/api/v1/chat/messages`,
+            url: `${env.get('BACKEND_API_URL')}/api/v1/chat/messages${path}`,
             headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
             ...(method === 'get' ? { params } : { data: params }),
             timeout: 10_000,
@@ -74,6 +82,24 @@ export function fetchChatHistory(token: string, organizationId: number, beforeId
     })
 }
 
-export function postChatMessage(token: string, organizationId: number, body: string) {
-    return callBackend<ChatMessagePayload>(token, 'post', { organization_id: organizationId, body })
+export function postChatMessage(
+    token: string,
+    organizationId: number,
+    body: string,
+    replyToId?: number
+) {
+    return callBackend<ChatMessagePayload>(token, 'post', {
+        organization_id: organizationId,
+        body,
+        ...(replyToId ? { reply_to_id: replyToId } : {}),
+    })
+}
+
+/**
+ * Pesan bergambar diunggah dashboard langsung ke backend-api (multipart);
+ * gateway mengambil pesan jadinya dengan token user itu -- sekaligus cek
+ * izin -- sebelum menyiarkannya. Isi siaran tidak pernah dari klien.
+ */
+export function fetchChatMessage(token: string, messageId: number) {
+    return callBackend<ChatMessagePayload>(token, 'get', {}, `/${messageId}`)
 }

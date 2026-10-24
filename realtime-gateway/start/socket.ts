@@ -16,7 +16,7 @@ import {
     registerMasterBeacon,
     unregisterMasterBeaconsForSocket,
 } from '#services/master_anchor_registry'
-import { chatRoom, fetchChatHistory, postChatMessage } from '#services/chat_relay'
+import { chatRoom, fetchChatHistory, fetchChatMessage, postChatMessage } from '#services/chat_relay'
 
 type DeviceHelloPayload = {
     deviceUuid: string
@@ -567,7 +567,10 @@ function registerChatHandlers(
 
     socket.on(
         'chat:send',
-        async (payload: { organizationId?: number; body?: unknown }, callback?: unknown) => {
+        async (
+            payload: { organizationId?: number; body?: unknown; replyToId?: unknown },
+            callback?: unknown
+        ) => {
             const organizationId = Number(payload?.organizationId)
             if (!joinedRooms.has(organizationId)) {
                 return ack(callback)({ ok: false, message: 'Buka ruang chat site ini dulu' })
@@ -575,14 +578,48 @@ function registerChatHandlers(
             if (typeof payload?.body !== 'string' || payload.body.trim() === '') {
                 return ack(callback)({ ok: false, message: 'Pesan tidak boleh kosong' })
             }
+            const replyToId = Number(payload?.replyToId)
 
-            const result = await postChatMessage(token, organizationId, payload.body)
+            const result = await postChatMessage(
+                token,
+                organizationId,
+                payload.body,
+                Number.isInteger(replyToId) && replyToId > 0 ? replyToId : undefined
+            )
             if (!result.ok) return ack(callback)({ ok: false, message: result.message })
 
             // Pengirim menerima pesan lewat ack; socket lain (termasuk tab lain
             // milik user yang sama) lewat siaran ruang.
             socket.to(chatRoom(organizationId)).emit('chat:message', result.data)
             ack(callback)({ ok: true, message: result.data })
+        }
+    )
+
+    // Pesan bergambar sudah disimpan lewat unggahan langsung ke backend-api;
+    // di sini hanya disiarkan ke peserta lain, setelah diambil ulang dari
+    // backend (dengan token user ini) supaya isinya tidak bisa dipalsukan.
+    socket.on(
+        'chat:announce',
+        async (payload: { organizationId?: number; messageId?: number }, callback?: unknown) => {
+            const organizationId = Number(payload?.organizationId)
+            const messageId = Number(payload?.messageId)
+            if (
+                !joinedRooms.has(organizationId) ||
+                !Number.isInteger(messageId) ||
+                messageId <= 0
+            ) {
+                return ack(callback)({ ok: false, message: 'Buka ruang chat site ini dulu' })
+            }
+
+            const result = await fetchChatMessage(token, messageId)
+            if (!result.ok) return ack(callback)({ ok: false, message: result.message })
+            // Hanya pesan milik user ini sendiri, di ruang yang dia buka.
+            if (result.data.organization_id !== organizationId || result.data.user_id !== user.id) {
+                return ack(callback)({ ok: false, message: 'Pesan tidak bisa disiarkan' })
+            }
+
+            socket.to(chatRoom(organizationId)).emit('chat:message', result.data)
+            ack(callback)({ ok: true })
         }
     )
 

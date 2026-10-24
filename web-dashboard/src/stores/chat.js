@@ -41,6 +41,8 @@ export const useChatStore = defineStore('chat', () => {
     const typingBySite = ref({})
     const readMarksBySite = ref(readMarks())
     const error = ref(null)
+    // Pesan yang sedang dibalas (hanya berlaku di ruang yang sedang dibuka).
+    const replyTo = ref(null)
 
     const activeMessages = computed(() => messagesBySite.value[activeSiteId.value] ?? [])
     const activePresence = computed(() => presenceBySite.value[activeSiteId.value] ?? [])
@@ -148,13 +150,56 @@ export const useChatStore = defineStore('chat', () => {
         messagesBySite.value = {}
         presenceBySite.value = {}
         typingBySite.value = {}
+        replyTo.value = null
+    }
+
+    function startReply(message) {
+        replyTo.value = message
+    }
+
+    function cancelReply() {
+        replyTo.value = null
     }
 
     async function send(body) {
-        const response = await emitWithAck('chat:send', { organizationId: activeSiteId.value, body })
+        const response = await emitWithAck('chat:send', {
+            organizationId: activeSiteId.value,
+            body,
+            replyToId: replyTo.value?.id,
+        })
         if (!response.ok) throw new Error(response.message)
         addMessage(response.message)
+        replyTo.value = null
         markRead()
+    }
+
+    /**
+     * Gambar diunggah langsung ke backend-api (multipart -- terlalu besar untuk
+     * socket), lalu gateway diminta menyiarkannya ke peserta lain. Gateway
+     * mengambil ulang pesan itu dari backend, jadi isi siaran tidak bisa
+     * dipalsukan dari sini.
+     */
+    async function sendImage(file, caption = '') {
+        const siteId = activeSiteId.value
+        const form = new FormData()
+        form.append('organization_id', siteId)
+        form.append('image', file)
+        if (caption) form.append('body', caption)
+        if (replyTo.value) form.append('reply_to_id', replyTo.value.id)
+
+        let message
+        try {
+            message = (await api.post('/chat/messages', form)).data.data
+        } catch (err) {
+            const errors = err.response?.data?.errors
+            throw new Error((errors && Object.values(errors)[0]?.[0]) ?? err.response?.data?.message ?? 'Gambar gagal dikirim')
+        }
+        addMessage(message)
+        replyTo.value = null
+        markRead()
+        // Gagal menyiarkan (mis. socket putus sesaat) tidak membatalkan
+        // pesan -- yang lain tetap melihatnya saat memuat ulang chat.
+        await emitWithAck('chat:announce', { organizationId: siteId, messageId: message.id })
     }
 
     async function loadOlder() {
@@ -185,11 +230,15 @@ export const useChatStore = defineStore('chat', () => {
         activeTyping,
         totalUnread,
         error,
+        replyTo,
         unreadCount,
         markRead,
         start,
         stop,
         send,
+        sendImage,
+        startReply,
+        cancelReply,
         loadOlder,
         notifyTyping,
     }
