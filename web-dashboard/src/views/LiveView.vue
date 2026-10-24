@@ -24,7 +24,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import LivePairTile from '@/components/live/LivePairTile.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import PageHeader from '@/components/ui/PageHeader.vue'
 import Readout from '@/components/ui/Readout.vue'
 import { formatElapsed, useNow } from '@/composables/useNow'
 import { useToast } from '@/composables/useToast'
@@ -86,6 +85,17 @@ watch(layout, (value) => {
 })
 watch(swapped, (value) => writePref('lacak_live_swapped', value))
 
+// Porsi kamera (wajah) terhadap layar kerja. Bawaan "kecil": yang dipantau
+// terutama layar kerjanya, wajah cukup sebagai bukti kehadiran.
+const CAMERA_SIZES = [
+    { value: 'equal', label: 'Sama besar' },
+    { value: 'small', label: 'Kecil' },
+    { value: 'corner', label: 'Pojok' },
+]
+const savedCameraSize = readPref('lacak_live_camera_size', 'small')
+const cameraSize = ref(CAMERA_SIZES.some((option) => option.value === savedCameraSize) ? savedCameraSize : 'small')
+watch(cameraSize, (value) => writePref('lacak_live_camera_size', value))
+
 // ---- Status semua staf (dari server), diperbarui berkala.
 const roster = ref([])
 const sessionByIdentity = ref({})
@@ -99,7 +109,12 @@ async function loadStatus() {
         roster.value = data.roster
         sessionByIdentity.value = Object.fromEntries(data.items.map((session) => [session.participant_identity, session]))
     } catch {
-        // Hanya untuk status & durasi -- tanpa data ini video tetap tampil.
+        // Status & durasi tidak wajib -- tapi daftar site wajib ada supaya
+        // video tetap bisa ditonton (mis. server belum punya /live/overview).
+        if (!sites.value.length) {
+            const response = await api.get('/live/sites').catch(() => null)
+            sites.value = response?.data.data ?? []
+        }
     }
 }
 
@@ -379,20 +394,11 @@ onBeforeUnmount(() => {
 
 <template>
     <div>
-        <PageHeader
-            eyebrow="Pantau"
-            title="Live Kerja"
-            subtitle="Layar kerja & kamera staf secara langsung. Hanya terlihat oleh yang berwenang di site itu — tanpa suara, tidak direkam."
-        >
-            <template #actions>
-                <template v-if="canBroadcast">
-                    <BaseButton v-if="!live.isBroadcasting" :loading="live.connecting" @click="confirmStartOpen = true">
-                        <Play class="size-4" />
-                        {{ mySession ? 'Lanjutkan siaran' : 'Mulai kerja' }}
-                    </BaseButton>
-                </template>
-            </template>
-            <template #readouts>
+        <!-- Tanpa judul besar: layar ini untuk memantau, ruang vertikal dipakai video.
+             Judul tetap ada untuk pembaca layar. -->
+        <h1 class="sr-only">Live Kerja</h1>
+        <div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 border-b border-base-800 px-4 pt-5 pb-4 sm:px-8">
+            <div class="flex flex-wrap gap-x-8 gap-y-3">
                 <Readout
                     label="Sedang live"
                     :value="live.mode === 'idle' ? '—' : live.remoteParticipants.length"
@@ -406,8 +412,16 @@ onBeforeUnmount(() => {
                     :led="countOf(ATTENTION_STATUSES) ? 'warning' : 'muted'"
                 />
                 <Readout v-if="live.isBroadcasting" label="Siaran Anda" :value="myStatusMeta?.label ?? 'Aktif'" led="danger" />
-            </template>
-        </PageHeader>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <template v-if="canBroadcast">
+                    <BaseButton v-if="!live.isBroadcasting" :loading="live.connecting" @click="confirmStartOpen = true">
+                        <Play class="size-4" />
+                        {{ mySession ? 'Lanjutkan siaran' : 'Mulai kerja' }}
+                    </BaseButton>
+                </template>
+            </div>
+        </div>
 
         <div class="space-y-5 p-4 sm:p-8">
             <div
@@ -459,6 +473,7 @@ onBeforeUnmount(() => {
                     :camera-track="live.localCameraTrack"
                     :status="live.myStatus"
                     :swapped="swapped"
+                    :camera-size="cameraSize"
                     mirror-camera
                 />
 
@@ -590,6 +605,29 @@ onBeforeUnmount(() => {
                             {{ count }} layar
                         </button>
                     </div>
+                    <div
+                        class="flex items-center gap-1 rounded-lg border border-base-800 bg-base-850 p-0.5"
+                        role="radiogroup"
+                        aria-label="Ukuran kamera"
+                    >
+                        <span class="px-1.5 font-mono text-[10.5px] tracking-[0.1em] text-base-500 uppercase">Kamera</span>
+                        <button
+                            v-for="option in CAMERA_SIZES"
+                            :key="option.value"
+                            type="button"
+                            role="radio"
+                            :aria-checked="cameraSize === option.value"
+                            class="rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent-400"
+                            :class="
+                                cameraSize === option.value
+                                    ? 'bg-base-900 text-base-50 shadow-(--shadow-card)'
+                                    : 'text-base-400 hover:text-base-100'
+                            "
+                            @click="cameraSize = option.value"
+                        >
+                            {{ option.label }}
+                        </button>
+                    </div>
                     <BaseButton
                         variant="outline"
                         size="sm"
@@ -686,6 +724,7 @@ onBeforeUnmount(() => {
                                 :since="liveSince(participant)"
                                 :quality="participant.connectionQuality"
                                 :swapped="swapped"
+                                :camera-size="cameraSize"
                             />
                         </button>
                     </div>
@@ -823,6 +862,7 @@ onBeforeUnmount(() => {
                         :since="focusedSince"
                         :quality="focused.connectionQuality"
                         :swapped="swapped"
+                        :camera-size="cameraSize"
                         large
                     />
                 </DialogContent>

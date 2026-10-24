@@ -20,6 +20,9 @@ const props = defineProps({
     swapped: { type: Boolean, default: false },
     mirrorCamera: { type: Boolean, default: false },
     large: { type: Boolean, default: false },
+    // Porsi kamera (wajah) terhadap layar kerja:
+    // equal = sama besar, small = kamera sempit di samping, corner = kamera kecil di pojok layar
+    cameraSize: { type: String, default: 'equal' },
 })
 
 const now = useNow()
@@ -40,6 +43,12 @@ const sides = computed(() => {
     const screen = { key: 'screen', label: 'Layar', track: props.screenTrack }
     const camera = { key: 'camera', label: 'Kamera', track: props.cameraTrack }
     return props.swapped ? [camera, screen] : [screen, camera]
+})
+
+// Mode "kecil": layar 3 bagian, kamera 1 bagian (urutannya ikut `swapped`).
+const gridClass = computed(() => {
+    if (props.cameraSize !== 'small') return 'sm:grid-cols-2'
+    return props.swapped ? 'sm:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]' : 'sm:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]'
 })
 </script>
 
@@ -68,20 +77,55 @@ const sides = computed(() => {
             <span v-if="elapsed" class="shrink-0 font-mono text-[11px] text-base-400 tabular-nums">{{ elapsed }}</span>
         </div>
 
-        <div class="grid gap-px bg-base-800 sm:grid-cols-2">
-            <div v-for="side in sides" :key="side.key" class="relative bg-black">
+        <!-- Kamera di pojok layar (picture-in-picture). Kalau layar belum
+             dibagikan, kamera tampil penuh supaya bingkai tidak kosong. -->
+        <div v-if="cameraSize === 'corner'" class="relative bg-black">
+            <LiveVideoTile
+                v-if="screenTrack || cameraTrack"
+                :track="screenTrack ?? cameraTrack"
+                :label="screenTrack ? 'Layar' : 'Kamera'"
+                :fit="screenTrack || large ? 'contain' : 'cover'"
+                :mirrored="!screenTrack && mirrorCamera"
+                class="!rounded-none !border-0"
+            />
+            <div v-else class="flex aspect-video flex-col items-center justify-center gap-2 bg-base-900 text-base-500">
+                <MonitorOff class="size-6" />
+                <span class="font-mono text-[10.5px] tracking-[0.14em] uppercase">Layar & kamera mati</span>
+            </div>
+            <LiveVideoTile
+                v-if="screenTrack && cameraTrack"
+                :track="cameraTrack"
+                label="Kamera"
+                bare
+                fit="cover"
+                :mirrored="mirrorCamera"
+                class="!absolute bottom-3 w-[26%] min-w-24 !rounded-lg !border-white/25 shadow-lg shadow-black/50"
+                :class="swapped ? 'left-3' : 'right-3'"
+            />
+            <span
+                v-if="!screenTrack && cameraTrack"
+                class="absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 rounded bg-black/65 px-1.5 py-1 font-mono text-[10px] tracking-[0.1em] text-white/85 uppercase backdrop-blur-sm"
+            >
+                <MonitorOff class="size-3" />
+                Layar tidak dibagikan
+            </span>
+        </div>
+
+        <div v-else class="grid gap-px bg-base-800" :class="gridClass">
+            <div v-for="side in sides" :key="side.key" class="relative flex items-center bg-black">
                 <LiveVideoTile
                     v-if="side.track"
                     :track="side.track"
                     :label="side.label"
+                    :bare="side.key === 'camera' && cameraSize === 'small' && !large"
                     :fit="side.key === 'screen' || large ? 'contain' : 'cover'"
                     :mirrored="side.key === 'camera' && mirrorCamera"
-                    class="!rounded-none !border-0"
+                    class="w-full !rounded-none !border-0"
                 />
-                <div v-else class="flex aspect-video flex-col items-center justify-center gap-2 bg-base-900 text-base-500">
+                <div v-else class="flex aspect-video w-full flex-col items-center justify-center gap-2 bg-base-900 text-base-500">
                     <MonitorOff v-if="side.key === 'screen'" class="size-6" />
                     <Camera v-else class="size-6" />
-                    <span class="font-mono text-[10.5px] tracking-[0.14em] uppercase">
+                    <span class="px-2 text-center font-mono text-[10.5px] tracking-[0.14em] uppercase">
                         {{ side.key === 'screen' ? 'Layar tidak dibagikan' : 'Kamera mati' }}
                     </span>
                 </div>
