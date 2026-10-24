@@ -49,10 +49,12 @@ watch(
 onBeforeUnmount(detach)
 
 const qualityLabel = computed(() => (frameHeight.value ? `${frameHeight.value}p` : null))
+// Teks di atas video sengaja warna tetap (bukan token tema): latar video
+// selalu gelap, di tema terang maupun gelap.
 const qualityTone = computed(() => {
-    if (frameHeight.value >= 700) return 'text-accent-300'
-    if (frameHeight.value >= 340) return 'text-base-100'
-    return 'text-warning-400'
+    if (frameHeight.value >= 700) return 'text-emerald-300'
+    if (frameHeight.value >= 340) return 'text-white'
+    return 'text-amber-300'
 })
 const elapsed = computed(() => (props.since ? formatElapsed(props.since, now.value) : null))
 </script>
@@ -111,8 +113,8 @@ const elapsed = computed(() => (props.since ? formatElapsed(props.since, now.val
                 <span class="size-1.5 rounded-full bg-white motion-safe:animate-pulse" />
                 LIVE
             </span>
-            <span class="min-w-0 flex-1 truncate text-xs font-medium text-base-50" :class="framed && 'text-sm'">{{ label }}</span>
-            <span v-if="elapsed" class="shrink-0 font-mono text-[11px] text-base-200 tabular-nums">{{ elapsed }}</span>
+            <span class="min-w-0 flex-1 truncate text-xs font-medium text-white" :class="framed && 'text-sm'">{{ label }}</span>
+            <span v-if="elapsed" class="shrink-0 font-mono text-[11px] text-white/80 tabular-nums">{{ elapsed }}</span>
         </div>
     </div>
 </template>

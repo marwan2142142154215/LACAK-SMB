@@ -40,6 +40,68 @@
 
     --color-warning-500: #d89b2c;
     --color-warning-400: #f0b94a;
+
+    /* Status kerja Live Kerja (lihat src/lib/workStatus.js) */
+    --color-st-working: #34d399;
+    --color-st-idle: #facc15;
+    --color-st-break: #38bdf8;
+    --color-st-disconnected: #f87171;
+    --color-st-screen: #fb923c;
+    --color-st-camera: #a78bfa;
+
+    /* Bayangan kartu: nyaris tak terlihat di tema gelap, memberi kedalaman di tema terang */
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.2);
+    --shadow-raised: 0 8px 24px -12px rgb(0 0 0 / 0.6);
+}
+
+/*
+ * Tema terang ("ruang kontrol siang hari"): skala base dibalik -- 950 tetap
+ * berarti "latar halaman" dan 50 tetap "teks paling tegas" -- jadi semua
+ * komponen yang memakai token ikut berganti tanpa diubah satu per satu.
+ * Warna aksen/status digelapkan supaya kontras teks tetap >= 4.5:1 di atas
+ * putih. Area video sengaja tetap hitam: monitor gelap di atas meja terang.
+ */
+:root[data-theme='light'] {
+    color-scheme: light;
+
+    --color-base-950: #f3f5f8;
+    --color-base-900: #ffffff;
+    --color-base-850: #eef1f5;
+    --color-base-800: #e1e6ed;
+    --color-base-700: #cdd4de;
+    --color-base-600: #aeb7c4;
+    --color-base-500: #667085;
+    --color-base-400: #535d6f;
+    --color-base-300: #3a4455;
+    --color-base-200: #262f3e;
+    --color-base-100: #172030;
+    --color-base-50: #0b1220;
+
+    --color-accent-600: #075e50;
+    --color-accent-500: #0b7a66;
+    --color-accent-400: #096b5a;
+    --color-accent-300: #075e50;
+
+    --color-copper-600: #8a4718;
+    --color-copper-500: #a2551f;
+    --color-copper-400: #94501f;
+
+    --color-danger-600: #a32019;
+    --color-danger-500: #c8342a;
+    --color-danger-400: #b42c22;
+
+    --color-warning-500: #b7790b;
+    --color-warning-400: #8f5d00;
+
+    --color-st-working: #047857;
+    --color-st-idle: #a16207;
+    --color-st-break: #0369a1;
+    --color-st-disconnected: #c81e1e;
+    --color-st-screen: #c2410c;
+    --color-st-camera: #6d28d9;
+
+    --shadow-card: 0 1px 2px rgb(16 24 40 / 0.05), 0 1px 3px rgb(16 24 40 / 0.04);
+    --shadow-raised: 0 12px 32px -16px rgb(16 24 40 / 0.25);
 }
 
 @layer base {

@@ -90,6 +90,36 @@ class WorkPresenceTest extends TestCase
         $this->assertEquals([$working->id => 'working', $offline->id => 'offline'], $roster->all());
     }
 
+    public function test_overview_covers_only_the_sites_a_viewer_may_watch(): void
+    {
+        $orgA = Organization::factory()->create(['is_active' => true]);
+        $orgB = Organization::factory()->create(['is_active' => true]);
+        $orgC = Organization::factory()->create(['is_active' => true]);
+        $staffA = $this->staffIn($orgA);
+        $staffB = $this->staffIn($orgB);
+        $staffC = $this->staffIn($orgC);
+
+        foreach ([$staffA, $staffB, $staffC] as $staff) {
+            $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+        }
+
+        $leader = User::factory()->create(['organization_id' => null]);
+        $leader->assignRole('leader');
+        $leader->siteAccess()->attach([$orgA->id, $orgB->id]);
+
+        $data = $this->actingAs($leader, 'sanctum')->getJson('/api/v1/live/overview')->assertOk()->json('data');
+
+        $this->assertEqualsCanonicalizing([$orgA->id, $orgB->id], array_column($data['sites'], 'id'));
+        $this->assertEqualsCanonicalizing([$staffA->id, $staffB->id], array_column($data['items'], 'user_id'));
+        $this->assertEqualsCanonicalizing([$staffA->id, $staffB->id], array_column($data['roster'], 'user_id'));
+
+        // Staf biasa hanya melihat site-nya sendiri.
+        $this->assertSame([$orgA->id], array_column(
+            $this->actingAs($staffA, 'sanctum')->getJson('/api/v1/live/overview')->json('data.sites'),
+            'id',
+        ));
+    }
+
     public function test_missed_heartbeats_log_disconnect_and_reconnect(): void
     {
         $staff = $this->staffIn(Organization::factory()->create());
