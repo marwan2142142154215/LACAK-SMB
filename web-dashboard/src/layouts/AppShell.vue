@@ -21,14 +21,17 @@ import dayjs from 'dayjs'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import ChatWidget from '@/components/chat/ChatWidget.vue'
 import ScreenShareLock from '@/components/live/ScreenShareLock.vue'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useTheme } from '@/composables/useTheme'
 import { useAuthStore } from '@/stores/auth'
+import { useChatStore } from '@/stores/chat'
 import { useLiveStore } from '@/stores/live'
 
 const auth = useAuthStore()
 const live = useLiveStore()
+const chat = useChatStore()
 const router = useRouter()
 const route = useRoute()
 const loggingOut = ref(false)
@@ -86,7 +89,11 @@ const roleLabel = computed(() => (auth.user?.roles ?? []).map((role) => ROLE_LAB
 
 const now = ref(dayjs())
 let clockTimer = null
-onMounted(() => (clockTimer = setInterval(() => (now.value = dayjs()), 1000)))
+onMounted(() => {
+    clockTimer = setInterval(() => (now.value = dayjs()), 1000)
+    // Floating chat staf: tersambung selama dashboard terbuka, di semua halaman.
+    chat.start()
+})
 onBeforeUnmount(() => clearInterval(clockTimer))
 
 const readouts = computed(() => [
@@ -116,6 +123,7 @@ async function handleLogout() {
         // atas nama akun yang sudah keluar.
         if (live.isBroadcasting) await live.endWork().catch(() => {})
         await live.disconnect()
+        chat.stop()
         await auth.logout()
         router.push({ name: 'login' })
     } catch {
@@ -273,6 +281,7 @@ async function handleLogout() {
             <main class="min-w-0 flex-1">
                 <router-view />
                 <ScreenShareLock />
+                <ChatWidget />
             </main>
         </div>
     </div>
