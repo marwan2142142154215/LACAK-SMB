@@ -118,15 +118,15 @@ class ChatMessageTest extends TestCase
         $this->assertFalse($older->json('data.has_more'));
     }
 
-    private function fakeDocumentsDisk(): void
+    private function fakeChatImagesDisk(): void
     {
-        config(['filesystems.documents_disk' => 'local']);
+        config(['filesystems.chat_images_disk' => 'local']);
         Storage::fake('local');
     }
 
     public function test_staff_send_image_that_only_their_site_can_open(): void
     {
-        $this->fakeDocumentsDisk();
+        $this->fakeChatImagesDisk();
         $org = Organization::factory()->create();
         $budi = $this->staffIn($org);
 
@@ -157,7 +157,7 @@ class ChatMessageTest extends TestCase
 
     public function test_image_only_message_is_allowed_but_svg_and_empty_messages_are_not(): void
     {
-        $this->fakeDocumentsDisk();
+        $this->fakeChatImagesDisk();
         $budi = $this->staffIn(Organization::factory()->create());
 
         $this->actingAs($budi, 'sanctum')
