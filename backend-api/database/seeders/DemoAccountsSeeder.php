@@ -17,7 +17,8 @@ use Illuminate\Support\Str;
  * Semua akun memakai satu password: dari env DEMO_ACCOUNTS_PASSWORD kalau
  * diisi, kalau tidak dibuat acak dan dicetak sekali di terminal (tidak
  * pernah ditulis di kode -- repo publik). Menjalankan ulang seeder ini
- * mereset password semua akun dummy ke password baru.
+ * mereset password semua akun dummy ke password baru -- isi
+ * DEMO_ACCOUNTS_PASSWORD dengan password lama supaya tidak berubah.
  */
 class DemoAccountsSeeder extends Seeder
 {
@@ -33,6 +34,24 @@ class DemoAccountsSeeder extends Seeder
         ['staf.b1', 'Staf B1', 'staff_viewer', 'B', []],
     ];
 
+    /** Staf tambahan per site, untuk menguji dinding Live Kerja & log kerja dengan banyak orang. */
+    private const EXTRA_STAFF = ['A' => [3, 12], 'B' => [2, 11]];
+
+    /** @return array<int, array{0: string, 1: string, 2: string, 3: string|null, 4: array<int, string>}> */
+    private function accounts(): array
+    {
+        $accounts = self::ACCOUNTS;
+
+        foreach (self::EXTRA_STAFF as $siteKey => [$from, $to]) {
+            foreach (range($from, $to) as $number) {
+                $code = Str::lower($siteKey).$number;
+                $accounts[] = ["staf.{$code}", 'Staf '.Str::upper($code), 'staff_viewer', $siteKey, []];
+            }
+        }
+
+        return $accounts;
+    }
+
     public function run(): void
     {
         $this->call(RolesAndPermissionsSeeder::class);
@@ -44,7 +63,7 @@ class DemoAccountsSeeder extends Seeder
 
         $password = env('DEMO_ACCOUNTS_PASSWORD') ?: 'Uji-'.Str::random(10);
 
-        foreach (self::ACCOUNTS as [$username, $name, $role, $siteKey, $access]) {
+        foreach ($this->accounts() as [$username, $name, $role, $siteKey, $access]) {
             // withTrashed: akun dummy yang pernah dihapus dihidupkan lagi,
             // bukan dibuat ulang (username tetap unik walau soft-deleted).
             $user = User::withTrashed()->updateOrCreate(['username' => $username], [
@@ -67,7 +86,7 @@ class DemoAccountsSeeder extends Seeder
                 $account[0],
                 $account[2],
                 $account[3] ? "Site Uji {$account[3]}" : ($account[4] ? 'Akses: Site Uji '.implode(' & ', $account[4]) : 'Semua site'),
-            ], self::ACCOUNTS),
+            ], $this->accounts()),
         );
         $this->command?->line("Password: {$password}");
         $this->command?->newLine();
