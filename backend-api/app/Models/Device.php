@@ -85,6 +85,7 @@ class Device extends Model
     {
         return LogOptions::defaults()
             ->logOnly(['device_name', 'status', 'is_active'])
-            ->logOnlyDirty();
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs();
     }
 }

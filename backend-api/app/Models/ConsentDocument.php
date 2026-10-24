@@ -64,6 +64,7 @@ class ConsentDocument extends Model
     {
         return LogOptions::defaults()
             ->logOnly(['subject_name', 'signer_name', 'signer_role', 'revoked_at'])
-            ->logOnlyDirty();
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs();
     }
 }
