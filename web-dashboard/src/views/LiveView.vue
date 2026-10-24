@@ -368,6 +368,11 @@ onMounted(async () => {
         return
     }
 
+    // Setelah refresh, siaran yang sesinya masih terbuka disambung lagi
+    // otomatis (lihat live.resumeIfBroadcasting, dipicu juga oleh AppShell).
+    const resume = await live.resumeIfBroadcasting()
+    if (resume.resumed) mySession.value = null
+
     // Koneksi tetap hidup saat pindah halaman (disimpan di store) -- jangan
     // sambung ulang kalau memang sudah terhubung.
     if (live.mode !== 'idle') {

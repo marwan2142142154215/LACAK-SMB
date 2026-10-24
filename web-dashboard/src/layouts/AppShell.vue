@@ -25,6 +25,7 @@ import ChatWidget from '@/components/chat/ChatWidget.vue'
 import ScreenShareLock from '@/components/live/ScreenShareLock.vue'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useTheme } from '@/composables/useTheme'
+import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
 import { useLiveStore } from '@/stores/live'
@@ -32,6 +33,7 @@ import { useLiveStore } from '@/stores/live'
 const auth = useAuthStore()
 const live = useLiveStore()
 const chat = useChatStore()
+const toast = useToast()
 const router = useRouter()
 const route = useRoute()
 const loggingOut = ref(false)
@@ -93,6 +95,11 @@ onMounted(() => {
     clockTimer = setInterval(() => (now.value = dayjs()), 1000)
     // Floating chat staf: tersambung selama dashboard terbuka, di semua halaman.
     chat.start()
+    // Refresh saat sedang siaran: sambung lagi otomatis di halaman mana pun.
+    live.resumeIfBroadcasting().then(({ resumed, error }) => {
+        if (resumed) toast.success('Siaran dilanjutkan', 'Kamera Anda tersiar lagi setelah halaman dimuat ulang.')
+        else if (error) toast.error('Siaran belum tersambung lagi', `${error.message} Buka Live Kerja lalu tekan Lanjutkan siaran.`)
+    })
 })
 onBeforeUnmount(() => clearInterval(clockTimer))
 
