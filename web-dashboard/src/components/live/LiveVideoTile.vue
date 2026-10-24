@@ -13,6 +13,7 @@ const props = defineProps({
     fit: { type: String, default: 'cover' },
     since: { type: [Date, String, Number], default: null }, // mulai siaran -> durasi berjalan di pojok
     framed: { type: Boolean, default: false }, // sudut jendela bidik untuk monitor besar
+    bare: { type: Boolean, default: false }, // tanpa label & badge -- untuk kamera kecil yang tertutup teks
 })
 
 const now = useNow()
@@ -94,7 +95,7 @@ const elapsed = computed(() => (props.since ? formatElapsed(props.since, now.val
         </template>
 
         <span
-            v-if="qualityLabel"
+            v-if="qualityLabel && !bare"
             class="absolute top-2.5 right-2.5 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums backdrop-blur-sm"
             :class="[qualityTone, framed && 'top-6 right-10']"
             :title="`Gambar yang sedang ditampilkan: ${qualityLabel}`"
@@ -103,6 +104,7 @@ const elapsed = computed(() => (props.since ? formatElapsed(props.since, now.val
         </span>
 
         <div
+            v-if="!bare"
             class="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-3 pt-8 pb-2.5"
             :class="framed && 'px-6 pb-5'"
         >
