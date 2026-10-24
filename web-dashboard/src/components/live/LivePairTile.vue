@@ -10,6 +10,7 @@ import { workStatus } from '@/lib/workStatus'
 // dia. `swapped` menukar posisi kiri/kanan untuk semua bingkai sekaligus.
 const props = defineProps({
     name: { type: String, required: true },
+    site: { type: String, default: null }, // nama site, diisi di mode "Semua site"
     screenTrack: { type: Object, default: null },
     cameraTrack: { type: Object, default: null },
     status: { type: String, default: null },
@@ -28,10 +29,10 @@ const elapsed = computed(() => (props.since ? formatElapsed(props.since, now.val
 const qualityMeta = computed(
     () =>
         ({
-            excellent: { icon: Signal, label: 'Koneksi bagus', tone: 'text-emerald-400' },
-            good: { icon: SignalMedium, label: 'Koneksi cukup', tone: 'text-yellow-400' },
-            poor: { icon: SignalLow, label: 'Koneksi lemah -- kualitas diturunkan otomatis', tone: 'text-orange-400' },
-            lost: { icon: SignalLow, label: 'Koneksi putus', tone: 'text-red-500' },
+            excellent: { icon: Signal, label: 'Koneksi bagus', tone: 'text-st-working' },
+            good: { icon: SignalMedium, label: 'Koneksi cukup', tone: 'text-st-idle' },
+            poor: { icon: SignalLow, label: 'Koneksi lemah -- kualitas diturunkan otomatis', tone: 'text-st-screen' },
+            lost: { icon: SignalLow, label: 'Koneksi putus', tone: 'text-st-disconnected' },
         })[props.quality] ?? null,
 )
 
@@ -43,11 +44,12 @@ const sides = computed(() => {
 </script>
 
 <template>
-    <div class="overflow-hidden rounded-xl border border-base-800 bg-base-900">
+    <div class="overflow-hidden rounded-xl border border-base-800 bg-base-900 shadow-(--shadow-card)">
         <div class="flex items-center gap-2.5 px-3 py-2" :class="large && 'px-4 py-3'">
-            <span class="min-w-0 flex-1 truncate text-sm font-medium text-base-50" :class="large && 'font-display text-lg'">{{
-                name
-            }}</span>
+            <span class="flex min-w-0 flex-1 items-baseline gap-2">
+                <span class="truncate text-sm font-semibold text-base-50" :class="large && 'font-display text-lg'">{{ name }}</span>
+                <span v-if="site" class="truncate font-mono text-[10.5px] tracking-[0.08em] text-base-500 uppercase">{{ site }}</span>
+            </span>
             <span
                 v-if="meta"
                 class="inline-flex shrink-0 items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] uppercase"

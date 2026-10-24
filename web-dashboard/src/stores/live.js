@@ -31,8 +31,13 @@ export const canShareScreen = typeof navigator !== 'undefined' && !!navigator.me
  *
  * Status kerja (kamera/layar menyala, istirahat, idle) dilaporkan ke backend
  * lewat heartbeat -- backend yang menghitung status & mencatat log kerja.
+ *
+ * Satu room LiveKit = satu site. Penonton multi-site (super_admin, admin,
+ * leader) bisa membuka "Semua site" -- satu koneksi per site, di `rooms`.
+ * Staf yang menyiarkan hanya terhubung ke room site-nya sendiri (`ownRoom`).
  */
-let room = null
+const rooms = new Map() // siteId -> Room
+let ownRoom = null
 let heartbeatTimer = null
 let reportTimer = null
 let wakeLock = null
@@ -56,33 +61,44 @@ export const useLiveStore = defineStore('live', () => {
 
     const isBroadcasting = computed(() => mode.value === 'broadcasting')
 
+    const watchedSiteIds = ref([])
+
     const remoteParticipants = computed(() => {
         revision.value // dependensi reaktif, lihat catatan di atas
-        if (!room) return []
-        return [...room.remoteParticipants.values()]
+        return [...rooms.values()]
+            .flatMap((room) => [...room.remoteParticipants.values()])
             .filter((p) => p.getTrackPublication(CAMERA_SOURCE) || p.getTrackPublication(SCREEN_SOURCE))
             .sort((a, b) => (a.name || a.identity).localeCompare(b.name || b.identity))
     })
 
+    /** identity peserta -> id site-nya (untuk label site di mode "Semua site"). */
+    const participantSites = computed(() => {
+        revision.value
+        const sites = {}
+        for (const [siteId, room] of rooms) {
+            for (const participant of room.remoteParticipants.values()) sites[participant.identity] = siteId
+        }
+        return sites
+    })
+
     const localCameraTrack = computed(() => {
         revision.value
-        return room?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track ?? null
+        return ownRoom?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track ?? null
     })
 
     const localScreenTrack = computed(() => {
         revision.value
-        return room?.localParticipant.getTrackPublication(SCREEN_SOURCE)?.track ?? null
+        return ownRoom?.localParticipant.getTrackPublication(SCREEN_SOURCE)?.track ?? null
     })
 
     function bump() {
         revision.value++
     }
 
-    async function connect(livekitUrl, token) {
-        await disconnect()
-
+    /** Sambung ke room satu site dan simpan di `rooms`. */
+    async function connect(livekitUrl, token, siteId) {
         const { Room, RoomEvent, ScreenSharePresets, VideoPresets } = await import('livekit-client')
-        room = new Room({
+        const room = new Room({
             // adaptiveStream: kualitas video tiap peserta otomatis
             // mengikuti ukuran elemen <video> & dijeda saat tidak terlihat
             // -- wajib untuk grid >50 staf supaya kuota/baterai tidak habis.
@@ -127,13 +143,15 @@ export const useLiveStore = defineStore('live', () => {
             .on(RoomEvent.LocalTrackUnpublished, handleLocalTracksChanged)
             .on(RoomEvent.TrackMuted, handleLocalCameraStopped)
             .on(RoomEvent.TrackUnmuted, handleLocalTracksChanged)
-            .on(RoomEvent.Disconnected, handleDisconnected)
+            .on(RoomEvent.Disconnected, () => handleRoomDisconnected(siteId, room))
 
         // autoSubscribe: false -- LiveView yang memilih peserta mana yang
         // di-subscribe (hanya yang tampil di halaman grid saat ini), bukan
         // langsung menerima video semua staf se-site sekaligus.
         await room.connect(livekitUrl, token, { autoSubscribe: false })
+        rooms.set(siteId, room)
         bump()
+        return room
     }
 
     function resetBroadcastState() {
@@ -149,34 +167,51 @@ export const useLiveStore = defineStore('live', () => {
         stopHeartbeat()
         stopIdleWatch()
         releaseWakeLock()
-        if (room) {
-            const current = room
-            room = null
-            current.off('disconnected', handleDisconnected)
-            await current.disconnect()
+        const current = [...rooms.values()]
+        rooms.clear()
+        ownRoom = null
+        watchedSiteIds.value = []
+        // removeAllListeners: disconnect() yang kita minta sendiri bukan "putus".
+        await Promise.all(current.map((room) => room.removeAllListeners().disconnect()))
+        resetBroadcastState()
+        bump()
+    }
+
+    // Diputus dari sisi server (sesi ditutup timeout, staf dikeluarkan) atau
+    // koneksi gagal total setelah LiveKit menyerah reconnect.
+    function handleRoomDisconnected(siteId, room) {
+        if (rooms.get(siteId) === room) rooms.delete(siteId)
+        watchedSiteIds.value = watchedSiteIds.value.filter((id) => rooms.has(id))
+        if (room === ownRoom || rooms.size === 0) {
+            ownRoom = null
+            stopHeartbeat()
+            stopIdleWatch()
+            releaseWakeLock()
+            resetBroadcastState()
         }
-        resetBroadcastState()
         bump()
     }
 
-    function handleDisconnected() {
-        // Diputus dari sisi server (sesi ditutup timeout, staf dikeluarkan)
-        // atau koneksi gagal total setelah LiveKit menyerah reconnect.
-        room = null
-        stopHeartbeat()
-        stopIdleWatch()
-        releaseWakeLock()
-        resetBroadcastState()
-        bump()
-    }
+    const watchSite = (siteId) => watchSites([siteId])
 
-    async function watchSite(siteId) {
+    /**
+     * Tonton satu atau beberapa site sekaligus. Site yang gagal tersambung
+     * dilewati; error baru dilempar kalau SEMUA site gagal.
+     */
+    async function watchSites(siteIds) {
         connecting.value = true
         try {
-            const response = await api.post('/live/watch-token', { organization_id: siteId })
-            const { livekit_url, token } = response.data.data
-            await connect(livekit_url, token)
-            organizationId.value = siteId
+            await disconnect()
+            const results = await Promise.allSettled(
+                siteIds.map(async (siteId) => {
+                    const response = await api.post('/live/watch-token', { organization_id: siteId })
+                    const { livekit_url, token } = response.data.data
+                    await connect(livekit_url, token, siteId)
+                }),
+            )
+            if (!rooms.size) throw results.find((result) => result.status === 'rejected')?.reason ?? new Error('Tidak ada site')
+            watchedSiteIds.value = siteIds.filter((id) => rooms.has(id))
+            organizationId.value = siteIds.length === 1 ? siteIds[0] : null
             mode.value = 'watching'
         } finally {
             connecting.value = false
@@ -194,7 +229,7 @@ export const useLiveStore = defineStore('live', () => {
     // (track 'ended' lalu gagal dinyalakan ulang) -- siaran tetap tercatat
     // aktif tapi tanpa gambar, jadi beri tahu staf dengan jelas.
     function handleLocalCameraStopped(publication, participant) {
-        if (participant !== room?.localParticipant) return
+        if (participant !== ownRoom?.localParticipant) return
         handleLocalTracksChanged()
         if (publication.source !== CAMERA_SOURCE || mode.value !== 'broadcasting') return
         // Saat staf pindah aplikasi, browser HP memang menghentikan kamera --
@@ -204,7 +239,7 @@ export const useLiveStore = defineStore('live', () => {
     }
 
     function trackIsLive(source) {
-        const track = room?.localParticipant.getTrackPublication(source)?.track
+        const track = ownRoom?.localParticipant.getTrackPublication(source)?.track
         return !!track && !track.isMuted && track.mediaStreamTrack?.readyState === 'live'
     }
 
@@ -218,9 +253,11 @@ export const useLiveStore = defineStore('live', () => {
         try {
             const response = await api.post('/live/sessions/start')
             const { livekit_url, token, session } = response.data.data
-            await connect(livekit_url, token)
+            await disconnect()
+            ownRoom = await connect(livekit_url, token, session.organization_id)
             organizationId.value = session.organization_id
-            await room.localParticipant.setCameraEnabled(true)
+            watchedSiteIds.value = [session.organization_id]
+            await ownRoom.localParticipant.setCameraEnabled(true)
             // Kamera bisa "berhasil" dibuka lalu langsung berhenti (mis. sedang
             // dipakai aplikasi lain) -- jangan anggap siaran jalan tanpa gambar.
             await new Promise((resolve) => setTimeout(resolve, 800))
@@ -251,9 +288,9 @@ export const useLiveStore = defineStore('live', () => {
 
     /** Matikan lalu nyalakan lagi kamera tanpa memutus siaran. */
     async function restartCamera() {
-        if (!room || mode.value !== 'broadcasting') return
-        await room.localParticipant.setCameraEnabled(false)
-        await room.localParticipant.setCameraEnabled(true)
+        if (!ownRoom || mode.value !== 'broadcasting') return
+        await ownRoom.localParticipant.setCameraEnabled(false)
+        await ownRoom.localParticipant.setCameraEnabled(true)
         await new Promise((resolve) => setTimeout(resolve, 800))
         cameraProblem.value = cameraIsLive()
             ? null
@@ -269,8 +306,8 @@ export const useLiveStore = defineStore('live', () => {
      * sendiri dan handleLocalTracksChanged() melaporkan "Screen stop".
      */
     async function setScreenShare(enabled) {
-        if (!room || mode.value !== 'broadcasting') return
-        await room.localParticipant.setScreenShareEnabled(enabled, {
+        if (!ownRoom || mode.value !== 'broadcasting') return
+        await ownRoom.localParticipant.setScreenShareEnabled(enabled, {
             audio: false,
             contentHint: 'detail',
             resolution: { width: 1920, height: 1080, frameRate: 15 },
@@ -299,7 +336,7 @@ export const useLiveStore = defineStore('live', () => {
 
     /** Resolusi & frame rate yang benar-benar dihasilkan kamera saat ini. */
     function localCameraSettings() {
-        const settings = room?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track?.mediaStreamTrack?.getSettings()
+        const settings = ownRoom?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track?.mediaStreamTrack?.getSettings()
         if (!settings?.width) return null
         return { width: settings.width, height: settings.height, frameRate: Math.round(settings.frameRate ?? 0) }
     }
@@ -411,11 +448,13 @@ export const useLiveStore = defineStore('live', () => {
 
     /** Subscribe hanya ke peserta yang sedang tampil (kamera + layarnya), unsubscribe sisanya. */
     function setVisibleParticipants(identities) {
-        if (!room || room.state !== CONNECTED) return
         const visible = new Set(identities)
-        for (const participant of room.remoteParticipants.values()) {
-            for (const source of [CAMERA_SOURCE, SCREEN_SOURCE]) {
-                participant.getTrackPublication(source)?.setSubscribed(visible.has(participant.identity))
+        for (const room of rooms.values()) {
+            if (room.state !== CONNECTED) continue
+            for (const participant of room.remoteParticipants.values()) {
+                for (const source of [CAMERA_SOURCE, SCREEN_SOURCE]) {
+                    participant.getTrackPublication(source)?.setSubscribed(visible.has(participant.identity))
+                }
             }
         }
     }
@@ -431,9 +470,12 @@ export const useLiveStore = defineStore('live', () => {
         connecting,
         isBroadcasting,
         remoteParticipants,
+        participantSites,
+        watchedSiteIds,
         localCameraTrack,
         localScreenTrack,
         watchSite,
+        watchSites,
         startWork,
         endWork,
         restartCamera,

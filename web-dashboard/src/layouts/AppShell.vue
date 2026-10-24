@@ -6,11 +6,13 @@ import {
     LogOut,
     MapPinned,
     Menu,
+    Moon,
     PackageOpen,
     Radar,
     Send,
     Settings,
     Smartphone,
+    Sun,
     Users,
     Video,
     X,
@@ -20,6 +22,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useTelemetry } from '@/composables/useTelemetry'
+import { useTheme } from '@/composables/useTheme'
 import { useAuthStore } from '@/stores/auth'
 import { useLiveStore } from '@/stores/live'
 
@@ -29,6 +32,7 @@ const router = useRouter()
 const route = useRoute()
 const loggingOut = ref(false)
 const telemetry = useTelemetry()
+const { theme, toggleTheme } = useTheme()
 
 // Sidebar jadi drawer di layar sempit (standar 9.3: wajib bisa dipakai di
 // ponsel) — mobileNavOpen mengontrol tampil/sembunyi, ditutup otomatis
@@ -243,6 +247,16 @@ async function handleLogout() {
                 <p class="hidden shrink-0 font-mono text-[11px] tracking-[0.12em] text-base-400 uppercase tabular-nums md:block">
                     {{ now.format('ddd DD MMM') }} <span class="ml-2 text-base-100">{{ now.format('HH:mm:ss') }}</span>
                 </p>
+                <button
+                    type="button"
+                    class="flex size-8 shrink-0 items-center justify-center rounded-md text-base-400 transition-colors hover:bg-base-850 hover:text-base-50 focus-visible:outline-2 focus-visible:outline-accent-400"
+                    :aria-label="theme === 'dark' ? 'Pakai tema terang' : 'Pakai tema gelap'"
+                    :title="theme === 'dark' ? 'Tema terang' : 'Tema gelap'"
+                    @click="toggleTheme"
+                >
+                    <Sun v-if="theme === 'dark'" class="size-4" />
+                    <Moon v-else class="size-4" />
+                </button>
             </div>
 
             <!-- Pengingat siaran aktif, tampil di semua halaman selama staf live -->

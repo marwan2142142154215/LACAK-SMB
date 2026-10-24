@@ -13,9 +13,11 @@ use App\Models\WorkSessionEvent;
 use App\Services\LiveKitTokenIssuer;
 use App\Services\WorkPresence;
 use App\Support\ResolvesOrganizationScope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\URL;
 
 /**
@@ -47,16 +49,74 @@ class WorkSessionController extends Controller
 
         // scopeToOrganization() memfilter kolom organization_id, sedangkan di
         // tabel organizations sendiri kuncinya `id` -- aturannya sama.
-        $sites = Organization::query()
+        return $this->success('Site yang bisa ditonton', $this->watchableSites($user)->get(['id', 'name']));
+    }
+
+    /**
+     * Semua staf live di SEMUA site yang boleh ditonton user ini sekaligus
+     * (halaman "Semua site" untuk super_admin / admin / leader multi-site),
+     * plus status setiap staf di site-site itu.
+     */
+    public function overview(Request $request)
+    {
+        $user = $request->user();
+        $user->can('live.watch') || abort(403);
+
+        $sites = $this->watchableSites($user)->get(['id', 'name']);
+        $siteIds = $sites->pluck('id')->all();
+
+        $sessions = WorkSession::open()
+            ->whereIn('organization_id', $siteIds)
+            ->with('user:id,name')
+            ->orderBy('started_at')
+            ->get();
+
+        return $this->success('Semua staf yang sedang live', [
+            'sites' => $sites,
+            'items' => WorkSessionResource::collection($sessions),
+            'roster' => $this->rosterFor($siteIds, $sessions),
+        ]);
+    }
+
+    /** Site aktif yang boleh ditonton user ini, dengan jumlah staf yang sedang live. */
+    private function watchableSites(User $user): Builder
+    {
+        // scopeToOrganization() memfilter kolom organization_id, sedangkan di
+        // tabel organizations sendiri kuncinya `id` -- aturannya sama.
+        return Organization::query()
             ->where('is_active', true)
             ->when(! $this->hasCrossOrganizationAccess($user), fn ($q) => $q->whereIn('id', $this->hasGrantBasedAccess($user)
                 ? $this->grantedOrganizationIds($user)
                 : array_filter([$user->organization_id])))
             ->withCount(['workSessions as live_count' => fn ($q) => $q->whereNull('ended_at')])
-            ->orderBy('name')
-            ->get(['id', 'name']);
+            ->orderBy('name');
+    }
 
-        return $this->success('Site yang bisa ditonton', $sites);
+    /**
+     * Semua staf (yang boleh Live Kerja) di site-site ini beserta statusnya,
+     * termasuk yang offline.
+     *
+     * @param  list<int>  $organizationIds
+     * @param  Collection<int, WorkSession>  $openSessions
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function rosterFor(array $organizationIds, Collection $openSessions): Collection
+    {
+        $sessionsByUser = $openSessions->keyBy('user_id');
+
+        return User::permission('live.broadcast')
+            ->whereIn('organization_id', $organizationIds)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'organization_id'])
+            ->map(fn (User $staff) => [
+                'user_id' => $staff->id,
+                'name' => $staff->name,
+                'organization_id' => $staff->organization_id,
+                'participant_identity' => "user-{$staff->id}",
+                'status' => $this->presence->statusOf($sessionsByUser->get($staff->id)),
+                'started_at' => $sessionsByUser->get($staff->id)?->started_at,
+            ]);
     }
 
     /**
@@ -80,19 +140,7 @@ class WorkSessionController extends Controller
             ->orderBy('started_at')
             ->get();
 
-        $sessionsByUser = $sessions->keyBy('user_id');
-        $roster = User::permission('live.broadcast')
-            ->where('organization_id', $organizationId)
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get(['id', 'name'])
-            ->map(fn (User $staff) => [
-                'user_id' => $staff->id,
-                'name' => $staff->name,
-                'participant_identity' => "user-{$staff->id}",
-                'status' => $this->presence->statusOf($sessionsByUser->get($staff->id)),
-                'started_at' => $sessionsByUser->get($staff->id)?->started_at,
-            ]);
+        $roster = $this->rosterFor([$organizationId], $sessions);
 
         return $this->success('Staf yang sedang live', [
             'organization_id' => $organizationId,

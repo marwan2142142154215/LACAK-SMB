@@ -104,6 +104,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         // WorkSessionController untuk aturan isolasi antar-site.
         Route::get('/live/sites', [WorkSessionController::class, 'sites']);
         Route::get('/live/sessions', [WorkSessionController::class, 'index']);
+        Route::get('/live/overview', [WorkSessionController::class, 'overview']);
         Route::post('/live/sessions/start', [WorkSessionController::class, 'start'])->middleware('throttle:10,1');
         Route::post('/live/sessions/heartbeat', [WorkSessionController::class, 'heartbeat'])->middleware('throttle:60,1');
         Route::post('/live/sessions/end', [WorkSessionController::class, 'end']);

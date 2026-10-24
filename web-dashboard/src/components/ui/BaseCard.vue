@@ -10,7 +10,7 @@ defineProps({
 </script>
 
 <template>
-    <section class="overflow-hidden rounded-xl border border-base-800 bg-base-900/70">
+    <section class="overflow-hidden rounded-xl border border-base-800 bg-base-900 shadow-(--shadow-card)">
         <header
             v-if="title || $slots.actions"
             class="flex flex-wrap items-center justify-between gap-3 border-b border-base-800 px-5 py-3.5"

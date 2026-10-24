@@ -7,7 +7,18 @@
         <!-- PWA: dashboard bisa di-install sebagai aplikasi (lihat public/sw.js) -->
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <meta name="theme-color" content="#05070a" />
+        <meta name="theme-color" content="#f3f5f8" />
+        <!-- Tema dipasang sebelum CSS dimuat supaya tidak berkedip (lihat src/composables/useTheme.js) -->
+        <script>
+            ;(function () {
+                var theme = 'light'
+                try {
+                    theme = localStorage.getItem('lacak_theme') === 'dark' ? 'dark' : 'light'
+                } catch (e) {}
+                document.documentElement.dataset.theme = theme
+                if (theme === 'dark') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#05070a')
+            })()
+        </script>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
