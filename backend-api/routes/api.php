@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\DeviceOtpController;
 use App\Http\Controllers\Api\GeofenceRuleController;
 use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\SecuritySettingController;
+use App\Http\Controllers\Api\SystemStatusController;
 use App\Http\Controllers\Api\TelegramBindingController;
 use App\Http\Controllers\Api\TelegramUserLinkController;
 use App\Http\Controllers\Api\UserController;
@@ -123,5 +124,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         // Pengaturan keamanan sistem (wajib/tidaknya 2FA) -- super_admin saja.
         Route::get('/settings/security', [SecuritySettingController::class, 'show']);
         Route::put('/settings/security', [SecuritySettingController::class, 'update']);
+
+        // Status semua layanan server -- super_admin saja.
+        Route::get('/system/status', SystemStatusController::class)->middleware('throttle:30,1');
     });
 });

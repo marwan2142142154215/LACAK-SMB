@@ -72,6 +72,12 @@ const routes = [
                 component: () => import('@/views/SettingsView.vue'),
                 meta: { requiresSuperAdmin: true },
             },
+            {
+                path: 'status-server',
+                name: 'server-status',
+                component: () => import('@/views/ServerStatusView.vue'),
+                meta: { requiresSuperAdmin: true },
+            },
         ],
     },
     {
