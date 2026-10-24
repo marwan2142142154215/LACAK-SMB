@@ -63,4 +63,19 @@ return [
         // work-sessions:close-stale.
         'heartbeat_timeout_seconds' => (int) env('LIVE_HEARTBEAT_TIMEOUT_SECONDS', 120),
     ],
+
+    /*
+    |--------------------------------------------------------------------
+    | Status server (menu Akses > Status server, super_admin)
+    |--------------------------------------------------------------------
+    | Alamat yang dipanggil backend untuk mengecek gateway & LiveKit
+    | (sebaiknya alamat lokal di server, mis. http://127.0.0.1:3334), dan
+    | unit systemd yang statusnya ditampilkan (`systemctl is-active`).
+    | LiveKit kosong = diturunkan dari LIVEKIT_URL (ws -> http).
+    */
+    'status' => [
+        'gateway_url' => env('LACAKSMB_STATUS_GATEWAY_URL', env('LACAKSMB_PUBLIC_GATEWAY_URL', 'https://ws.salahmu.fun')),
+        'livekit_url' => env('LACAKSMB_STATUS_LIVEKIT_URL'),
+        'systemd_units' => env('LACAKSMB_STATUS_SYSTEMD_UNITS', 'lacak-gateway,lacak-queue,lacak-scheduler,lacak-bot,php8.3-fpm'),
+    ],
 ];

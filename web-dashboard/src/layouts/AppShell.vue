@@ -10,6 +10,7 @@ import {
     PackageOpen,
     Radar,
     Send,
+    ServerCog,
     Settings,
     Smartphone,
     Sun,
@@ -76,6 +77,7 @@ const navGroups = computed(() => [
             { to: { name: 'organizations' }, label: 'Site', icon: Building2, hidden: !auth.isSuperAdmin },
             { to: { name: 'staff' }, label: 'Staf', icon: Users, hidden: !auth.isSuperAdmin },
             { to: { name: 'settings' }, label: 'Pengaturan', icon: Settings, hidden: !auth.isSuperAdmin },
+            { to: { name: 'server-status' }, label: 'Status server', icon: ServerCog, hidden: !auth.isSuperAdmin },
         ],
     },
 ])
