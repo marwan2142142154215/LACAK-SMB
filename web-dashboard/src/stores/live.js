@@ -5,6 +5,10 @@ import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
+// Kamera dicek tiap beberapa detik selama siaran; baru dianggap mati kalau
+// mati lebih lama dari batas ini (menyalakan ulang kamera butuh ~1 detik).
+const CAMERA_CHECK_MS = 2_000
+const CAMERA_DEAD_AFTER_MS = 5_000
 // Tanpa keyboard/mouse selama ini (atau layar komputer terkunci) -> IDLE.
 const IDLE_THRESHOLD_MS = 5 * 60_000
 
@@ -115,6 +119,8 @@ async function captureEntireScreen() {
 const rooms = new Map() // siteId -> Room
 let ownRoom = null
 let heartbeatTimer = null
+let cameraCheckTimer = null
+let cameraDeadSince = null
 let reportTimer = null
 let wakeLock = null
 let idleDetector = null
@@ -160,6 +166,9 @@ export const useLiveStore = defineStore('live', () => {
     // Mikrofon saya dibisukan (oleh saya sendiri) / tidak bisa dipakai.
     const micMuted = ref(readMicMuted())
     const micProblem = ref(null)
+    // Kamera benar-benar mengirim gambar? false = kamera mati lebih dari
+    // CAMERA_DEAD_AFTER_MS -> dashboard dikunci (CameraLock) sampai menyala lagi.
+    const cameraLive = ref(true)
     // Penonton: identity staf yang suaranya sedang didengarkan. Default
     // kosong -- puluhan mikrofon sekaligus hanya jadi keributan, dan tidak
     // ada audio yang diunduh sebelum penonton memilih mendengarkan.
@@ -313,6 +322,8 @@ export const useLiveStore = defineStore('live', () => {
         myStatus.value = null
         screenRequired.value = false
         micProblem.value = null
+        cameraLive.value = true
+        cameraDeadSince = null
     }
 
     async function disconnect() {
@@ -618,13 +629,34 @@ export const useLiveStore = defineStore('live', () => {
     function startHeartbeat() {
         stopHeartbeat()
         heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS)
+        cameraCheckTimer = setInterval(checkCamera, CAMERA_CHECK_MS)
     }
 
     function stopHeartbeat() {
         clearInterval(heartbeatTimer)
+        clearInterval(cameraCheckTimer)
         clearTimeout(reportTimer)
         heartbeatTimer = null
+        cameraCheckTimer = null
         reportTimer = null
+    }
+
+    function checkCamera() {
+        if (mode.value !== 'broadcasting') return
+        if (cameraIsLive()) {
+            cameraDeadSince = null
+            if (!cameraLive.value) {
+                cameraLive.value = true
+                cameraProblem.value = null
+                scheduleReport()
+            }
+            return
+        }
+        cameraDeadSince ??= Date.now()
+        if (cameraLive.value && Date.now() - cameraDeadSince >= CAMERA_DEAD_AFTER_MS) {
+            cameraLive.value = false
+            scheduleReport()
+        }
     }
 
     // IDLE pakai Idle Detection API (Chrome/Edge desktop): mendeteksi tidak
@@ -725,6 +757,7 @@ export const useLiveStore = defineStore('live', () => {
         screenRequired,
         micMuted,
         micProblem,
+        cameraLive,
         localMicState,
         listening,
         connecting,
