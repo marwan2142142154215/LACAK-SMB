@@ -69,6 +69,11 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         ->name('consent-documents.download')
         ->middleware('signed');
 
+    // Gambar chat staf -- signed URL dari ChatMessage::imageUrl().
+    Route::get('/chat-messages/{chatMessage}/image', [ChatMessageController::class, 'image'])
+        ->name('chat-messages.image')
+        ->middleware('signed');
+
     Route::get('/apk-builds/{apkBuild}/download', [ApkBuildController::class, 'download'])
         ->name('apk-builds.download')
         ->middleware('signed');
@@ -117,6 +122,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         // yang sedang chat (lihat ChatMessageController).
         Route::get('/chat/messages', [ChatMessageController::class, 'index']);
         Route::post('/chat/messages', [ChatMessageController::class, 'store'])->middleware('throttle:30,1');
+        Route::get('/chat/messages/{chatMessage}', [ChatMessageController::class, 'show']);
         Route::post('/live/watch-token', [WorkSessionController::class, 'watchToken'])->middleware('throttle:30,1');
         Route::apiResource('telegram-user-links', TelegramUserLinkController::class)->only(['index', 'store', 'destroy']);
         Route::get('/telegram-user-links-lookup', [TelegramUserLinkController::class, 'lookup']);
