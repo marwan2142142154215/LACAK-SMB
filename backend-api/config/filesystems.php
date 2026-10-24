@@ -23,6 +23,12 @@ return [
         ? env('DOCUMENTS_DISK', 'spaces')
         : 'spaces',
 
+    // Gambar chat staf: bawaan disk 'local' (storage/app/private di server
+    // sendiri, privat -- dibuka hanya lewat tautan bertanda tangan), supaya
+    // chat tetap jalan walau Spaces belum diatur. Isi 'spaces' untuk
+    // memindahkannya ke DigitalOcean Spaces.
+    'chat_images_disk' => env('CHAT_IMAGES_DISK', 'local'),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks

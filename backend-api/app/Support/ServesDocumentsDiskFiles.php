@@ -49,9 +49,8 @@ trait ServesDocumentsDiskFiles
      * dipaksa dari tipe yang tervalidasi saat unggah + nosniff, supaya
      * browser tidak pernah menafsirkan berkas sebagai HTML/skrip.
      */
-    protected function serveDocumentsDiskImage(string $path, string $mimeType): RedirectResponse|StreamedResponse
+    protected function serveImageFromDisk(string $diskName, string $path, string $mimeType): RedirectResponse|StreamedResponse
     {
-        $diskName = config('filesystems.documents_disk');
         $storage = Storage::disk($diskName);
 
         if (config("filesystems.disks.{$diskName}.driver") !== 's3') {

@@ -7,7 +7,9 @@ use App\Http\Responses\ApiResponse;
 use App\Models\ChatMessage;
 use App\Support\ResolvesOrganizationScope;
 use App\Support\ServesDocumentsDiskFiles;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -19,7 +21,8 @@ use Throwable;
  *
  * Realtime-gateway memanggil endpoint ini dengan token user yang sedang
  * chat (bukan token sistem), jadi gateway tidak pernah memutuskan sendiri
- * siapa boleh masuk ruang chat mana. Pesan bergambar dikirim dashboard
+ * siapa boleh masuk ruang chat mana. Gambar disimpan di disk
+ * filesystems.chat_images_disk (bawaan: disk lokal privat). Pesan bergambar dikirim dashboard
  * langsung ke sini (multipart), lalu gateway mengambil pesan jadi lewat
  * show() sebelum menyiarkannya -- isi siaran selalu dari backend.
  */
@@ -115,7 +118,7 @@ class ChatMessageController extends Controller
         if ($image) {
             [$width, $height] = @getimagesize($image->getRealPath()) ?: [null, null];
             try {
-                $path = $this->documentsDisk()->putFileAs(
+                $path = $this->chatImagesDisk()->putFileAs(
                     "chat/{$organizationId}",
                     $image,
                     Str::uuid().'.'.$image->extension(),
@@ -159,10 +162,19 @@ class ChatMessageController extends Controller
             return $this->fail('Tautan kedaluwarsa atau tidak valid', null, 403);
         }
 
-        if (! $this->documentsDiskFileExists($chatMessage->image_path)) {
+        if (! $chatMessage->image_path || ! $this->chatImagesDisk()->exists($chatMessage->image_path)) {
             return $this->fail('Gambar tidak ditemukan', null, 404);
         }
 
-        return $this->serveDocumentsDiskImage($chatMessage->image_path, $chatMessage->image_mime ?? 'application/octet-stream');
+        return $this->serveImageFromDisk(
+            config('filesystems.chat_images_disk'),
+            $chatMessage->image_path,
+            $chatMessage->image_mime ?? 'application/octet-stream',
+        );
+    }
+
+    private function chatImagesDisk(): Filesystem
+    {
+        return Storage::disk(config('filesystems.chat_images_disk'));
     }
 }
