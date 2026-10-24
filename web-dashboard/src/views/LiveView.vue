@@ -21,6 +21,7 @@ import {
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import LiveMiniTile from '@/components/live/LiveMiniTile.vue'
 import LivePairTile from '@/components/live/LivePairTile.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -183,9 +184,19 @@ const wallParticipants = computed(() =>
 // Hanya peserta di halaman yang tampil yang di-subscribe (lihat
 // live.setVisibleParticipants), jadi menonton 100+ staf tidak berarti
 // mengunduh 100+ video sekaligus.
-const pageCount = computed(() => Math.max(1, Math.ceil(wallParticipants.value.length / layout.value)))
-const visibleParticipants = computed(() => wallParticipants.value.slice(page.value * layout.value, (page.value + 1) * layout.value))
-const wallGridClass = computed(() => (layout.value === 4 ? '2xl:grid-cols-2' : 'grid-cols-1'))
+// Lebih dari 4 staf live -> semua tampil sebagai ubin kecil (klik = popup
+// besar). Pilihan 1/2/4 layar hanya berlaku saat yang live 4 orang atau kurang.
+const COMPACT_THRESHOLD = 4
+const COMPACT_PAGE_SIZE = 24
+const compact = computed(() => wallParticipants.value.length > COMPACT_THRESHOLD)
+const pageSize = computed(() => (compact.value ? COMPACT_PAGE_SIZE : layout.value))
+const pageCount = computed(() => Math.max(1, Math.ceil(wallParticipants.value.length / pageSize.value)))
+const visibleParticipants = computed(() => wallParticipants.value.slice(page.value * pageSize.value, (page.value + 1) * pageSize.value))
+const wallGridClass = computed(() => {
+    if (compact.value) return 'grid-cols-2 sm:grid-cols-3 2xl:grid-cols-4'
+    return layout.value === 4 ? '2xl:grid-cols-2' : 'grid-cols-1'
+})
+watch(compact, () => (page.value = 0))
 
 watch(visibleParticipants, (participants) => live.setVisibleParticipants(participants.map((p) => p.identity)), { immediate: true })
 watch(pageCount, (count) => {
@@ -588,7 +599,15 @@ onBeforeUnmount(() => {
                 </label>
 
                 <div class="flex flex-wrap items-center gap-2">
+                    <p
+                        v-if="compact"
+                        class="rounded-lg border border-base-800 bg-base-850 px-3 py-1.5 text-xs text-base-400"
+                        title="Lebih dari 4 staf live: semua tampil kecil, klik untuk memperbesar"
+                    >
+                        Tampilan ringkas · klik staf untuk memperbesar
+                    </p>
                     <div
+                        v-else
                         class="flex rounded-lg border border-base-800 bg-base-850 p-0.5"
                         role="radiogroup"
                         aria-label="Jumlah staf per tampilan"
@@ -709,6 +728,25 @@ onBeforeUnmount(() => {
 
                     <!-- Bingkai dibuat lebar: adaptiveStream memilih layer resolusi dari
                          ukuran video, jadi bingkai besar = gambar lebih tajam. -->
+                    <div v-else-if="compact" class="grid gap-3" :class="wallGridClass">
+                        <button
+                            v-for="participant in visibleParticipants"
+                            :key="participant.identity"
+                            type="button"
+                            class="rounded-xl text-left transition-shadow hover:ring-2 hover:ring-accent-400/50 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none"
+                            :aria-label="`Perbesar ${participant.name || participant.identity}`"
+                            @click="focusedIdentity = participant.identity"
+                        >
+                            <LiveMiniTile
+                                :name="participant.name || participant.identity"
+                                :site="siteNameOf(participant)"
+                                :screen-track="trackOf(participant, SCREEN_SOURCE)"
+                                :camera-track="trackOf(participant, CAMERA_SOURCE)"
+                                :status="statusOf(participant)"
+                                :since="liveSince(participant)"
+                            />
+                        </button>
+                    </div>
                     <div v-else class="grid gap-4" :class="wallGridClass">
                         <button
                             v-for="participant in visibleParticipants"
