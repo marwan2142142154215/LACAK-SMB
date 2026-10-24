@@ -4,28 +4,40 @@ import { computed, ref } from 'vue'
 import api from '@/lib/api'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
+// Tanpa keyboard/mouse selama ini (atau layar komputer terkunci) -> IDLE.
+const IDLE_THRESHOLD_MS = 5 * 60_000
 
-// Nilai Track.Source.Camera & ConnectionState.Connected di livekit-client --
+// Nilai Track.Source & ConnectionState.Connected di livekit-client --
 // ditulis langsung supaya store ini (dipakai AppShell di SEMUA halaman)
 // tidak ikut memuat livekit-client (~500 kB). Library-nya baru di-import
 // dinamis di connect(), saat staf benar-benar membuka siaran.
 export const CAMERA_SOURCE = 'camera'
+export const SCREEN_SOURCE = 'screen_share'
 const CONNECTED = 'connected'
+
+/** Browser ini bisa berbagi layar? (HP: tidak -- iOS/Android browser tidak punya getDisplayMedia.) */
+export const canShareScreen = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia
 
 /**
  * Koneksi Live Kerja (LiveKit). SENGAJA disimpan di store, bukan di
- * LiveView.vue -- supaya siaran kamera tetap jalan saat staf pindah ke
- * halaman lain di dashboard (Radar, Device, dst). AppShell menampilkan
- * indikator LIVE selama `isBroadcasting`.
+ * LiveView.vue -- supaya siaran tetap jalan saat staf pindah ke halaman lain
+ * di dashboard (Radar, Device, dst). AppShell menampilkan indikator LIVE
+ * selama `isBroadcasting`.
  *
  * Objek Room LiveKit disimpan di variabel modul (bukan ref) karena isinya
  * kelas yang berubah sendiri dari dalam -- dibungkus reaktif Vue malah bikin
  * proxy berat ke ribuan properti internal. Komponen me-render ulang lewat
  * `revision`, yang dinaikkan setiap kali ada event peserta/track.
+ *
+ * Status kerja (kamera/layar menyala, istirahat, idle) dilaporkan ke backend
+ * lewat heartbeat -- backend yang menghitung status & mencatat log kerja.
  */
 let room = null
 let heartbeatTimer = null
+let reportTimer = null
 let wakeLock = null
+let idleDetector = null
+let idleAbort = null
 
 export const useLiveStore = defineStore('live', () => {
     const mode = ref('idle') // idle | watching | broadcasting
@@ -37,6 +49,10 @@ export const useLiveStore = defineStore('live', () => {
     const cameraProblem = ref(null)
     // Awal sesi kerja (dari server) -- dasar durasi siaran di monitor sendiri.
     const broadcastStartedAt = ref(null)
+    const onBreak = ref(false)
+    const isIdle = ref(false)
+    // Status kerja saya menurut server (working, screen_off, break, ...).
+    const myStatus = ref(null)
 
     const isBroadcasting = computed(() => mode.value === 'broadcasting')
 
@@ -44,13 +60,18 @@ export const useLiveStore = defineStore('live', () => {
         revision.value // dependensi reaktif, lihat catatan di atas
         if (!room) return []
         return [...room.remoteParticipants.values()]
-            .filter((p) => p.getTrackPublication(CAMERA_SOURCE))
+            .filter((p) => p.getTrackPublication(CAMERA_SOURCE) || p.getTrackPublication(SCREEN_SOURCE))
             .sort((a, b) => (a.name || a.identity).localeCompare(b.name || b.identity))
     })
 
     const localCameraTrack = computed(() => {
         revision.value
         return room?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track ?? null
+    })
+
+    const localScreenTrack = computed(() => {
+        revision.value
+        return room?.localParticipant.getTrackPublication(SCREEN_SOURCE)?.track ?? null
     })
 
     function bump() {
@@ -60,13 +81,16 @@ export const useLiveStore = defineStore('live', () => {
     async function connect(livekitUrl, token) {
         await disconnect()
 
-        const { Room, RoomEvent, VideoPresets } = await import('livekit-client')
+        const { Room, RoomEvent, ScreenSharePresets, VideoPresets } = await import('livekit-client')
         room = new Room({
             // adaptiveStream: kualitas video tiap peserta otomatis
             // mengikuti ukuran elemen <video> & dijeda saat tidak terlihat
             // -- wajib untuk grid >50 staf supaya kuota/baterai tidak habis.
             // pixelDensity 'screen': ukuran elemen dikali kepadatan piksel layar,
             // jadi layar HP/laptop resolusi tinggi meminta layer yang lebih tajam.
+            // Ditambah simulcast di bawah, inilah "kualitas otomatis menurut
+            // koneksi": saat bandwidth penonton turun, server LiveKit
+            // mengirim layer yang lebih rendah tanpa diminta.
             adaptiveStream: { pixelDensity: 'screen' },
             // dynacast: pengirim berhenti meng-encode layer resolusi yang
             // tidak ada satu pun penonton yang memintanya.
@@ -77,11 +101,14 @@ export const useLiveStore = defineStore('live', () => {
             publishDefaults: {
                 simulcast: true,
                 // 720p dengan bitrate lebih longgar dari preset (1,7 Mbps) supaya
-                // detail meja/layar kerja tidak pecah jadi kotak-kotak.
+                // detail meja kerja tidak pecah jadi kotak-kotak.
                 videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 30 },
                 // Layer bawah untuk ubin kecil/jaringan lemah; penonton menerima
                 // layer sesuai ukuran ubinnya (dynacast mematikan yang tak diminta).
                 videoSimulcastLayers: [VideoPresets.h360, VideoPresets.h540],
+                // Layar kerja: teks harus terbaca -> 1080p, cukup 15 fps.
+                screenShareEncoding: ScreenSharePresets.h1080fps15.encoding,
+                screenShareSimulcastLayers: [ScreenSharePresets.h360fps3, ScreenSharePresets.h720fps5],
                 // Saat bandwidth/CPU pas-pasan, turunkan frame rate -- bukan
                 // resolusi. Untuk memantau kerja, gambar tajam lebih penting
                 // daripada gerakan mulus.
@@ -95,9 +122,11 @@ export const useLiveStore = defineStore('live', () => {
             .on(RoomEvent.TrackUnpublished, bump)
             .on(RoomEvent.TrackSubscribed, bump)
             .on(RoomEvent.TrackUnsubscribed, bump)
-            .on(RoomEvent.LocalTrackPublished, bump)
-            .on(RoomEvent.LocalTrackUnpublished, bump)
+            .on(RoomEvent.ConnectionQualityChanged, bump)
+            .on(RoomEvent.LocalTrackPublished, handleLocalTracksChanged)
+            .on(RoomEvent.LocalTrackUnpublished, handleLocalTracksChanged)
             .on(RoomEvent.TrackMuted, handleLocalCameraStopped)
+            .on(RoomEvent.TrackUnmuted, handleLocalTracksChanged)
             .on(RoomEvent.Disconnected, handleDisconnected)
 
         // autoSubscribe: false -- LiveView yang memilih peserta mana yang
@@ -107,8 +136,18 @@ export const useLiveStore = defineStore('live', () => {
         bump()
     }
 
+    function resetBroadcastState() {
+        mode.value = 'idle'
+        cameraProblem.value = null
+        broadcastStartedAt.value = null
+        onBreak.value = false
+        isIdle.value = false
+        myStatus.value = null
+    }
+
     async function disconnect() {
         stopHeartbeat()
+        stopIdleWatch()
         releaseWakeLock()
         if (room) {
             const current = room
@@ -116,9 +155,7 @@ export const useLiveStore = defineStore('live', () => {
             current.off('disconnected', handleDisconnected)
             await current.disconnect()
         }
-        mode.value = 'idle'
-        cameraProblem.value = null
-        broadcastStartedAt.value = null
+        resetBroadcastState()
         bump()
     }
 
@@ -127,10 +164,9 @@ export const useLiveStore = defineStore('live', () => {
         // atau koneksi gagal total setelah LiveKit menyerah reconnect.
         room = null
         stopHeartbeat()
+        stopIdleWatch()
         releaseWakeLock()
-        mode.value = 'idle'
-        cameraProblem.value = null
-        broadcastStartedAt.value = null
+        resetBroadcastState()
         bump()
     }
 
@@ -147,27 +183,38 @@ export const useLiveStore = defineStore('live', () => {
         }
     }
 
+    // Kamera/layar menyala atau mati -> laporkan segera (log kerja mencatat
+    // "Camera run", "Screen stop", dst. dengan jam yang tepat).
+    function handleLocalTracksChanged() {
+        bump()
+        if (mode.value === 'broadcasting') scheduleReport()
+    }
+
     // LiveKit membisukan track kamera lokal sendiri kalau kamera berhenti
     // (track 'ended' lalu gagal dinyalakan ulang) -- siaran tetap tercatat
     // aktif tapi tanpa gambar, jadi beri tahu staf dengan jelas.
     function handleLocalCameraStopped(publication, participant) {
-        if (participant !== room?.localParticipant || publication.source !== CAMERA_SOURCE) return
-        if (mode.value !== 'broadcasting') return
+        if (participant !== room?.localParticipant) return
+        handleLocalTracksChanged()
+        if (publication.source !== CAMERA_SOURCE || mode.value !== 'broadcasting') return
         // Saat staf pindah aplikasi, browser HP memang menghentikan kamera --
         // itu bukan masalah; kamera dinyalakan ulang otomatis begitu kembali.
         if (document.visibilityState === 'hidden') return
         cameraProblem.value = 'Kamera berhenti mengirim gambar. Tutup aplikasi lain yang memakai kamera, lalu tekan Nyalakan ulang kamera.'
-        bump()
     }
 
-    function cameraIsLive() {
-        const track = room?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track
+    function trackIsLive(source) {
+        const track = room?.localParticipant.getTrackPublication(source)?.track
         return !!track && !track.isMuted && track.mediaStreamTrack?.readyState === 'live'
     }
 
+    const cameraIsLive = () => trackIsLive(CAMERA_SOURCE)
+
+    /** Panggil langsung dari klik tombol (butuh user gesture untuk izin deteksi idle). */
     async function startWork() {
         connecting.value = true
         cameraProblem.value = null
+        const idlePermission = requestIdlePermission()
         try {
             const response = await api.post('/live/sessions/start')
             const { livekit_url, token, session } = response.data.data
@@ -186,8 +233,11 @@ export const useLiveStore = defineStore('live', () => {
             }
             mode.value = 'broadcasting'
             broadcastStartedAt.value = session.started_at ?? new Date().toISOString()
+            onBreak.value = !!session.on_break
             startHeartbeat()
             acquireWakeLock()
+            startIdleWatch(await idlePermission)
+            await sendHeartbeat()
         } catch (err) {
             // Kamera ditolak / koneksi gagal -- jangan biarkan sesi kerja
             // tercatat aktif padahal tidak ada video yang tersiar.
@@ -209,13 +259,30 @@ export const useLiveStore = defineStore('live', () => {
             ? null
             : 'Kamera masih belum mengirim gambar. Periksa izin kamera di browser dan pastikan tidak dipakai aplikasi lain.'
         bump()
+        scheduleReport()
     }
 
-    /** Resolusi & frame rate yang benar-benar dihasilkan kamera saat ini. */
-    function localCameraSettings() {
-        const settings = room?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track?.mediaStreamTrack?.getSettings()
-        if (!settings?.width) return null
-        return { width: settings.width, height: settings.height, frameRate: Math.round(settings.frameRate ?? 0) }
+    /**
+     * Bagikan layar kerja (jendela/seluruh layar yang dipilih staf di dialog
+     * browser). Tanpa audio -- Live Kerja memang tanpa suara. Kalau staf
+     * menekan "Berhenti berbagi" milik browser, LiveKit melepas track-nya
+     * sendiri dan handleLocalTracksChanged() melaporkan "Screen stop".
+     */
+    async function setScreenShare(enabled) {
+        if (!room || mode.value !== 'broadcasting') return
+        await room.localParticipant.setScreenShareEnabled(enabled, {
+            audio: false,
+            contentHint: 'detail',
+            resolution: { width: 1920, height: 1080, frameRate: 15 },
+            selfBrowserSurface: 'exclude',
+            surfaceSwitching: 'include',
+        })
+        handleLocalTracksChanged()
+    }
+
+    async function setBreak(enabled) {
+        onBreak.value = enabled
+        await sendHeartbeat()
     }
 
     async function endWork() {
@@ -230,22 +297,82 @@ export const useLiveStore = defineStore('live', () => {
         }
     }
 
+    /** Resolusi & frame rate yang benar-benar dihasilkan kamera saat ini. */
+    function localCameraSettings() {
+        const settings = room?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track?.mediaStreamTrack?.getSettings()
+        if (!settings?.width) return null
+        return { width: settings.width, height: settings.height, frameRate: Math.round(settings.frameRate ?? 0) }
+    }
+
+    async function sendHeartbeat() {
+        if (mode.value !== 'broadcasting') return
+        try {
+            const response = await api.post('/live/sessions/heartbeat', {
+                camera_active: cameraIsLive(),
+                screen_active: trackIsLive(SCREEN_SOURCE),
+                on_break: onBreak.value,
+                idle: isIdle.value,
+            })
+            myStatus.value = response.data.data?.status ?? null
+        } catch (err) {
+            // 404 = server sudah menutup sesi (mis. jaringan sempat putus
+            // lebih lama dari batas timeout) -- berhenti menyiarkan.
+            if (err.response?.status === 404) await disconnect()
+        }
+    }
+
+    // Beberapa event bisa datang beruntun (unpublish + mute) -- satu laporan saja.
+    function scheduleReport() {
+        clearTimeout(reportTimer)
+        reportTimer = setTimeout(sendHeartbeat, 400)
+    }
+
     function startHeartbeat() {
         stopHeartbeat()
-        heartbeatTimer = setInterval(async () => {
-            try {
-                await api.post('/live/sessions/heartbeat')
-            } catch (err) {
-                // 404 = server sudah menutup sesi (mis. jaringan sempat putus
-                // lebih lama dari batas timeout) -- berhenti menyiarkan.
-                if (err.response?.status === 404) await disconnect()
-            }
-        }, HEARTBEAT_INTERVAL_MS)
+        heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS)
     }
 
     function stopHeartbeat() {
         clearInterval(heartbeatTimer)
+        clearTimeout(reportTimer)
         heartbeatTimer = null
+        reportTimer = null
+    }
+
+    // IDLE pakai Idle Detection API (Chrome/Edge desktop): mendeteksi tidak
+    // ada input di SELURUH komputer, bukan cuma di tab ini, dan layar
+    // terkunci. Browser lain tidak mendukung -> status IDLE tidak dipakai.
+    async function requestIdlePermission() {
+        if (!('IdleDetector' in window)) return false
+        try {
+            return (await window.IdleDetector.requestPermission()) === 'granted'
+        } catch {
+            return false
+        }
+    }
+
+    async function startIdleWatch(granted) {
+        stopIdleWatch()
+        if (!granted) return
+        try {
+            idleAbort = new AbortController()
+            idleDetector = new window.IdleDetector()
+            idleDetector.addEventListener('change', () => {
+                const idleNow = idleDetector.userState === 'idle' || idleDetector.screenState === 'locked'
+                if (idleNow === isIdle.value) return
+                isIdle.value = idleNow
+                scheduleReport()
+            })
+            await idleDetector.start({ threshold: IDLE_THRESHOLD_MS, signal: idleAbort.signal })
+        } catch {
+            idleDetector = null
+        }
+    }
+
+    function stopIdleWatch() {
+        idleAbort?.abort()
+        idleAbort = null
+        idleDetector = null
     }
 
     // Layar HP yang mati otomatis ikut memutus kamera di browser -- selama
@@ -282,12 +409,14 @@ export const useLiveStore = defineStore('live', () => {
         })
     }
 
-    /** Subscribe hanya ke peserta yang sedang tampil, unsubscribe sisanya. */
+    /** Subscribe hanya ke peserta yang sedang tampil (kamera + layarnya), unsubscribe sisanya. */
     function setVisibleParticipants(identities) {
         if (!room || room.state !== CONNECTED) return
         const visible = new Set(identities)
         for (const participant of room.remoteParticipants.values()) {
-            participant.getTrackPublication(CAMERA_SOURCE)?.setSubscribed(visible.has(participant.identity))
+            for (const source of [CAMERA_SOURCE, SCREEN_SOURCE]) {
+                participant.getTrackPublication(source)?.setSubscribed(visible.has(participant.identity))
+            }
         }
     }
 
@@ -296,14 +425,20 @@ export const useLiveStore = defineStore('live', () => {
         organizationId,
         cameraProblem,
         broadcastStartedAt,
+        onBreak,
+        isIdle,
+        myStatus,
         connecting,
         isBroadcasting,
         remoteParticipants,
         localCameraTrack,
+        localScreenTrack,
         watchSite,
         startWork,
         endWork,
         restartCamera,
+        setScreenShare,
+        setBreak,
         localCameraSettings,
         disconnect,
         setVisibleParticipants,

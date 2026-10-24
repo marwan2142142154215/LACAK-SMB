@@ -79,7 +79,7 @@ class WorkSessionLiveTest extends TestCase
         $this->assertSame("user-{$staff->id}", $claims['sub']);
         $this->assertSame("site-{$org->id}", $claims['video']['room']);
         $this->assertTrue($claims['video']['canPublish']);
-        $this->assertSame(['camera'], $claims['video']['canPublishSources']);
+        $this->assertSame(['camera', 'screen_share'], $claims['video']['canPublishSources']);
         $this->assertSame(1, WorkSession::open()->where('user_id', $staff->id)->count());
     }
 
@@ -211,6 +211,7 @@ class WorkSessionLiveTest extends TestCase
             'status' => $status,
             'file_path' => $status === 'success' ? "apk-builds/{$org->id}/{$type}-{$version}.apk" : null,
             'embedded_site_code' => 'X',
+            'built_by' => $staff->id,
             'created_at' => now(),
         ]);
 

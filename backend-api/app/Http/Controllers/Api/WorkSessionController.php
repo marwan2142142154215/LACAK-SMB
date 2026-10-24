@@ -7,11 +7,15 @@ use App\Http\Resources\WorkSessionResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\ApkBuild;
 use App\Models\Organization;
+use App\Models\User;
 use App\Models\WorkSession;
+use App\Models\WorkSessionEvent;
 use App\Services\LiveKitTokenIssuer;
+use App\Services\WorkPresence;
 use App\Support\ResolvesOrganizationScope;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\URL;
 
 /**
@@ -26,7 +30,10 @@ class WorkSessionController extends Controller
 {
     use ApiResponse, ResolvesOrganizationScope;
 
-    public function __construct(private readonly LiveKitTokenIssuer $tokenIssuer) {}
+    public function __construct(
+        private readonly LiveKitTokenIssuer $tokenIssuer,
+        private readonly WorkPresence $presence,
+    ) {}
 
     /**
      * Site yang boleh ditonton user ini (untuk pilihan site di dashboard),
@@ -52,7 +59,10 @@ class WorkSessionController extends Controller
         return $this->success('Site yang bisa ditonton', $sites);
     }
 
-    /** Staf yang sedang live di satu site + sesi milik user ini sendiri (kalau ada). */
+    /**
+     * Staf yang sedang live di satu site, status SEMUA staf site itu (termasuk
+     * yang offline), dan sesi milik user ini sendiri (kalau ada).
+     */
     public function index(Request $request)
     {
         $user = $request->user();
@@ -70,9 +80,24 @@ class WorkSessionController extends Controller
             ->orderBy('started_at')
             ->get();
 
+        $sessionsByUser = $sessions->keyBy('user_id');
+        $roster = User::permission('live.broadcast')
+            ->where('organization_id', $organizationId)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (User $staff) => [
+                'user_id' => $staff->id,
+                'name' => $staff->name,
+                'participant_identity' => "user-{$staff->id}",
+                'status' => $this->presence->statusOf($sessionsByUser->get($staff->id)),
+                'started_at' => $sessionsByUser->get($staff->id)?->started_at,
+            ]);
+
         return $this->success('Staf yang sedang live', [
             'organization_id' => $organizationId,
             'items' => WorkSessionResource::collection($sessions),
+            'roster' => $roster,
             'my_session' => ($mine = WorkSession::open()->where('user_id', $user->id)->first())
                 ? new WorkSessionResource($mine)
                 : null,
@@ -100,6 +125,7 @@ class WorkSessionController extends Controller
                     'started_at' => now(),
                     'last_heartbeat_at' => now(),
                 ]);
+                $this->presence->record($user, 'work_start', $session);
             } catch (UniqueConstraintViolationException) {
                 // Klik ganda / dua tab bersamaan -- sesi sudah dibuat oleh
                 // request lain (lihat partial unique index di migrasi).
@@ -116,20 +142,28 @@ class WorkSessionController extends Controller
     }
 
     /**
-     * Dipanggil dashboard tiap ~30 detik selama siaran. 404 berarti sesi
-     * sudah ditutup server (timeout) -- dashboard wajib berhenti menyiarkan.
+     * Dipanggil dashboard tiap ~30 detik selama siaran, dan langsung setiap
+     * kali kamera/layar/istirahat/idle berubah. 404 berarti sesi sudah
+     * ditutup server (timeout) -- dashboard wajib berhenti menyiarkan.
      */
     public function heartbeat(Request $request)
     {
-        $updated = WorkSession::open()
-            ->where('user_id', $request->user()->id)
-            ->update(['last_heartbeat_at' => now()]);
+        $state = $request->validate([
+            'camera_active' => ['sometimes', 'boolean'],
+            'screen_active' => ['sometimes', 'boolean'],
+            'on_break' => ['sometimes', 'boolean'],
+            'idle' => ['sometimes', 'boolean'],
+        ]);
 
-        if ($updated === 0) {
+        $session = WorkSession::open()->where('user_id', $request->user()->id)->first();
+
+        if (! $session) {
             return $this->fail('Tidak ada sesi kerja yang aktif', null, 404);
         }
 
-        return $this->success('Heartbeat diterima');
+        $this->presence->applyState($session, $state);
+
+        return $this->success('Heartbeat diterima', new WorkSessionResource($session));
     }
 
     public function end(Request $request)
@@ -140,7 +174,7 @@ class WorkSessionController extends Controller
             return $this->fail('Tidak ada sesi kerja yang aktif', null, 404);
         }
 
-        $session->close('manual');
+        $this->presence->closeSession($session, 'manual', 'work_end');
         $this->tokenIssuer->removeBroadcaster($session->organization_id, $session->user_id);
 
         return $this->success('Selesai kerja -- siaran kamera dihentikan', new WorkSessionResource($session));
@@ -169,6 +203,68 @@ class WorkSessionController extends Controller
             'created_at' => $build->created_at,
             'download_url' => URL::temporarySignedRoute('api.v1.apk-builds.download', now()->addMinutes(30), ['apkBuild' => $build->id]),
         ] : null);
+    }
+
+    /**
+     * Log kerja satu site dalam satu rentang waktu (biasanya satu hari kalender
+     * menurut jam perangkat penonton -- dashboard yang mengirim from/to),
+     * beserta jam kerja aktual per staf.
+     */
+    public function activity(Request $request)
+    {
+        $user = $request->user();
+        $user->can('live.watch') || abort(403);
+
+        $validated = $request->validate([
+            'organization_id' => ['nullable', 'integer'],
+            'from' => ['required', 'date'],
+            'to' => ['required', 'date', 'after:from'],
+        ]);
+
+        $organizationId = $this->authorizedOrganizationId($user, $validated['organization_id'] ?? null);
+
+        if ($organizationId === null) {
+            return $this->fail('Anda tidak berwenang melihat log site ini', null, 403);
+        }
+
+        $from = Carbon::parse($validated['from']);
+        $to = Carbon::parse($validated['to']);
+
+        if ($from->diffInDays($to) > 31) {
+            return $this->fail('Rentang log maksimal 31 hari', null, 422);
+        }
+
+        $events = WorkSessionEvent::query()
+            ->with('user:id,name')
+            ->where('organization_id', $organizationId)
+            ->whereBetween('occurred_at', [$from, $to])
+            ->orderBy('occurred_at')
+            ->orderBy('id')
+            ->get();
+
+        // Status tiap staf tepat sebelum rentang dimulai.
+        $before = WorkSessionEvent::query()
+            ->with('user:id,name')
+            ->whereIn('id', WorkSessionEvent::query()
+                ->selectRaw('MAX(id)')
+                ->where('organization_id', $organizationId)
+                ->where('occurred_at', '<', $from)
+                ->groupBy('user_id'))
+            ->get()
+            ->keyBy('user_id');
+
+        return $this->success('Log kerja', [
+            'organization_id' => $organizationId,
+            'summary' => $this->presence->summarize($events, $before, $from, $to),
+            'events' => $events->map(fn (WorkSessionEvent $event) => [
+                'id' => $event->id,
+                'user_id' => $event->user_id,
+                'user_name' => $event->user?->name,
+                'type' => $event->type,
+                'status' => $event->status,
+                'occurred_at' => $event->occurred_at,
+            ]),
+        ]);
     }
 
     /** Token tonton-saja untuk satu site (admin/leader/super_admin, atau staf sebelum mulai kerja). */

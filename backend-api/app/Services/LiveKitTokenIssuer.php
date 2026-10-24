@@ -29,8 +29,9 @@ class LiveKitTokenIssuer
     }
 
     /**
-     * Token untuk staf yang sedang "Mulai Kerja": boleh menyiarkan kamera
-     * (tanpa mikrofon/berbagi layar) dan menonton rekan se-site.
+     * Token untuk staf yang sedang "Mulai Kerja": boleh menyiarkan kamera dan
+     * layar kerjanya (tanpa mikrofon -- Live Kerja memang tanpa suara) dan
+     * menonton rekan se-site.
      */
     public function broadcasterToken(int $organizationId, int $userId, string $displayName): string
     {
@@ -38,7 +39,7 @@ class LiveKitTokenIssuer
             'room' => self::roomForOrganization($organizationId),
             'roomJoin' => true,
             'canPublish' => true,
-            'canPublishSources' => ['camera'],
+            'canPublishSources' => ['camera', 'screen_share'],
             'canSubscribe' => true,
             'canPublishData' => false,
             'canUpdateOwnMetadata' => false,

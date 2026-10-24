@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\WorkSession;
+use App\Services\WorkPresence;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -22,6 +23,11 @@ class WorkSessionResource extends JsonResource
             'started_at' => $this->started_at,
             'last_heartbeat_at' => $this->last_heartbeat_at,
             'ended_at' => $this->ended_at,
+            'camera_active' => $this->camera_active,
+            'screen_active' => $this->screen_active,
+            'on_break' => $this->on_break,
+            'idle' => $this->idle,
+            'status' => app(WorkPresence::class)->statusOf($this->resource),
             'end_reason' => $this->end_reason,
         ];
     }
