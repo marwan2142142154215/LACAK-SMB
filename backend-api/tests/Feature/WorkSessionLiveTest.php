@@ -79,7 +79,7 @@ class WorkSessionLiveTest extends TestCase
         $this->assertSame("user-{$staff->id}", $claims['sub']);
         $this->assertSame("site-{$org->id}", $claims['video']['room']);
         $this->assertTrue($claims['video']['canPublish']);
-        $this->assertSame(['camera', 'screen_share'], $claims['video']['canPublishSources']);
+        $this->assertSame(['camera', 'microphone', 'screen_share'], $claims['video']['canPublishSources']);
         $this->assertSame(1, WorkSession::open()->where('user_id', $staff->id)->count());
     }
 

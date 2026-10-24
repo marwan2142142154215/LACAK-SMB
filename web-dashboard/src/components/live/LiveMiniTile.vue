@@ -17,6 +17,7 @@ const props = defineProps({
     cameraTrack: { type: Object, default: null },
     status: { type: String, default: null },
     since: { type: [Date, String, Number], default: null },
+    speaking: { type: Boolean, default: false },
 })
 
 const now = useNow()
@@ -26,7 +27,10 @@ const elapsed = computed(() => (props.since ? formatElapsed(props.since, now.val
 </script>
 
 <template>
-    <div class="relative aspect-video overflow-hidden rounded-xl border border-base-800 bg-black shadow-(--shadow-card)">
+    <div
+        class="relative aspect-video overflow-hidden rounded-xl border bg-black shadow-(--shadow-card) transition-colors"
+        :class="speaking ? 'border-st-working ring-1 ring-st-working' : 'border-base-800'"
+    >
         <LiveVideoTile
             v-if="mainTrack"
             :track="mainTrack"
@@ -48,20 +52,22 @@ const elapsed = computed(() => (props.since ? formatElapsed(props.since, now.val
             class="!absolute right-2 bottom-8 w-[30%] !rounded-md !border-white/25 shadow-md shadow-black/50"
         />
 
-        <span
-            v-if="meta"
-            class="absolute top-2 left-2 inline-flex items-center gap-1 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[9.5px] tracking-[0.08em] text-white/90 uppercase backdrop-blur-sm"
-        >
-            <span class="led" :class="[meta.led, status === 'alert' && 'motion-safe:animate-pulse']" />
-            {{ meta.label }}
-        </span>
-        <span
-            v-if="!screenTrack && cameraTrack"
-            class="absolute top-2 right-2 rounded bg-black/65 p-1 text-orange-300 backdrop-blur-sm"
-            title="Layar tidak dibagikan"
-        >
-            <MonitorOff class="size-3" />
-        </span>
+        <div class="absolute top-2 left-2 flex items-center gap-1">
+            <span
+                v-if="meta"
+                class="inline-flex items-center gap-1 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[9.5px] tracking-[0.08em] text-white/90 uppercase backdrop-blur-sm"
+            >
+                <span class="led" :class="[meta.led, status === 'alert' && 'motion-safe:animate-pulse']" />
+                {{ meta.label }}
+            </span>
+            <span
+                v-if="!screenTrack && cameraTrack"
+                class="rounded bg-black/65 p-1 text-orange-300 backdrop-blur-sm"
+                title="Layar tidak dibagikan"
+            >
+                <MonitorOff class="size-3" />
+            </span>
+        </div>
 
         <div
             class="absolute inset-x-0 bottom-0 flex items-baseline gap-1.5 bg-gradient-to-t from-black/85 to-transparent px-2.5 pt-6 pb-1.5"

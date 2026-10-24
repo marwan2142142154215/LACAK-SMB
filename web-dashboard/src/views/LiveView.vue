@@ -7,6 +7,8 @@ import {
     Download,
     LayoutGrid,
     Maximize,
+    Mic,
+    MicOff,
     Minimize,
     MonitorUp,
     MonitorX,
@@ -16,11 +18,13 @@ import {
     Smartphone,
     Square,
     Video,
+    VolumeX,
     X,
 } from '@lucide/vue'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import LiveAudioButton from '@/components/live/LiveAudioButton.vue'
 import LiveMiniTile from '@/components/live/LiveMiniTile.vue'
 import LivePairTile from '@/components/live/LivePairTile.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -31,7 +35,7 @@ import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
 import { ATTENTION_STATUSES, WORK_STATUS, workStatus } from '@/lib/workStatus'
 import { useAuthStore } from '@/stores/auth'
-import { CAMERA_SOURCE, SCREEN_SOURCE, canShareScreen, useLiveStore } from '@/stores/live'
+import { CAMERA_SOURCE, SCREEN_SOURCE, canShareScreen, micStateOf, useLiveStore } from '@/stores/live'
 
 const ALL_SITES = 'all'
 
@@ -208,6 +212,10 @@ function trackOf(participant, source) {
     return participant.getTrackPublication(source)?.track ?? null
 }
 
+const isListening = (participant) => live.listening.includes(participant.identity)
+// Yang didengarkan tapi sudah tidak live lagi tidak dihitung.
+const listeningCount = computed(() => live.remoteParticipants.filter(isListening).length)
+
 function focusStaff(staff) {
     if (live.remoteParticipants.some((p) => p.identity === staff.participant_identity)) {
         focusedIdentity.value = staff.participant_identity
@@ -309,6 +317,19 @@ async function toggleScreenShare() {
         togglingScreen.value = false
         // Laporan status dikirim ~0,4 detik setelah track berubah.
         setTimeout(loadStatus, 1000)
+    }
+}
+
+const togglingMic = ref(false)
+
+async function toggleMicrophone() {
+    togglingMic.value = true
+    try {
+        await live.setMicrophone(live.localMicState !== 'on')
+    } catch (err) {
+        toast.error('Mikrofon belum menyala', err.message)
+    } finally {
+        togglingMic.value = false
     }
 }
 
@@ -516,7 +537,29 @@ onBeforeUnmount(() => {
                                 {{ live.localScreenTrack ? 'Dibagikan' : 'Tidak' }}
                             </dd>
                         </div>
+                        <div class="col-span-2 flex items-center gap-3 bg-base-900 px-3 py-2.5">
+                            <div class="min-w-0 flex-1">
+                                <dt class="eyebrow">Mikrofon</dt>
+                                <dd
+                                    class="mt-1 font-mono tabular-nums"
+                                    :class="live.localMicState === 'on' ? 'text-base-50' : 'text-base-400'"
+                                >
+                                    {{ { on: 'Menyala', muted: 'Dibisukan', none: 'Tidak ada' }[live.localMicState] }}
+                                </dd>
+                            </div>
+                            <BaseButton
+                                :variant="live.localMicState === 'on' ? 'outline' : 'primary'"
+                                size="sm"
+                                :loading="togglingMic"
+                                :aria-pressed="live.localMicState !== 'on'"
+                                @click="toggleMicrophone"
+                            >
+                                <component :is="live.localMicState === 'on' ? MicOff : Mic" class="size-4" />
+                                {{ live.localMicState === 'on' ? 'Bisukan' : 'Nyalakan mikrofon' }}
+                            </BaseButton>
+                        </div>
                     </dl>
+                    <p v-if="live.micProblem" class="-mt-3 text-xs text-pretty text-warning-400">{{ live.micProblem }}</p>
 
                     <div class="grid gap-2">
                         <BaseButton
@@ -599,6 +642,10 @@ onBeforeUnmount(() => {
                 </label>
 
                 <div class="flex flex-wrap items-center gap-2">
+                    <BaseButton v-if="listeningCount" variant="outline" size="sm" @click="live.muteAll()">
+                        <VolumeX class="size-4" />
+                        Bisukan semua ({{ listeningCount }})
+                    </BaseButton>
                     <p
                         v-if="compact"
                         class="rounded-lg border border-base-800 bg-base-850 px-3 py-1.5 text-xs text-base-400"
@@ -728,46 +775,67 @@ onBeforeUnmount(() => {
 
                     <!-- Bingkai dibuat lebar: adaptiveStream memilih layer resolusi dari
                          ukuran video, jadi bingkai besar = gambar lebih tajam. -->
+                    <!-- Tombol suara SEJAJAR (bukan di dalam) tombol perbesar: tombol
+                         bersarang tidak sah di HTML dan membingungkan pembaca layar. -->
                     <div v-else-if="compact" class="grid gap-3" :class="wallGridClass">
-                        <button
-                            v-for="participant in visibleParticipants"
-                            :key="participant.identity"
-                            type="button"
-                            class="rounded-xl text-left transition-shadow hover:ring-2 hover:ring-accent-400/50 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none"
-                            :aria-label="`Perbesar ${participant.name || participant.identity}`"
-                            @click="focusedIdentity = participant.identity"
-                        >
-                            <LiveMiniTile
+                        <div v-for="participant in visibleParticipants" :key="participant.identity" class="relative">
+                            <button
+                                type="button"
+                                class="block w-full rounded-xl text-left transition-shadow hover:ring-2 hover:ring-accent-400/50 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none"
+                                :aria-label="`Perbesar ${participant.name || participant.identity}`"
+                                @click="focusedIdentity = participant.identity"
+                            >
+                                <LiveMiniTile
+                                    :name="participant.name || participant.identity"
+                                    :site="siteNameOf(participant)"
+                                    :screen-track="trackOf(participant, SCREEN_SOURCE)"
+                                    :camera-track="trackOf(participant, CAMERA_SOURCE)"
+                                    :status="statusOf(participant)"
+                                    :since="liveSince(participant)"
+                                    :speaking="participant.isSpeaking"
+                                />
+                            </button>
+                            <LiveAudioButton
+                                class="!absolute top-1.5 right-1.5"
                                 :name="participant.name || participant.identity"
-                                :site="siteNameOf(participant)"
-                                :screen-track="trackOf(participant, SCREEN_SOURCE)"
-                                :camera-track="trackOf(participant, CAMERA_SOURCE)"
-                                :status="statusOf(participant)"
-                                :since="liveSince(participant)"
+                                :mic-state="micStateOf(participant)"
+                                :listening="isListening(participant)"
+                                :speaking="participant.isSpeaking"
+                                @toggle="live.toggleListen(participant.identity)"
                             />
-                        </button>
+                        </div>
                     </div>
                     <div v-else class="grid gap-4" :class="wallGridClass">
-                        <button
-                            v-for="participant in visibleParticipants"
-                            :key="participant.identity"
-                            type="button"
-                            class="rounded-xl text-left transition-shadow hover:ring-2 hover:ring-accent-400/50 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none"
-                            :aria-label="`Perbesar ${participant.name || participant.identity}`"
-                            @click="focusedIdentity = participant.identity"
-                        >
-                            <LivePairTile
+                        <div v-for="participant in visibleParticipants" :key="participant.identity" class="relative">
+                            <button
+                                type="button"
+                                class="block w-full rounded-xl text-left transition-shadow hover:ring-2 hover:ring-accent-400/50 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none"
+                                :aria-label="`Perbesar ${participant.name || participant.identity}`"
+                                @click="focusedIdentity = participant.identity"
+                            >
+                                <LivePairTile
+                                    :name="participant.name || participant.identity"
+                                    :site="siteNameOf(participant)"
+                                    :screen-track="trackOf(participant, SCREEN_SOURCE)"
+                                    :camera-track="trackOf(participant, CAMERA_SOURCE)"
+                                    :status="statusOf(participant)"
+                                    :since="liveSince(participant)"
+                                    :quality="participant.connectionQuality"
+                                    :swapped="swapped"
+                                    :camera-size="cameraSize"
+                                    :speaking="participant.isSpeaking"
+                                    action-inset
+                                />
+                            </button>
+                            <LiveAudioButton
+                                class="!absolute top-1 right-2"
                                 :name="participant.name || participant.identity"
-                                :site="siteNameOf(participant)"
-                                :screen-track="trackOf(participant, SCREEN_SOURCE)"
-                                :camera-track="trackOf(participant, CAMERA_SOURCE)"
-                                :status="statusOf(participant)"
-                                :since="liveSince(participant)"
-                                :quality="participant.connectionQuality"
-                                :swapped="swapped"
-                                :camera-size="cameraSize"
+                                :mic-state="micStateOf(participant)"
+                                :listening="isListening(participant)"
+                                :speaking="participant.isSpeaking"
+                                @toggle="live.toggleListen(participant.identity)"
                             />
-                        </button>
+                        </div>
                     </div>
 
                     <div
@@ -877,6 +945,14 @@ onBeforeUnmount(() => {
                             </DialogDescription>
                         </div>
                         <div class="flex items-center gap-2">
+                            <LiveAudioButton
+                                v-if="focused"
+                                :name="focused.name || focused.identity"
+                                :mic-state="micStateOf(focused)"
+                                :listening="isListening(focused)"
+                                :speaking="focused.isSpeaking"
+                                @toggle="live.toggleListen(focused.identity)"
+                            />
                             <BaseButton variant="outline" size="sm" :aria-pressed="swapped" @click="swapped = !swapped">
                                 <ArrowLeftRight class="size-4" />
                                 Tukar
@@ -904,6 +980,7 @@ onBeforeUnmount(() => {
                         :quality="focused.connectionQuality"
                         :swapped="swapped"
                         :camera-size="cameraSize"
+                        :speaking="focused.isSpeaking"
                         large
                     />
                 </DialogContent>
@@ -915,8 +992,8 @@ onBeforeUnmount(() => {
             :title="canShareScreen ? 'Mulai kerja & bagikan seluruh layar?' : 'Mulai kerja & nyalakan kamera?'"
             :description="
                 canShareScreen
-                    ? 'Setelah menekan Mulai kerja, pilih tab Entire screen (Seluruh layar) lalu tekan Share. Layar dan kamera Anda disiarkan ke rekan di site Anda sampai Anda menekan Selesai kerja. Tanpa suara, tidak direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja.'
-                    : 'Kamera Anda menyala dan disiarkan ke rekan di site Anda sampai Anda menekan Selesai kerja. Tanpa suara, tidak direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja.'
+                    ? 'Setelah menekan Mulai kerja, pilih tab Entire screen (Seluruh layar) lalu tekan Share. Layar, kamera, dan suara mikrofon Anda disiarkan ke rekan di site Anda sampai Anda menekan Selesai kerja. Mikrofon bisa Anda bisukan kapan saja. Tidak direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja.'
+                    : 'Kamera dan suara mikrofon Anda disiarkan ke rekan di site Anda sampai Anda menekan Selesai kerja. Mikrofon bisa Anda bisukan kapan saja. Tidak direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja.'
             "
             confirm-label="Mulai kerja"
             confirm-variant="primary"
@@ -927,7 +1004,7 @@ onBeforeUnmount(() => {
         <ConfirmDialog
             v-model:open="confirmEndOpen"
             title="Selesai kerja?"
-            description="Siaran kamera dan layar Anda dihentikan, dan jam selesai kerja dicatat."
+            description="Siaran kamera, layar, dan mikrofon Anda dihentikan, dan jam selesai kerja dicatat."
             confirm-label="Selesai kerja"
             :loading="live.connecting"
             @confirm="endWork"
