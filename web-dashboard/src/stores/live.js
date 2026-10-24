@@ -409,7 +409,11 @@ export const useLiveStore = defineStore('live', () => {
         return !!track && !track.isMuted && track.mediaStreamTrack?.readyState === 'live'
     }
 
-    const cameraIsLive = () => trackIsLive(CAMERA_SOURCE)
+    // Kamera bisa tetap 'live' tapi tidak mengirim gambar sama sekali --
+    // browser hanya menandainya muted (mis. direbut aplikasi lain, driver
+    // tersendat). LiveKit tidak menganggapnya mati, jadi cek sendiri.
+    const cameraIsLive = () =>
+        trackIsLive(CAMERA_SOURCE) && !ownRoom.localParticipant.getTrackPublication(CAMERA_SOURCE).track.mediaStreamTrack.muted
 
     /**
      * Panggil langsung dari klik tombol: dialog pilih layar & izin deteksi
