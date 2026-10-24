@@ -23,6 +23,10 @@ const props = defineProps({
     // Porsi kamera (wajah) terhadap layar kerja:
     // equal = sama besar, small = kamera sempit di samping, corner = kamera kecil di pojok layar
     cameraSize: { type: String, default: 'equal' },
+    // Sisakan ruang kanan di kepala bingkai untuk tombol suara yang ditumpuk di atasnya.
+    actionInset: { type: Boolean, default: false },
+    // Staf sedang bicara (deteksi suara LiveKit) -> bingkai diberi cincin hijau.
+    speaking: { type: Boolean, default: false },
 })
 
 const now = useNow()
@@ -53,8 +57,11 @@ const gridClass = computed(() => {
 </script>
 
 <template>
-    <div class="overflow-hidden rounded-xl border border-base-800 bg-base-900 shadow-(--shadow-card)">
-        <div class="flex items-center gap-2.5 px-3 py-2" :class="large && 'px-4 py-3'">
+    <div
+        class="overflow-hidden rounded-xl border bg-base-900 shadow-(--shadow-card) transition-colors"
+        :class="speaking ? 'border-st-working ring-1 ring-st-working' : 'border-base-800'"
+    >
+        <div class="flex items-center gap-2.5 px-3 py-2" :class="[large && 'px-4 py-3', actionInset && 'pr-12']">
             <span class="flex min-w-0 flex-1 items-baseline gap-2">
                 <span class="truncate text-sm font-semibold text-base-50" :class="large && 'font-display text-lg'">{{ name }}</span>
                 <span v-if="site" class="truncate font-mono text-[10.5px] tracking-[0.08em] text-base-500 uppercase">{{ site }}</span>

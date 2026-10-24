@@ -14,12 +14,41 @@ const IDLE_THRESHOLD_MS = 5 * 60_000
 // dinamis di connect(), saat staf benar-benar membuka siaran.
 export const CAMERA_SOURCE = 'camera'
 export const SCREEN_SOURCE = 'screen_share'
+export const MICROPHONE_SOURCE = 'microphone'
 const CONNECTED = 'connected'
+
+// Pilihan bisu mikrofon staf diingat lintas muat ulang -- staf yang sudah
+// membisukan diri tidak boleh tiba-tiba bersuara lagi setelah refresh.
+const MIC_MUTED_KEY = 'lacak_live_mic_muted'
+
+function readMicMuted() {
+    try {
+        return localStorage.getItem(MIC_MUTED_KEY) === '1'
+    } catch {
+        return false
+    }
+}
+
+function writeMicMuted(muted) {
+    try {
+        localStorage.setItem(MIC_MUTED_KEY, muted ? '1' : '0')
+    } catch {
+        // mode privat / penyimpanan diblokir -- cukup berlaku sampai reload
+    }
+}
+
+/** Mikrofon peserta: 'on' (tersiar), 'muted' (dibisukan staf), 'none' (tidak ada mikrofon). */
+export function micStateOf(participant) {
+    const publication = participant?.getTrackPublication(MICROPHONE_SOURCE)
+    if (!publication) return 'none'
+    return publication.isMuted ? 'muted' : 'on'
+}
 
 /** Browser ini bisa berbagi layar? (HP: tidak -- iOS/Android browser tidak punya getDisplayMedia.) */
 export const canShareScreen = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia
 
-// Layar kerja: SELURUH layar (bukan satu jendela/tab), tanpa audio. Teks harus
+// Layar kerja: SELURUH layar (bukan satu jendela/tab), tanpa audio sistem
+// (suara staf lewat mikrofon, track tersendiri). Teks harus
 // terbaca -> 1080p, cukup 15 fps. displaySurface 'monitor' membuat dialog
 // Chrome/Edge langsung terbuka di tab "Entire screen"; staf tetap harus
 // menekan Share sekali -- browser tidak mengizinkan situs melewatinya.
@@ -90,6 +119,25 @@ let reportTimer = null
 let wakeLock = null
 let idleDetector = null
 let idleAbort = null
+// Identity peserta yang suaranya diputar & daftar yang sedang tampil -- dasar
+// subscribe/unsubscribe track (lihat applySubscriptions).
+let visibleIdentities = new Set()
+// Elemen <audio> untuk tiap track mikrofon yang di-subscribe; tidak tampil.
+let audioContainer = null
+
+function playAudioTrack(track) {
+    if (typeof document === 'undefined') return
+    if (!audioContainer) {
+        audioContainer = document.createElement('div')
+        audioContainer.hidden = true
+        document.body.appendChild(audioContainer)
+    }
+    audioContainer.appendChild(track.attach())
+}
+
+function stopAudioTrack(track) {
+    track.detach().forEach((element) => element.remove())
+}
 
 export const useLiveStore = defineStore('live', () => {
     const auth = useAuthStore()
@@ -109,6 +157,13 @@ export const useLiveStore = defineStore('live', () => {
     // Siaran ini dimulai dengan layar (komputer) -> layar WAJIB tetap dibagikan.
     // Siaran dari HP (kamera saja) tidak terkena aturan ini.
     const screenRequired = ref(false)
+    // Mikrofon saya dibisukan (oleh saya sendiri) / tidak bisa dipakai.
+    const micMuted = ref(readMicMuted())
+    const micProblem = ref(null)
+    // Penonton: identity staf yang suaranya sedang didengarkan. Default
+    // kosong -- puluhan mikrofon sekaligus hanya jadi keributan, dan tidak
+    // ada audio yang diunduh sebelum penonton memilih mendengarkan.
+    const listening = ref([])
 
     const isBroadcasting = computed(() => mode.value === 'broadcasting')
 
@@ -140,6 +195,12 @@ export const useLiveStore = defineStore('live', () => {
     const localScreenTrack = computed(() => {
         revision.value
         return ownRoom?.localParticipant.getTrackPublication(SCREEN_SOURCE)?.track ?? null
+    })
+
+    /** Mikrofon saya: 'on' | 'muted' | 'none' (tidak ada / ditolak). */
+    const localMicState = computed(() => {
+        revision.value
+        return ownRoom ? micStateOf(ownRoom.localParticipant) : 'none'
     })
 
     function bump() {
@@ -187,9 +248,16 @@ export const useLiveStore = defineStore('live', () => {
             .on(RoomEvent.ParticipantDisconnected, bump)
             .on(RoomEvent.TrackPublished, bump)
             .on(RoomEvent.TrackUnpublished, bump)
-            .on(RoomEvent.TrackSubscribed, bump)
-            .on(RoomEvent.TrackUnsubscribed, bump)
+            .on(RoomEvent.TrackSubscribed, (track) => {
+                if (track.kind === 'audio') playAudioTrack(track)
+                bump()
+            })
+            .on(RoomEvent.TrackUnsubscribed, (track) => {
+                if (track.kind === 'audio') stopAudioTrack(track)
+                bump()
+            })
             .on(RoomEvent.ConnectionQualityChanged, bump)
+            .on(RoomEvent.ActiveSpeakersChanged, bump)
             .on(RoomEvent.LocalTrackPublished, handleLocalTracksChanged)
             .on(RoomEvent.LocalTrackUnpublished, handleLocalTracksChanged)
             .on(RoomEvent.TrackMuted, handleLocalCameraStopped)
@@ -205,6 +273,37 @@ export const useLiveStore = defineStore('live', () => {
         return room
     }
 
+    /**
+     * Video: hanya peserta yang sedang tampil. Suara: hanya yang dipilih untuk
+     * didengarkan (tetap terdengar walau ubinnya tergulir ke halaman lain).
+     */
+    function applySubscriptions() {
+        const listened = new Set(listening.value)
+        for (const room of rooms.values()) {
+            if (room.state !== CONNECTED) continue
+            for (const participant of room.remoteParticipants.values()) {
+                const visible = visibleIdentities.has(participant.identity)
+                participant.getTrackPublication(CAMERA_SOURCE)?.setSubscribed(visible)
+                participant.getTrackPublication(SCREEN_SOURCE)?.setSubscribed(visible)
+                participant.getTrackPublication(MICROPHONE_SOURCE)?.setSubscribed(listened.has(participant.identity))
+            }
+        }
+    }
+
+    /** Nyalakan/bisukan suara satu staf -- panggil dari klik (izin autoplay). */
+    function toggleListen(identity) {
+        listening.value = listening.value.includes(identity)
+            ? listening.value.filter((id) => id !== identity)
+            : [...listening.value, identity]
+        for (const room of rooms.values()) room.startAudio().catch(() => {})
+        applySubscriptions()
+    }
+
+    function muteAll() {
+        listening.value = []
+        applySubscriptions()
+    }
+
     function resetBroadcastState() {
         mode.value = 'idle'
         cameraProblem.value = null
@@ -213,6 +312,7 @@ export const useLiveStore = defineStore('live', () => {
         isIdle.value = false
         myStatus.value = null
         screenRequired.value = false
+        micProblem.value = null
     }
 
     async function disconnect() {
@@ -223,6 +323,9 @@ export const useLiveStore = defineStore('live', () => {
         rooms.clear()
         ownRoom = null
         watchedSiteIds.value = []
+        listening.value = []
+        visibleIdentities = new Set()
+        audioContainer?.replaceChildren()
         // removeAllListeners: disconnect() yang kita minta sendiri bukan "putus".
         await Promise.all(current.map((room) => room.removeAllListeners().disconnect()))
         resetBroadcastState()
@@ -281,7 +384,7 @@ export const useLiveStore = defineStore('live', () => {
     // (track 'ended' lalu gagal dinyalakan ulang) -- siaran tetap tercatat
     // aktif tapi tanpa gambar, jadi beri tahu staf dengan jelas.
     function handleLocalCameraStopped(publication, participant) {
-        if (participant !== ownRoom?.localParticipant) return
+        if (participant !== ownRoom?.localParticipant) return bump() // mis. mikrofon staf lain dibisukan
         handleLocalTracksChanged()
         if (publication.source !== CAMERA_SOURCE || mode.value !== 'broadcasting') return
         // Saat staf pindah aplikasi, browser HP memang menghentikan kamera --
@@ -335,6 +438,10 @@ export const useLiveStore = defineStore('live', () => {
                 throw error
             }
             if (screenTrack) await ownRoom.localParticipant.publishTrack(screenTrack)
+            // Siaran baru = mikrofon menyala; melanjutkan setelah reload = ikut
+            // pilihan bisu terakhir staf.
+            if (!resuming) setMicMutedPref(false)
+            await enableMicrophone()
             screenRequired.value = canShareScreen
             mode.value = 'broadcasting'
             broadcastStartedAt.value = session.started_at ?? new Date().toISOString()
@@ -385,6 +492,51 @@ export const useLiveStore = defineStore('live', () => {
             }
         })()
         return resumeTask
+    }
+
+    function setMicMutedPref(muted) {
+        micMuted.value = muted
+        writeMicMuted(muted)
+    }
+
+    /**
+     * Terbitkan mikrofon (dibisukan kalau staf memilih bisu). Gagal (tidak ada
+     * mikrofon, izin ditolak) tidak menghentikan siaran -- kamera & layar
+     * tetap jalan, staf diberi tahu lewat micProblem.
+     */
+    async function enableMicrophone() {
+        try {
+            if (ownRoom.localParticipant.getTrackPublication(MICROPHONE_SOURCE)) {
+                await ownRoom.localParticipant.setMicrophoneEnabled(!micMuted.value)
+            } else {
+                // Track dibisukan SEBELUM diterbitkan -- staf yang memilih bisu
+                // tidak pernah tersiar suaranya, sesaat pun.
+                const { createLocalAudioTrack } = await import('livekit-client')
+                const track = await createLocalAudioTrack({ echoCancellation: true, noiseSuppression: true })
+                if (micMuted.value) await track.mute()
+                await ownRoom.localParticipant.publishTrack(track)
+            }
+            micProblem.value = null
+        } catch (err) {
+            micProblem.value =
+                err.name === 'NotAllowedError'
+                    ? 'Izin mikrofon ditolak. Izinkan mikrofon di pengaturan situs browser, lalu tekan Nyalakan mikrofon.'
+                    : 'Mikrofon tidak ditemukan atau sedang dipakai aplikasi lain. Siaran tetap jalan tanpa suara.'
+        }
+        bump()
+    }
+
+    /** Bisukan / nyalakan mikrofon saya tanpa memutus siaran. */
+    async function setMicrophone(enabled) {
+        if (!ownRoom || mode.value !== 'broadcasting') return
+        setMicMutedPref(!enabled)
+        if (enabled) {
+            await enableMicrophone()
+            if (micProblem.value) throw new Error(micProblem.value)
+        } else {
+            await ownRoom.localParticipant.setMicrophoneEnabled(false)
+            bump()
+        }
     }
 
     /** Matikan lalu nyalakan lagi kamera tanpa memutus siaran. */
@@ -558,15 +710,8 @@ export const useLiveStore = defineStore('live', () => {
 
     /** Subscribe hanya ke peserta yang sedang tampil (kamera + layarnya), unsubscribe sisanya. */
     function setVisibleParticipants(identities) {
-        const visible = new Set(identities)
-        for (const room of rooms.values()) {
-            if (room.state !== CONNECTED) continue
-            for (const participant of room.remoteParticipants.values()) {
-                for (const source of [CAMERA_SOURCE, SCREEN_SOURCE]) {
-                    participant.getTrackPublication(source)?.setSubscribed(visible.has(participant.identity))
-                }
-            }
-        }
+        visibleIdentities = new Set(identities)
+        applySubscriptions()
     }
 
     return {
@@ -578,6 +723,10 @@ export const useLiveStore = defineStore('live', () => {
         isIdle,
         myStatus,
         screenRequired,
+        micMuted,
+        micProblem,
+        localMicState,
+        listening,
         connecting,
         isBroadcasting,
         remoteParticipants,
@@ -596,5 +745,8 @@ export const useLiveStore = defineStore('live', () => {
         localCameraSettings,
         disconnect,
         setVisibleParticipants,
+        setMicrophone,
+        toggleListen,
+        muteAll,
     }
 })

@@ -6,22 +6,25 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- Live Kerja hanya kamera, TANPA audio (sama seperti dashboard web);
-         izin mikrofon bawaan livekit-android sengaja dibuang supaya HP staf
-         memang tidak bisa merekam suara lewat aplikasi ini. -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove" />
+    <!-- Suara staf ikut disiarkan (sama seperti dashboard web); staf bisa
+         membisukannya kapan saja. Izin ini opsional: ditolak = siaran
+         kamera tetap jalan tanpa suara. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- LiveBroadcastService: foreground service tipe camera (Android 14+
-         mewajibkan FOREGROUND_SERVICE_CAMERA) supaya kamera tetap menyiarkan
-         saat staf pindah aplikasi atau layar mati. -->
+    <!-- LiveBroadcastService: foreground service tipe camera + microphone
+         (Android 14+ mewajibkan FOREGROUND_SERVICE_CAMERA/_MICROPHONE) supaya
+         kamera & mikrofon tetap menyiarkan saat staf pindah aplikasi atau
+         layar mati. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- CPU & Wi-Fi tetap hidup saat layar mati selama siaran. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <uses-feature android:name="android.hardware.camera.front" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:allowBackup="false"
@@ -44,7 +47,7 @@
         <service
             android:name=".service.LiveBroadcastService"
             android:exported="false"
-            android:foregroundServiceType="camera" />
+            android:foregroundServiceType="camera|microphone" />
 
     </application>
 
