@@ -24,6 +24,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import ChatWidget from '@/components/chat/ChatWidget.vue'
+import CameraLock from '@/components/live/CameraLock.vue'
 import ScreenShareLock from '@/components/live/ScreenShareLock.vue'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useTheme } from '@/composables/useTheme'
@@ -293,6 +294,7 @@ async function handleLogout() {
             <main class="min-w-0 flex-1 pb-24">
                 <router-view />
                 <ScreenShareLock />
+                <CameraLock />
                 <ChatWidget />
             </main>
         </div>
