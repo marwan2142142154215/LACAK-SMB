@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ActivityLogController;
 use App\Http\Controllers\Api\ApkBuildController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ChatMessageController;
@@ -130,6 +131,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         // Pengaturan keamanan sistem (wajib/tidaknya 2FA) -- super_admin saja.
         Route::get('/settings/security', [SecuritySettingController::class, 'show']);
         Route::put('/settings/security', [SecuritySettingController::class, 'update']);
+
+        // Log aktivitas sistem (siapa melakukan apa) -- activity-logs.view.
+        Route::get('/activity-logs', [ActivityLogController::class, 'index']);
 
         // Status semua layanan server -- super_admin saja.
         Route::get('/system/status', SystemStatusController::class)->middleware('throttle:30,1');

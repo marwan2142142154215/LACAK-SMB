@@ -73,6 +73,12 @@ const routes = [
                 meta: { requiresSuperAdmin: true },
             },
             {
+                path: 'log-aktivitas',
+                name: 'activity-logs',
+                component: () => import('@/views/ActivityLogsView.vue'),
+                meta: { permission: 'activity-logs.view' },
+            },
+            {
                 path: 'status-server',
                 name: 'server-status',
                 component: () => import('@/views/ServerStatusView.vue'),
@@ -109,9 +115,11 @@ router.beforeEach((to) => {
     const token = localStorage.getItem(TOKEN_STORAGE_KEY)
     const isAuthenticated = !!token
     let isSuperAdmin = false
+    let permissions = []
     try {
         const user = JSON.parse(localStorage.getItem(USER_STORAGE_KEY) || 'null')
         isSuperAdmin = user?.roles?.includes('super_admin') ?? false
+        permissions = user?.permissions ?? []
     } catch {
         isSuperAdmin = false
     }
@@ -128,6 +136,10 @@ router.beforeEach((to) => {
     }
 
     if (to.meta.requiresSuperAdmin && !isSuperAdmin) {
+        return { name: 'radar' }
+    }
+
+    if (to.meta.permission && !permissions.includes(to.meta.permission)) {
         return { name: 'radar' }
     }
 

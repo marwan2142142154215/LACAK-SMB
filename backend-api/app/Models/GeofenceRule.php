@@ -50,6 +50,7 @@ class GeofenceRule extends Model
     {
         return LogOptions::defaults()
             ->logOnly(['rule_name', 'allowed_ssid', 'allowed_ip_cidr', 'max_distance_meters', 'center_latitude', 'center_longitude', 'is_active'])
-            ->logOnlyDirty();
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs();
     }
 }

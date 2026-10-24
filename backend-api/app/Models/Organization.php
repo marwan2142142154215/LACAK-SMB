@@ -65,6 +65,7 @@ class Organization extends Model
     {
         return LogOptions::defaults()
             ->logOnly(['name', 'type', 'unique_site_code', 'is_active'])
-            ->logOnlyDirty();
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs();
     }
 }

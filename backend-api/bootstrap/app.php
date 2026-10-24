@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ExtendTokenExpiry;
+use App\Http\Middleware\RecordApiActivity;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -40,6 +41,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // (http:// bukan https://). '*' aman di sini karena origin HANYA
         // dihubungi oleh cloudflared, bukan internet langsung.
         $middleware->trustProxies(at: '*');
+
+        // Log aktivitas sistem: semua aksi yang mengubah data lewat API.
+        $middleware->api(append: [RecordApiActivity::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
