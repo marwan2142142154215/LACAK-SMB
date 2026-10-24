@@ -1,7 +1,7 @@
 <script setup>
 import {
+    Activity,
     Building2,
-    ClipboardList,
     FileSignature,
     LogOut,
     MapPinned,
@@ -57,7 +57,7 @@ const navGroups = computed(() => [
         items: [
             { to: { name: 'radar' }, label: 'Radar', icon: Radar },
             { to: { name: 'live' }, label: 'Live Kerja', icon: Video, live: live.isBroadcasting },
-            { to: { name: 'work-log' }, label: 'Log kerja', icon: ClipboardList, hidden: !auth.hasPermission('live.watch') },
+            { to: { name: 'activity' }, label: 'Aktivitas user', icon: Activity, hidden: !auth.hasPermission('live.watch') },
         ],
     },
     {
@@ -285,7 +285,8 @@ async function handleLogout() {
                 Kamera Anda sedang disiarkan ke rekan se-site. Buka Live Kerja untuk berhenti.
             </router-link>
 
-            <main class="min-w-0 flex-1">
+            <!-- pb-24: ruang untuk tombol chat mengambang supaya tidak menutup baris terakhir -->
+            <main class="min-w-0 flex-1 pb-24">
                 <router-view />
                 <ScreenShareLock />
                 <ChatWidget />
