@@ -104,6 +104,9 @@ export const useLiveStore = defineStore('live', () => {
     const isIdle = ref(false)
     // Status kerja saya menurut server (working, screen_off, break, ...).
     const myStatus = ref(null)
+    // Siaran ini dimulai dengan layar (komputer) -> layar WAJIB tetap dibagikan.
+    // Siaran dari HP (kamera saja) tidak terkena aturan ini.
+    const screenRequired = ref(false)
 
     const isBroadcasting = computed(() => mode.value === 'broadcasting')
 
@@ -207,6 +210,7 @@ export const useLiveStore = defineStore('live', () => {
         onBreak.value = false
         isIdle.value = false
         myStatus.value = null
+        screenRequired.value = false
     }
 
     async function disconnect() {
@@ -326,6 +330,7 @@ export const useLiveStore = defineStore('live', () => {
                 throw error
             }
             if (screenTrack) await ownRoom.localParticipant.publishTrack(screenTrack)
+            screenRequired.value = !!screenTrack
             mode.value = 'broadcasting'
             broadcastStartedAt.value = session.started_at ?? new Date().toISOString()
             onBreak.value = !!session.on_break
@@ -524,6 +529,7 @@ export const useLiveStore = defineStore('live', () => {
         onBreak,
         isIdle,
         myStatus,
+        screenRequired,
         connecting,
         isBroadcasting,
         remoteParticipants,

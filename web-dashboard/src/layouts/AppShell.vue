@@ -21,6 +21,7 @@ import dayjs from 'dayjs'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import ScreenShareLock from '@/components/live/ScreenShareLock.vue'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useTheme } from '@/composables/useTheme'
 import { useAuthStore } from '@/stores/auth'
@@ -271,6 +272,7 @@ async function handleLogout() {
 
             <main class="min-w-0 flex-1">
                 <router-view />
+                <ScreenShareLock />
             </main>
         </div>
     </div>
