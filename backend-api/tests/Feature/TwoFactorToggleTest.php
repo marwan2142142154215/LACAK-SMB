@@ -86,5 +86,7 @@ test('seeder akun dummy membuat akun per peran dan aman dijalankan ulang', funct
     expect(User::where('username', 'root')->first()->hasRole('super_admin'))->toBeTrue()
         ->and(User::where('username', 'staf.a1')->first()->organization->name)->toBe('Site Uji A')
         ->and(User::where('username', 'leader.uji')->first()->siteAccess()->count())->toBe(2)
-        ->and(User::where('username', 'like', '%.%')->orWhere('username', 'root')->count())->toBe(7);
+        ->and(User::where('username', 'staf.b11')->first()->organization->name)->toBe('Site Uji B')
+        ->and(User::where('username', 'like', 'staf.%')->count())->toBe(23)
+        ->and(User::where('username', 'like', '%.%')->orWhere('username', 'root')->count())->toBe(27);
 });
