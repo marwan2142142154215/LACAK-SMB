@@ -23,6 +23,10 @@ export default await Env.create(new URL('../', import.meta.url), {
     // Origin URL publik backend (mis. https://api.salahmu.fun) -- bagian dari
     // pesan yang ditandatangani signed URL Laravel.
     LARAVEL_APP_URL: Env.schema.string({ format: 'url', tld: false }),
+    // config('app.name') backend-api -- nama penerbit di aplikasi authenticator 2FA.
+    APP_NAME: Env.schema.string.optional(),
+    // Awalan token Sanctum (SANCTUM_TOKEN_PREFIX backend-api, biasanya kosong).
+    SANCTUM_TOKEN_PREFIX: Env.schema.string.optional(),
 
     // Database: SAMA dengan backend-api (skema masih dikelola Laravel)
     DB_HOST: Env.schema.string({ format: 'host' }),

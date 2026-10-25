@@ -65,8 +65,11 @@ const bodyParserConfig = defineConfig({
 
         /**
          * Maximum accepted payload size for multipart requests.
+         * Unggah APK di backend-api: apk_file max:204800 KB (200 MB). Batas
+         * di sini sedikit di atasnya supaya berkas yang terlalu besar tetap
+         * dijawab 422 dengan pesan validasi Laravel, bukan 413.
          */
-        limit: '20mb',
+        limit: '210mb',
 
         /**
          * Content types handled by the multipart parser.

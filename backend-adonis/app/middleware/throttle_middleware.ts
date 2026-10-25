@@ -5,8 +5,12 @@ import redis from '@adonisjs/redis/services/main'
 
 /**
  * Padanan middleware `throttle:max,minutes` Laravel: paling banyak `max`
- * permintaan per `minutes` menit per route, per user (kalau sudah login)
- * atau per alamat IP. Lewat batas -> 429 dengan pesan yang sama (handler.ts).
+ * permintaan per `minutes` menit per user (kalau sudah login) atau per
+ * alamat IP. Lewat batas -> 429 dengan pesan yang sama (handler.ts).
+ *
+ * Sama dengan ThrottleRequests Laravel (tanpa limiter bernama), kuncinya
+ * TIDAK memuat route: semua route ber-throttle berbagi satu penghitung per
+ * user/IP, dan tiap route membandingkannya dengan batasnya sendiri.
  *
  * Pemakaian: router.post(...).use(middleware.throttle({ max: 5, minutes: 1 }))
  * Pasang SETELAH middleware auth kalau batasnya per user.
@@ -14,7 +18,7 @@ import redis from '@adonisjs/redis/services/main'
 export default class ThrottleMiddleware {
     async handle(ctx: HttpContext, next: NextFn, options: { max: number; minutes: number }) {
         const who = ctx.authUser ? `user:${ctx.authUser.id}` : `ip:${ctx.request.ip()}`
-        const key = `throttle:${ctx.route?.pattern ?? ctx.request.url()}:${ctx.request.method()}:${who}`
+        const key = `throttle:${who}`
 
         const hits = await redis.incr(key)
         if (hits === 1) {

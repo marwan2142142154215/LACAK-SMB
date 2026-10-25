@@ -9,6 +9,7 @@ import {
     PutObjectCommand,
     S3Client,
 } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import env from '#start/env'
 
 /**
@@ -28,6 +29,18 @@ export interface Disk {
     /** Stream isi file + ukurannya (byte), atau null kalau tidak ada. */
     read(path: string): Promise<{ stream: Readable; size: number | null } | null>
     delete(path: string): Promise<void>
+    /**
+     * Storage::disk()->temporaryUrl(): tautan bertanda waktu milik penyimpanan
+     * itu sendiri. Hanya Spaces yang mendukung; disk lokal melempar error
+     * (sama dengan Laravel: driver local tanpa serve tidak punya temporaryUrl).
+     */
+    temporaryUrl(path: string, options: TemporaryUrlOptions): Promise<string>
+}
+
+export type TemporaryUrlOptions = {
+    expiresInSeconds: number
+    responseContentDisposition?: string
+    responseContentType?: string
 }
 
 class LocalDisk implements Disk {
@@ -70,6 +83,10 @@ class LocalDisk implements Disk {
 
     async delete(path: string) {
         await rm(this.resolve(path), { force: true })
+    }
+
+    async temporaryUrl(): Promise<string> {
+        throw new Error('Disk local tidak mendukung temporaryUrl()')
     }
 }
 
@@ -124,6 +141,19 @@ class SpacesDisk implements Disk {
 
     async delete(path: string) {
         await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: path }))
+    }
+
+    async temporaryUrl(path: string, options: TemporaryUrlOptions) {
+        return getSignedUrl(
+            this.client,
+            new GetObjectCommand({
+                Bucket: this.bucket,
+                Key: path,
+                ResponseContentDisposition: options.responseContentDisposition,
+                ResponseContentType: options.responseContentType,
+            }),
+            { expiresIn: options.expiresInSeconds }
+        )
     }
 }
 
