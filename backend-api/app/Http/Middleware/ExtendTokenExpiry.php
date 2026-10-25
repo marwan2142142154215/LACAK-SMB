@@ -30,7 +30,11 @@ class ExtendTokenExpiry
 
         $token = $request->user()?->currentAccessToken();
 
-        if ($token && $token->expires_at) {
+        // exists: token yang dihapus oleh request ini sendiri (logout) JANGAN
+        // disimpan lagi -- save() pada model yang sudah dihapus membuat
+        // Eloquent meng-INSERT ulang barisnya, jadi token yang baru logout
+        // hidup lagi 2 jam.
+        if ($token && $token->expires_at && $token->exists) {
             $token->forceFill([
                 'expires_at' => now()->addHours(AuthController::TOKEN_IDLE_HOURS),
             ])->save();
