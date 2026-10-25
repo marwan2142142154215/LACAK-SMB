@@ -2,15 +2,16 @@ import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import redis from '@adonisjs/redis/services/main'
 import vine from '@vinejs/vine'
-import { accessOf, can, type Access } from '#services/access'
+import { accessOf, can, hasRole, type Access } from '#services/access'
 import { fail, success } from '#services/api_response'
 import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/activity_log'
 import { laravelUrlSigner, LARAVEL_USER_MORPH } from '#services/laravel/index'
 import {
     broadcasterToken,
+    LEADERS_ROOM,
     liveKitConfig,
     removeBroadcaster,
-    roomForOrganization,
+    roomForSession,
     viewerToken,
 } from '#services/livekit'
 import {
@@ -76,29 +77,46 @@ export default class WorkSessionsController {
 
         // Dipanggil oleh setiap tab Live Kerja & Aktivitas; hasilnya sama
         // untuk semua yang menonton kumpulan site yang sama.
-        const cacheKey = `live:overview:${siteIds.join(',')}`
-        const cached = await redis.get(cacheKey)
-        let live: { items: unknown[]; roster: unknown[] }
-        if (cached) {
-            live = JSON.parse(cached)
-        } else {
+        const live = await cachedOverview(`live:overview:${siteIds.join(',')}`, async () => {
             const sessions = await openSessionsIn(siteIds)
-            live = JSON.parse(
-                JSON.stringify({
-                    items: sessions.map((session) => sessionResource(session)),
-                    roster: await rosterFor(siteIds, sessions),
-                })
-            )
-            await redis.setex(cacheKey, OVERVIEW_CACHE_SECONDS, JSON.stringify(live))
-        }
+            return {
+                items: sessions.map((session) => sessionResource(session)),
+                roster: await rosterFor(siteIds, sessions),
+            }
+        })
 
-        return success('Semua staf yang sedang live', { sites, ...live })
+        // Ruang leader: hanya untuk leader, admin & root (staf tidak melihatnya).
+        const leaders = canWatchLeaders(access)
+            ? await cachedOverview('live:overview:leaders', async () => {
+                  const sessions: WorkSessionRow[] = await openSessions()
+                      .whereNull('work_sessions.organization_id')
+                      .orderBy('work_sessions.started_at')
+                  return {
+                      items: sessions.map((session) => sessionResource(session)),
+                      roster: await leaderRoster(sessions),
+                  }
+              })
+            : null
+
+        return success('Semua staf yang sedang live', { sites, ...live, leaders })
     }
 
     /** Staf live di satu site, status semua staf site itu, dan sesi milik user ini. */
     async index(ctx: HttpContext) {
         const access = await accessOf(ctx)
         if (!can(access, 'live.watch')) return forbidden(ctx)
+
+        // Leader tanpa site: cukup sesi kerjanya sendiri (melanjutkan siaran
+        // setelah reload) -- siaran leader ada di ruang leader, bukan site.
+        if (requestedOrganizationId(ctx) === null && hasRole(access, 'leader')) {
+            const mine = await openSessionOf(access.userId)
+            return success('Staf yang sedang live', {
+                organization_id: null,
+                items: [],
+                roster: [],
+                my_session: mine ? sessionResource(withoutUserName(mine)) : null,
+            })
+        }
 
         const organizationId = authorizedOrganizationId(access, requestedOrganizationId(ctx))
         if (organizationId === null) {
@@ -118,11 +136,13 @@ export default class WorkSessionsController {
 
     async start(ctx: HttpContext) {
         const access = await accessOf(ctx)
-        if (!can(access, 'live.broadcast')) return forbidden(ctx)
+        // Leader menyiarkan ke ruang leader global (organization_id NULL);
+        // staf selalu ke site "rumah"-nya -- tidak ada parameter site.
+        const asLeader = hasRole(access, 'leader')
+        if (!asLeader && !can(access, 'live.broadcast')) return forbidden(ctx)
 
         const user = ctx.authUser!
-        // Siaran SELALU ke site "rumah" staf -- tidak ada parameter site.
-        if (user.organizationId === null) {
+        if (!asLeader && user.organizationId === null) {
             return ctx.response
                 .status(422)
                 .send(fail('Akun Anda tidak terikat ke site mana pun, tidak bisa memulai siaran'))
@@ -142,7 +162,7 @@ export default class WorkSessionsController {
 
         const session =
             (await openSessionOf(user.id)) ??
-            (await createSession(ctx, user.id, user.organizationId))
+            (await createSession(ctx, user.id, asLeader ? null : user.organizationId))
 
         // Sesi lama dilanjutkan memakai site yang tercatat di sesi.
         return ctx.response.status(201).send(
@@ -307,10 +327,23 @@ export default class WorkSessionsController {
         })
     }
 
-    /** Token tonton-saja untuk satu site. */
+    /** Token tonton-saja untuk satu site, atau ruang leader (room=leaders). */
     async watchToken(ctx: HttpContext) {
         const access = await accessOf(ctx)
         if (!can(access, 'live.watch')) return forbidden(ctx)
+
+        if (ctx.request.input('room') === LEADERS_ROOM) {
+            if (!canWatchLeaders(access)) {
+                return ctx.response
+                    .status(403)
+                    .send(fail('Anda tidak berwenang menonton ruang leader'))
+            }
+            const viewer = ctx.authUser!
+            return success(
+                'Token tonton',
+                connectionDetails(null, viewerToken(null, viewer.id, viewer.name))
+            )
+        }
 
         const organizationId = authorizedOrganizationId(access, requestedOrganizationId(ctx))
         if (organizationId === null) {
@@ -329,7 +362,7 @@ export default class WorkSessionsController {
 async function createSession(
     ctx: HttpContext,
     userId: number,
-    organizationId: number
+    organizationId: number | null
 ): Promise<WorkSessionRow> {
     try {
         const now = new Date()
@@ -381,12 +414,62 @@ function requestedOrganizationId(ctx: HttpContext): number | null {
     return Number.isInteger(value) && value > 0 ? value : null
 }
 
-function connectionDetails(organizationId: number, token: string) {
+function connectionDetails(organizationId: number | null, token: string) {
     return {
         livekit_url: liveKitConfig().url,
-        room: roomForOrganization(organizationId),
+        room: roomForSession(organizationId),
         token,
     }
+}
+
+/** Ruang leader ditonton leader, admin & root -- tidak pernah staf. */
+function canWatchLeaders(access: Access): boolean {
+    return ['super_admin', 'admin', 'leader'].some((role) => hasRole(access, role))
+}
+
+/** Cache singkat jawaban overview (JSON polos, tanggal jadi string ISO). */
+async function cachedOverview<T>(cacheKey: string, load: () => Promise<T>): Promise<T> {
+    const cached = await redis.get(cacheKey)
+    if (cached) return JSON.parse(cached)
+    const fresh = JSON.parse(JSON.stringify(await load()))
+    await redis.setex(cacheKey, OVERVIEW_CACHE_SECONDS, JSON.stringify(fresh))
+    return fresh
+}
+
+/** Semua leader aktif beserta status Live Kerja-nya (ruang leader). */
+async function leaderRoster(openSessionRows: WorkSessionRow[]) {
+    const sessionsByUser = new Map(openSessionRows.map((session) => [session.user_id, session]))
+    const leaders = await db
+        .from('users')
+        .where('is_active', true)
+        .whereNull('deleted_at')
+        .whereIn(
+            'id',
+            db
+                .from('model_has_roles')
+                .join('roles', 'roles.id', 'model_has_roles.role_id')
+                .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
+                .where('roles.name', 'leader')
+                .select('model_has_roles.model_id')
+        )
+        .orderBy('name')
+        .select('id', 'name')
+
+    const logins = await activeLoginsOf(leaders.map((leader) => leader.id))
+    const now = new Date()
+    return leaders.map((leader) => {
+        const session = sessionsByUser.get(leader.id) ?? null
+        const status = statusOf(session, now)
+        return {
+            user_id: leader.id,
+            name: leader.name,
+            organization_id: null,
+            participant_identity: `user-${leader.id}`,
+            status: status === 'offline' && logins.has(leader.id) ? 'online' : status,
+            started_at: session?.started_at ?? null,
+            login_device: logins.get(leader.id) ?? null,
+        }
+    })
 }
 
 /** WorkSessionResource tanpa relasi user dimuat tidak punya kunci user_name. */
