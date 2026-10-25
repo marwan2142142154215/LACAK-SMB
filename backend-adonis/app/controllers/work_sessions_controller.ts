@@ -473,33 +473,45 @@ async function rosterFor(organizationIds: number[], openSessionRows: WorkSession
         .orderBy('name')
         .select('id', 'name', 'organization_id')
 
-    const loginDevices = await loginDevicesOf(staff.map((member) => member.id))
+    const logins = await activeLoginsOf(staff.map((member) => member.id))
     const now = new Date()
 
     return staff.map((member) => {
         const session = sessionsByUser.get(member.id) ?? null
+        const status = statusOf(session, now)
         return {
             user_id: member.id,
             name: member.name,
             organization_id: member.organization_id,
             participant_identity: `user-${member.id}`,
-            status: statusOf(session, now),
+            // Login tapi belum Mulai kerja = 'online', bukan 'offline'. Hanya
+            // tampilan roster -- log & jam kerja tetap memakai statusOf().
+            status: status === 'offline' && logins.has(member.id) ? 'online' : status,
             started_at: session?.started_at ?? null,
-            login_device: loginDevices.get(member.id) ?? null,
+            login_device: logins.get(member.id) ?? null,
         }
     })
 }
 
-/** Perangkat login yang masih berlaku per user (paling banyak satu token aktif). */
-async function loginDevicesOf(userIds: number[]): Promise<Map<number, string>> {
+/**
+ * User yang masih punya token login berlaku -> perangkatnya ('computer' |
+ * 'phone' | null untuk token lama sebelum kolom device_type). Token login
+ * selalu punya expires_at (idle timeout 2 jam); token akun layanan tidak.
+ */
+async function activeLoginsOf(userIds: number[]): Promise<Map<number, string | null>> {
     if (!userIds.length) return new Map()
     const rows = await db
         .from('personal_access_tokens')
         .where('tokenable_type', LARAVEL_USER_MORPH)
         .whereIn('tokenable_id', userIds)
-        .whereNotNull('device_type')
         .where('expires_at', '>', new Date())
         .orderBy('id')
         .select('tokenable_id', 'device_type')
-    return new Map(rows.map((row) => [Number(row.tokenable_id), row.device_type]))
+
+    const logins = new Map<number, string | null>()
+    for (const row of rows) {
+        const userId = Number(row.tokenable_id)
+        logins.set(userId, row.device_type ?? logins.get(userId) ?? null)
+    }
+    return logins
 }

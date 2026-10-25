@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from '#services/backend_api_client'
 import { parseReportedState, statusOf, type WorkStatus } from '#services/live_status'
 import {
     applyReportedState,
+    hasActiveLogin,
     openSessionsIn,
     sessionPayload,
     type LiveSession,
@@ -63,12 +64,14 @@ function publishSession(opsNs: OpsNamespace, session: LiveSession, now: Date) {
     })
 }
 
-function publishEnded(opsNs: OpsNamespace, userId: number, organizationId: number) {
+async function publishEnded(opsNs: OpsNamespace, userId: number, organizationId: number) {
+    // Selesai kerja tapi masih login = 'online'; logout / sesi habis = 'offline'.
+    const status = (await hasActiveLogin(userId)) ? 'online' : 'offline'
     opsNs.to(liveRoom(organizationId)).emit('live:status', {
         organization_id: organizationId,
         user_id: userId,
         participant_identity: `user-${userId}`,
-        status: 'offline',
+        status,
         started_at: null,
         session: null,
     })
@@ -148,7 +151,7 @@ export function startLiveSweeper(opsNs: OpsNamespace): () => void {
                     lastKnown.delete(sessionId)
                 } else if (!openIds.has(sessionId)) {
                     lastKnown.delete(sessionId)
-                    publishEnded(opsNs, known.userId, known.organizationId)
+                    await publishEnded(opsNs, known.userId, known.organizationId)
                 }
             }
 

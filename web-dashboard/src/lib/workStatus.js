@@ -37,6 +37,15 @@ export const WORK_STATUS = {
         led: 'text-st-camera',
         chip: 'border-st-camera/30 bg-st-camera/10 text-st-camera',
     },
+    // Login ke dashboard/APK tapi belum Mulai kerja -- hanya di daftar staf
+    // (roster), tidak pernah tercatat di log kerja.
+    online: {
+        label: 'Online',
+        bar: 'bg-st-online',
+        emoji: '🟩',
+        led: 'text-st-online',
+        chip: 'border-st-online/30 bg-st-online/10 text-st-online',
+    },
     offline: {
         label: 'Offline',
         bar: 'bg-base-700',
