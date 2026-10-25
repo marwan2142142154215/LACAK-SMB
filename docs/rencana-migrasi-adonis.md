@@ -70,13 +70,13 @@ Paket `barryvdh/laravel-dompdf` dan `maatwebsite/excel` ada di `composer.json` t
 
 ### Tahap 1 — Endpoint Live Kerja yang paling sering dipanggil (±4 hari)
 
-Status (25 Okt): **kode selesai, belum diuji dengan database, belum dilayani nginx.**
+Status (25 Okt): **kode selesai & teruji dengan database tes; belum dilayani nginx.**
 
 - [x] Status realtime (heartbeat & push status) dipindah ke `realtime-gateway` lewat socket (commit `8dfa294`), bukan ke backend-adonis.
 - [x] `backend-adonis`: `/live/sites`, `/live/overview` (cache Redis 5 detik), `/live/sessions` (index, start, heartbeat, end), `/live/app`, `/live/activity`, `/live/watch-token`, `/dashboard-summary`.
 - [x] Token LiveKit identik byte per byte dengan Laravel (test vector), aturan status, ringkasan jam kerja, dan cakupan site diuji tes unit.
 - [x] Log aktivitas sesi kerja (`created`/`updated` WorkSession) ditulis dengan format spatie yang sama.
-- [ ] Tes fungsional terhadap database `lacak_master_test`.
+- [x] Tes fungsional terhadap database `lacak_master_test` (lihat "Hasil tes" di bawah).
 - [x] Rate limit (`throttle:10,1` start, `throttle:60,1` heartbeat, `throttle:30,1` watch-token) lewat `app/middleware/throttle_middleware.ts` (Redis). Kuncinya per user/IP tanpa route, sama dengan `ThrottleRequests` Laravel, jadi semua route ber-throttle berbagi satu penghitung.
 - [ ] Nginx mengarahkan path di atas ke `backend-adonis`.
 
@@ -92,7 +92,7 @@ Login (password lokal dan Account Center, termasuk `AesCbc256` dengan test vekto
 
 - [x] `POST /auth/login` (password lokal + Account Center, `AesCbc256` dengan test vektor), `/auth/2fa/setup/confirm`, `/auth/2fa/verify` (TOTP ±2 window, anti-replay, recovery code sekali pakai, 5 percobaan -> 429), `/auth/logout` (menutup sesi kerja). Satu akun satu sesi + `session_replaced`, `device_type`, `TwoFactorPolicy` (`app_settings`). Tes unit lulus.
 - [x] Log aktivitas API (`RecordApiActivity`) terpasang global di `start/kernel.ts` (`router.use`, setelah bodyparser), termasuk login/2FA publik.
-- [ ] Tes fungsional (`tests/functional/auth_login.spec.ts`) belum dijalankan: DB tes tidak bisa dihubungi.
+- [x] Tes fungsional `tests/functional/auth_login.spec.ts`: 16/16 lolos.
 - [ ] Tanda `session_replaced`, token setup/challenge 2FA, dan anti-replay ada di Redis Adonis, BUKAN di cache Laravel (tabel `cache`). Selama dua backend hidup, semua path `/api/v1/auth/*` harus dialihkan nginx bersamaan; token yang dicabut oleh login di backend lain hanya mendapat 401 biasa.
 
 ### Tahap 3 — Modul admin (±1,5 minggu)
@@ -111,7 +111,8 @@ Login (password lokal dan Account Center, termasuk `AesCbc256` dengan test vekto
 - [x] Controller: `users`, `organizations`, `settings/security`, `system/status`, `devices` (+ perintah, OTP, enrollment, violations), `geofence-rules`, `consent-documents` (upload, unduh bertanda tangan, cabut), `telegram-bindings`, `telegram-user-links` (+ lookup), `chat/messages` (+ gambar, balasan), `activity-logs`. Pesan validasi = bawaan Laravel (locale `en`).
 - [x] Tautan Spaces bertanda waktu (`temporaryUrl()`) sekarang di `app/services/storage.ts`; consent, APK, dan gambar chat memakai `app/services/documents.ts`.
 - [x] Tes unit lulus (`node ace test unit`). Server boot dan menjawab 401/404 dengan amplop yang sama.
-- [ ] Tes fungsional (`tests/functional/{users,devices,rules,chat_logs}_*.spec.ts`) belum dijalankan: DB tes tidak bisa dihubungi. Belum ada uji end-to-end dari dashboard/APK.
+- [x] Tes fungsional `tests/functional/{users,devices,rules,chat_logs}_*.spec.ts` lolos semua.
+- [ ] Uji end-to-end dari dashboard/APK (dilakukan saat peralihan Tahap 5).
 - [ ] Perbedaan kecil yang diketahui: id route bukan angka -> 404 (Laravel 500); `per_page` negatif -> 15 (Laravel 500); Vine hanya memberi satu pesan per field (Laravel bisa beberapa); `Str::slug`/`Str::ascii` didekati dengan NFKD; status server menyebut Node/AdonisJS dan driver redis.
 
 ### Tahap 4 — Latar belakang (±3 hari)
@@ -122,16 +123,50 @@ Build APK lewat antrean, `CloseStaleWorkSessions` dan detak scheduler lewat syst
 - [x] `node ace scheduler:run` (tiap menit: `work-sessions:close-stale`, detak scheduler, job detak antrean), `bot:issue-telegram-token`, `security:two-factor [on|off]`.
 - [x] Status server menghitung antrean dari BullMQ + sisa tabel `jobs`/`failed_jobs` Laravel; detak dibaca dari Redis Adonis.
 - [x] Batas multipart bodyparser dinaikkan ke 210 MB (unggah APK `max:204800` KB tetap dijawab 422, bukan 413). Cek juga `client_max_body_size` nginx.
-- [ ] Tes fungsional (`tests/functional/apk_builds_zero_touch.spec.ts`) belum dijalankan (butuh DB tes dan Redis). Build Gradle/WSL belum diuji nyata.
+- [x] Tes fungsional `tests/functional/apk_builds_zero_touch.spec.ts`: 8/8 lolos.
+- [ ] Build Gradle/WSL belum diuji nyata (hanya di server).
 - [ ] Unit systemd baru belum dibuat: `node build/ace.js queue:work` (worker) dan `node build/ace.js scheduler:run` (scheduler). Jangan jalankan berdampingan dengan `schedule:work` Laravel; job lama di tabel `jobs` harus dihabiskan worker Laravel dulu.
 - [ ] Halaman Status server Laravel akan menganggap scheduler/antrean mati begitu hanya proses Adonis yang jalan (detak di Redis, bukan cache database Laravel).
 
 ### Tahap 5 — Peralihan penuh (±1 minggu)
 
+Berkas siap pakai ada di `backend-adonis/deploy/`: contoh nginx (`nginx-api.conf.example`) dan unit systemd `lacak-api`, `lacak-api-queue`, `lacak-api-scheduler`.
+
+**Panduan di server** (jalankan berurutan; tiap langkah bisa dibatalkan):
+
+1. **Pasang & build**
+   ```bash
+   cd /var/www/lacak && git pull && cd backend-adonis && npm ci && node ace build
+   cp .env build/.env && cd build && npm ci --omit=dev
+   ```
+   `.env` produksi: salin `backend-adonis/.env.example`, lalu isi `LARAVEL_APP_KEY` dan `DB_*` **sama persis** dengan `backend-api/.env`, `LARAVEL_APP_URL=https://api.salahmu.fun`, `LARAVEL_STORAGE_PATH=/var/www/lacak/backend-api/storage/app/private`, `LIVEKIT_*`, `REDIS_*`, `DOCUMENTS_DISK`/`DO_SPACES_*` seperti Laravel, dan `LACAKSMB_*_PROJECT_PATH` (path absolut).
+2. **Jalankan API saja** (belum menerima trafik): pasang `lacak-api.service`, lalu `curl -s http://127.0.0.1:8020/health` harus menjawab `OK`.
+3. **Langkah 1 nginx:** aktifkan blok Live Kerja & `dashboard-summary`, `sudo nginx -t && sudo nginx -s reload`. Pantau `journalctl -u lacak-api -f` dan dashboard 1–2 hari.
+4. **Langkah 2 nginx:** aktifkan blok `/api/v1/auth/` (semua path auth sekaligus). Login & 2FA diuji dengan beberapa akun.
+5. **Langkah 3 nginx:** aktifkan blok `/api/`. Sesudah itu:
+   - tunggu antrean Laravel kosong (`php artisan queue:monitor` / tabel `jobs`), lalu `sudo systemctl disable --now lacak-queue` dan pasang `lacak-api-queue.service`;
+   - `sudo systemctl disable --now lacak-scheduler` (atau hapus cron `schedule:run`) **sebelum** memasang `lacak-api-scheduler.service` -- jangan dua scheduler berjalan bersamaan;
+   - `LACAKSMB_STATUS_SYSTEMD_UNITS` di `backend-adonis/.env` diganti ke `lacak-api,lacak-api-queue,lacak-api-scheduler,lacak-gateway`.
+6. **Membatalkan** langkah mana pun: komentari blok nginx-nya, `sudo nginx -s reload`. Untuk langkah 5, nyalakan lagi `lacak-queue`/`lacak-scheduler` dan hentikan pasangan Adonis-nya.
+
 - [ ] Semua path diarahkan ke Adonis; Laravel tetap hidup tapi tidak menerima trafik, selama sekitar satu minggu.
 - [ ] Halaman Status server dan `LACAKSMB_STATUS_SYSTEMD_UNITS` disesuaikan.
 - [ ] Baseline migrasi Lucid ditandai sudah jalan, lalu `backend-api/` dihapus dari repo.
 - [ ] `php8.3-fpm` dan `lacak-queue` dimatikan.
+
+## Hasil tes (25 Okt)
+
+- **backend-adonis: 196/196 lolos** (unit + fungsional) terhadap Postgres `lacak_master_test` dan Redis tes.
+- **backend-api (Laravel): 89/89 lolos** pada database yang sama.
+
+Menjalankan tes Adonis secara lokal (database dev ada di container Docker `lacak-live-postgres`, port 5444):
+
+```bash
+cd backend-adonis
+DB_PORT=5444 DB_PASSWORD=<sama dengan backend-api/.env> REDIS_PORT=<port Redis tes> node ace test
+```
+
+Tes fungsional membuat peran & izin sendiri (`tests/helpers/setup.ts`) dan mengosongkan kunci Redis berawalan `lacak-adonis:` sebelum tiap tes -- jangan arahkan ke Redis produksi.
 
 ## Cara memindahkan satu modul
 

@@ -1,0 +1,55 @@
+# Contoh potongan server block nginx untuk api.salahmu.fun selama peralihan
+# Laravel -> AdonisJS (docs/rencana-migrasi-adonis.md, Tahap 5).
+#
+# Prinsip: satu kelompok path dipindah sekaligus; yang belum dipindah tetap ke
+# Laravel (blok "location /" yang SUDAH ADA di server Anda, jangan dihapus).
+# Membatalkan = hapus/komentari satu blok location lalu `sudo nginx -s reload`.
+# Datanya tetap aman karena kedua backend memakai database yang sama.
+
+upstream lacak_adonis {
+    server 127.0.0.1:8020;   # PORT di backend-adonis/.env
+    keepalive 16;
+}
+
+# Dipakai semua blok di bawah.
+# proxy_set_header Host & X-Forwarded-* WAJIB: URL bertanda tangan (unduhan APK,
+# dokumen, gambar chat) memakai LARAVEL_APP_URL, dan IP untuk rate limit/log.
+
+# --- Langkah 1: Live Kerja & ringkasan dashboard (paling sering dipanggil) ---
+location ~ ^/api/v1/(live/|dashboard-summary$) {
+    proxy_pass http://lacak_adonis;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# --- Langkah 2: auth -- SEMUA /api/v1/auth/* SEKALIGUS ---
+# Token 2FA, anti-replay, dan tanda session_replaced disimpan di Redis Adonis;
+# login yang dimulai di satu backend harus selesai di backend yang sama.
+# location ^~ /api/v1/auth/ {
+#     proxy_pass http://lacak_adonis;
+#     proxy_http_version 1.1;
+#     proxy_set_header Connection "";
+#     proxy_set_header Host $host;
+#     proxy_set_header X-Real-IP $remote_addr;
+#     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#     proxy_set_header X-Forwarded-Proto $scheme;
+# }
+
+# --- Langkah 3: semua sisanya (aktifkan setelah langkah 1-2 stabil) ---
+# Sama dengan memindahkan seluruh /api/ ke Adonis. Upload APK/dokumen butuh
+# client_max_body_size yang cukup (APK sampai 200 MB).
+# location ^~ /api/ {
+#     client_max_body_size 210m;
+#     proxy_pass http://lacak_adonis;
+#     proxy_http_version 1.1;
+#     proxy_set_header Connection "";
+#     proxy_set_header Host $host;
+#     proxy_set_header X-Real-IP $remote_addr;
+#     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#     proxy_set_header X-Forwarded-Proto $scheme;
+#     proxy_read_timeout 120s;
+# }

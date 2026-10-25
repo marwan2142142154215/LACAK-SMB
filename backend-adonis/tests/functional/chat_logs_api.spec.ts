@@ -405,10 +405,7 @@ test.group('Log aktivitas', (group) => {
         assert.isNull(failed.causer_id)
         assert.equal(failed.subject_id, staff.id)
         assert.notInclude(JSON.stringify(rows), '"salah"')
-    }).skip(
-        true,
-        'Butuh AuthController@login (modul auth) & middleware log API terdaftar di start/kernel.ts'
-    )
+    })
 })
 
 test.group('Status server', (group) => {

@@ -38,7 +38,8 @@ export default defineConfig({
                 timeout: 30000,
             },
         ],
-        forceExit: false,
+        // Koneksi Redis & antrean (BullMQ) membuat proses tidak berhenti sendiri.
+        forceExit: true,
     },
 
     metaFiles: [],
