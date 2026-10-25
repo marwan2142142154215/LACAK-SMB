@@ -10,6 +10,8 @@ export type AuthenticatedUser = {
     organizationId: number | null
     roles: string[]
     permissions: string[]
+    /** Site yang diberikan ke admin/leader (user_site_access); kosong untuk peran lain. */
+    accessibleOrganizationIds: number[]
 }
 
 type AuthMeResponse = {
@@ -21,6 +23,7 @@ type AuthMeResponse = {
         organization_id: number | null
         roles: string[]
         permissions: string[]
+        accessible_organization_ids?: number[]
     }
 }
 
@@ -36,8 +39,21 @@ type AuthMeResponse = {
  * null = backend tidak bisa dihubungi (jangan perlakukan sebagai sesi habis).
  */
 export async function isSessionStillValid(token: string): Promise<boolean | null> {
+    return checkSession(token, '/api/v1/auth/session')
+}
+
+/**
+ * Sama seperti isSessionStillValid(), tapi lewat /auth/me yang MEMPERPANJANG
+ * idle timeout token -- untuk staf yang sedang siaran Live Kerja: heartbeat-nya
+ * lewat socket, jadi tidak ada request HTTP lain yang menjaga sesinya hidup.
+ */
+export async function extendSession(token: string): Promise<boolean | null> {
+    return checkSession(token, '/api/v1/auth/me')
+}
+
+async function checkSession(token: string, path: string): Promise<boolean | null> {
     try {
-        const response = await axios.get(`${env.get('BACKEND_API_URL')}/api/v1/auth/session`, {
+        const response = await axios.get(`${env.get('BACKEND_API_URL')}${path}`, {
             headers: {
                 Authorization: `Bearer ${token}`,
                 Accept: 'application/json',
@@ -81,6 +97,7 @@ export async function verifyBearerToken(token: string): Promise<AuthenticatedUse
             organizationId: body.data.organization_id,
             roles: body.data.roles,
             permissions: body.data.permissions,
+            accessibleOrganizationIds: (body.data.accessible_organization_ids ?? []).map(Number),
         }
     } catch (error) {
         log.error('gagal memverifikasi token ke backend-api', describeHttpError(error))

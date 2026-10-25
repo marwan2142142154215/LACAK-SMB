@@ -8,7 +8,8 @@ import ApkBuild from '#models/apk_build'
 import DeviceLocation from '#models/device_location'
 import GeofenceRule from '#models/geofence_rule'
 import socketManager from '#services/socket_manager'
-import { isSessionStillValid, verifyBearerToken } from '#services/backend_api_client'
+import { extendSession, isSessionStillValid, verifyBearerToken } from '#services/backend_api_client'
+import { registerLiveHandlers, startLiveSweeper } from '#services/live_hub'
 import { evaluateGeofence } from '#services/geofence_evaluator'
 import { markCommandAcknowledged } from '#services/command_dispatcher'
 import { beaconUuidFor, isDeviceSecretValid } from '#services/device_credentials'
@@ -72,6 +73,7 @@ export function registerSocketHandlers(io: SocketIoServer) {
 
     registerDeviceNamespace(deviceNs)
     registerOpsNamespace(opsNs)
+    startLiveSweeper(opsNs)
 }
 
 // Pembatas percobaan handshake device per alamat IP: tiap percobaan (termasuk
@@ -459,10 +461,13 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
         // Cek ulang berkala lewat /auth/session (tidak memperpanjang token),
         // supaya tab dashboard yang didiamkan tetap kena idle timeout. Gangguan
         // jaringan ke backend (null) tidak memutus sesi.
+        // Staf yang sedang siaran: pakai /auth/me yang MEMPERPANJANG sesi --
+        // heartbeat-nya lewat socket (live:state), bukan request HTTP.
         const token = socket.handshake.auth?.token as string
         const revalidate = setInterval(
             async () => {
-                if ((await isSessionStillValid(token)) === false) {
+                const check = socket.data.liveBroadcasting ? extendSession : isSessionStillValid
+                if ((await check(token)) === false) {
                     socket.emit('session:expired', {
                         message: 'Sesi berakhir, silakan login ulang',
                     })
@@ -486,6 +491,7 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
         })
 
         registerChatHandlers(opsNs, socket, user, token)
+        registerLiveHandlers(opsNs, socket, user)
 
         socket.on('disconnect', () => {
             clearInterval(revalidate)
