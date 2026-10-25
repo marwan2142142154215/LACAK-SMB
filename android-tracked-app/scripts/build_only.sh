@@ -1,9 +1,9 @@
 #!/bin/bash
 # Build APK pelacak dengan kode site ditanam saat build -- TIDAK mengunggah
-# sendiri ke backend-api (beda dari build-for-site.sh). Dipanggil oleh
-# backend-api (App\Services\ApkBuilder) lewat WSL saat admin memilih site
+# sendiri ke backend-adonis (beda dari build-for-site.sh). Dipanggil oleh
+# backend-adonis (app/services/apk_builder.ts) saat admin memilih site
 # dan menekan "Build & Download" dari dashboard/bot Telegram/APK master --
-# backend-api sendiri yang membaca file hasil build, menghitung checksum,
+# backend-adonis sendiri yang membaca file hasil build, menghitung checksum,
 # dan menyimpannya (satu sumber kebenaran, bukan loop balik ke diri sendiri).
 set -e
 

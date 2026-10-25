@@ -7,14 +7,18 @@ import testUtils from '@adonisjs/core/services/test_utils'
 import { clearAppRedisKeys, seedRolesAndPermissions } from '#tests/helpers/setup'
 
 /**
- * Tes fungsional memakai database tes yang SAMA dengan backend-api
- * (lacak_master_test, skemanya dari migrasi Laravel: `php artisan migrate
- * --env=testing`). Tiap tes dibungkus transaksi global lalu di-rollback.
+ * Tes fungsional memakai database tes (lacak_master_test). Skemanya dibuat
+ * migrasi Lucid sebelum tes jalan (database kosong = dari skema dasar).
  */
 export const plugins: Config['plugins'] = [assert(), pluginAdonisJS(app), apiClient()]
 
 export const runnerHooks: Required<Pick<Config, 'setup' | 'teardown'>> = {
-    setup: [],
+    // Tanpa rollback setelah tes: skema dasar tidak bisa dibongkar.
+    setup: [
+        async () => {
+            await testUtils.db().migrate()
+        },
+    ],
     teardown: [],
 }
 

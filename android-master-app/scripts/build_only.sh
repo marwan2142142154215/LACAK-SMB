@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build APK master dengan kode site ditanam saat build. Dipanggil oleh
-# backend-api (App\Services\ApkBuilder) lewat WSL -- backend-api sendiri
+# backend-adonis (app/services/apk_builder.ts) -- backend-adonis sendiri
 # yang membaca file hasil build, menghitung checksum, dan menyimpannya.
 set -e
 

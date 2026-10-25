@@ -1,6 +1,6 @@
 # Rencana migrasi backend-api (Laravel) ke AdonisJS
 
-Status: **rencana, belum dikerjakan.** Disusun 25 Okt 2026 dari kode `backend-api` di commit `7ac7956`.
+Status: **selesai -- 100% AdonisJS.** `backend-api/` (Laravel) sudah dihapus dari repo; skema database kini dikelola migrasi Lucid (lihat Tahap 6). Rencana awal disusun 25 Okt 2026 dari kode `backend-api` di commit `7ac7956`.
 
 ## Ringkasnya
 
@@ -155,8 +155,20 @@ Status (25 Okt, ±06:15 UTC): **peralihan berjalan di produksi.**
 - [x] `lacak-api`, `lacak-api-queue`, `lacak-api-scheduler` aktif (User www-data). `lacak-queue` & `lacak-scheduler` di-disable, cron `schedule:run` milik www-data dikomentari.
 - [x] `LACAKSMB_STATUS_SYSTEMD_UNITS` disesuaikan.
 - Insiden saat peralihan: CORS Adonis menolak semua origin di produksi (salinan konfigurasi gateway) -> login gagal, dikembalikan ke Laravel, diperbaiki di commit `7afc998`, lalu dialihkan ulang bertahap.
-- [ ] Baseline migrasi Lucid ditandai sudah jalan, lalu `backend-api/` dihapus dari repo.
-- [ ] `php8.3-fpm` dan `lacak-queue` dimatikan.
+- [x] Baseline migrasi Lucid ditandai sudah jalan, lalu `backend-api/` dihapus dari repo (Tahap 6).
+- [ ] `php8.3-fpm` dimatikan di server (langkah server Tahap 6).
+
+### Tahap 6 — Laravel dilepas sepenuhnya
+
+- Skema: `backend-adonis/database/migrations/0000_baseline_schema.ts` + `database/schema/baseline.sql` (pg_dump hasil 44 migrasi Laravel, terakhir `2026_10_25_160000_create_briefings_table`).
+  - Database kosong (instalasi baru, database tes): skema dibuat dari `baseline.sql`.
+  - Database lama: migrasi hanya memeriksa tabel `migrations` Laravel berisi ke-44 migrasi itu, lalu dicatat sudah jalan di `adonis_schema`. Kalau ada yang belum, migrasi berhenti dan menyebutkan namanya.
+  - Diuji: skema dari `baseline.sql` sama dengan hasil `php artisan migrate` (beda hanya penulisan CHECK constraint oleh Postgres), dan 213/213 tes Adonis lolos di database yang dibuat dari nol.
+  - Perubahan skema berikutnya = migrasi Lucid baru (`node ace make:migration`).
+- Seeder: `node ace db:seed` (`database/seeders/main_seeder.ts`: peran & izin, `marwanmaster`, `fortunesmb`, `system-automation`, `telegram-bot`, `root` hanya di development). Akun dummy server uji: `node ace demo:seed-accounts` (padanan `DemoAccountsSeeder`).
+- File lokal: `STORAGE_PATH` (path absolut, default server `/var/www/lacak/storage/app/private`); `LARAVEL_STORAGE_PATH` masih dibaca sebagai nama lama.
+- Nama env `LARAVEL_APP_KEY`/`LARAVEL_APP_URL` sengaja dipertahankan: token, 2FA, dan URL bertanda tangan lama tetap berlaku.
+- `server-gui` menjalankan `backend-adonis` (dev, queue:work, scheduler:run) di port 8000.
 
 ## Hasil tes (25 Okt)
 
