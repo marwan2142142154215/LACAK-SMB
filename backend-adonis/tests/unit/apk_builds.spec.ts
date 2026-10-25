@@ -11,6 +11,7 @@ import {
 } from '#controllers/apk_builds_controller'
 import {
     buildCommand,
+    buildScriptPath,
     projectPathFor,
     siteIdentityFor,
     tail,
@@ -26,6 +27,7 @@ import { crc32b, generateSanctumTokenString } from '../../commands/issue_telegra
 import { msUntilNextMinute } from '../../commands/scheduler_run.js'
 
 const CONFIG: ApkBuilderConfig = {
+    runner: 'wsl',
     trackerProjectPath: 'C:\\Users\\X\\lacak\\android-tracked-app\\',
     masterProjectPath: 'C:/Users/X/lacak/android-master-app',
     liveProjectPath: 'C:/Users/X/lacak/android-live-app',
@@ -63,7 +65,7 @@ test.group('APK builder: perintah build sama dengan ApkBuilder Laravel', () => {
         assert.deepEqual(
             buildCommand({
                 config: CONFIG,
-                scriptPathWsl: '/mnt/c/x/scripts/build_only.sh',
+                scriptPath: '/mnt/c/x/scripts/build_only.sh',
                 siteCode: 'SITE-01',
                 siteName: 'Site $(rm -rf /)',
                 version: '1.2.3',
@@ -89,7 +91,7 @@ test.group('APK builder: perintah build sama dengan ApkBuilder Laravel', () => {
 
         const master = buildCommand({
             config: CONFIG,
-            scriptPathWsl: '/x',
+            scriptPath: '/x',
             siteCode: 'MASTER-UNIVERSAL',
             siteName: 'Lacak SMB',
             version: '1.0.0',
@@ -97,6 +99,38 @@ test.group('APK builder: perintah build sama dengan ApkBuilder Laravel', () => {
             deviceSecret: null,
         })
         assert.deepEqual(master.slice(-2), ['', ''])
+    })
+
+    test('server Linux: skrip dijalankan langsung dengan bash, tanpa WSL', ({ assert }) => {
+        const linux: ApkBuilderConfig = {
+            ...CONFIG,
+            runner: 'bash',
+            trackerProjectPath: '/var/www/lacak/android-tracked-app',
+        }
+        const scriptPath = buildScriptPath(linux.trackerProjectPath, linux)
+        assert.equal(scriptPath, '/var/www/lacak/android-tracked-app/scripts/build_only.sh')
+        assert.equal(
+            buildScriptPath('C:/Users/X/lacak/android-tracked-app', CONFIG),
+            '/mnt/c/Users/X/lacak/android-tracked-app/scripts/build_only.sh'
+        )
+
+        const command = buildCommand({
+            config: linux,
+            scriptPath,
+            siteCode: 'SITE-01',
+            siteName: 'Site $(rm -rf /)',
+            version: '1.2.3',
+            deviceUuid: null,
+            deviceSecret: null,
+        })
+        assert.deepEqual(command.slice(0, 4), [
+            'bash',
+            scriptPath,
+            'SITE-01',
+            'https://ws.example.test',
+        ])
+        assert.equal(command[4], 'Site $(rm -rf /)')
+        assert.notInclude(command, 'wsl')
     })
 
     test('build_log hanya ekor 5000 karakter (mb_substr)', ({ assert }) => {

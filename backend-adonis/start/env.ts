@@ -73,6 +73,8 @@ export default await Env.create(new URL('../', import.meta.url), {
     LACAKSMB_LIVE_PROJECT_PATH: Env.schema.string.optional(),
     LACAKSMB_SERVER_EXE_PATH: Env.schema.string.optional(),
     LACAKSMB_WSL_DISTRO: Env.schema.string.optional(),
+    // bash = server Linux, wsl = mesin build Windows. Kosong = otomatis dari OS.
+    LACAKSMB_APK_BUILD_RUNNER: Env.schema.enum.optional(['bash', 'wsl'] as const),
 
     // Redis: cache, rate limit, dan antrean (build APK) -- lihat config/redis.ts
     REDIS_HOST: Env.schema.string({ format: 'host' }),
