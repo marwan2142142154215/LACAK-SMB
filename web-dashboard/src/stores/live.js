@@ -20,6 +20,9 @@ const BUMP_THROTTLE_MS = 250
 const SOCKET_REPORT_TIMEOUT_MS = 8_000
 // Tanpa keyboard/mouse selama ini (atau layar komputer terkunci) -> IDLE.
 const IDLE_THRESHOLD_MS = 5 * 60_000
+// Jalur media (UDP/TCP) dicek ulang tiap selang ini -- bisa berpindah saat
+// LiveKit menyambung ulang.
+const TRANSPORT_CHECK_MS = 30_000
 
 // Nilai Track.Source & ConnectionState.Connected di livekit-client --
 // ditulis langsung supaya store ini (dipakai AppShell di SEMUA halaman)
@@ -135,6 +138,7 @@ let cameraMutedSince = null
 let screenDeadSince = null
 let reportTimer = null
 let bumpTimer = null
+let transportTimer = null
 // Socket Live Kerja ke gateway (lihat ensureLiveSocket).
 let liveSocket = null
 let liveSocketToken = null
@@ -193,6 +197,13 @@ export const useLiveStore = defineStore('live', () => {
     // kosong -- puluhan mikrofon sekaligus hanya jadi keributan, dan tidak
     // ada audio yang diunduh sebelum penonton memilih mendengarkan.
     const listening = ref([])
+    // Jalur video saya: 'udp' | 'tcp' | null (belum diketahui). 'tcp' = UDP
+    // diblokir (biasanya VPN/firewall), jauh lebih berat untuk server LiveKit
+    // & gambar mudah patah-patah. Dilaporkan ke gateway bersama live:state.
+    const mediaTransport = ref(null)
+    const mediaOverTcp = computed(() => mediaTransport.value === 'tcp')
+    // Penonton: identity staf -> 'udp' | 'tcp' (dari gateway).
+    const transportByIdentity = ref({})
 
     const isBroadcasting = computed(() => mode.value === 'broadcasting')
 
@@ -271,7 +282,10 @@ export const useLiveStore = defineStore('live', () => {
                 videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 30 },
                 // Layer bawah untuk ubin kecil/jaringan lemah; penonton menerima
                 // layer sesuai ukuran ubinnya (dynacast mematikan yang tak diminta).
-                videoSimulcastLayers: [VideoPresets.h360, VideoPresets.h540],
+                // 180p untuk kamera pojok di grid (lebarnya < 200 px) -- dulu
+                // ubin itu menerima 360p, 3x lebih banyak paket yang harus
+                // diteruskan server tanpa beda yang terlihat.
+                videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
                 // Layar kerja: teks harus terbaca -> 1080p, cukup 15 fps.
                 screenShareEncoding: ScreenSharePresets.h1080fps15.encoding,
                 screenShareSimulcastLayers: [ScreenSharePresets.h360fps3, ScreenSharePresets.h720fps5],
@@ -307,6 +321,7 @@ export const useLiveStore = defineStore('live', () => {
         // langsung menerima video semua staf se-site sekaligus.
         await room.connect(livekitUrl, token, { autoSubscribe: false })
         rooms.set(siteId, room)
+        startTransportCheck()
         bump()
         return room
     }
@@ -365,7 +380,45 @@ export const useLiveStore = defineStore('live', () => {
         screenDeadSince = null
     }
 
+    /** Satu RTCRtpSender/Receiver yang sedang aktif, untuk membaca jalur ICE. */
+    function transportProbe() {
+        const ownCamera = ownRoom?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track
+        if (ownCamera?.sender) return ownCamera.sender
+        for (const room of rooms.values()) {
+            for (const participant of room.remoteParticipants.values()) {
+                for (const publication of participant.trackPublications.values()) {
+                    if (publication.track?.receiver) return publication.track.receiver
+                }
+            }
+        }
+        return null
+    }
+
+    function checkTransport() {
+        // getSelectedCandidatePair: Chrome & Edge (browser yang dipakai siaran).
+        const pair = transportProbe()?.transport?.iceTransport?.getSelectedCandidatePair?.()
+        if (!pair) return
+        const transport = pair.local.protocol === 'tcp' || pair.local.type === 'relay' ? 'tcp' : 'udp'
+        if (transport === mediaTransport.value) return
+        mediaTransport.value = transport
+        // Penonton langsung melihat perubahannya, tidak menunggu laporan berkala.
+        if (mode.value === 'broadcasting') scheduleReport()
+    }
+
+    function startTransportCheck() {
+        if (transportTimer) return
+        transportTimer = setInterval(checkTransport, TRANSPORT_CHECK_MS)
+        setTimeout(checkTransport, 5_000)
+    }
+
+    function stopTransportCheck() {
+        clearInterval(transportTimer)
+        transportTimer = null
+        mediaTransport.value = null
+    }
+
     async function disconnect() {
+        stopTransportCheck()
         stopHeartbeat()
         stopIdleWatch()
         releaseWakeLock()
@@ -388,6 +441,7 @@ export const useLiveStore = defineStore('live', () => {
     function handleRoomDisconnected(siteId, room) {
         if (rooms.get(siteId) === room) rooms.delete(siteId)
         watchedSiteIds.value = watchedSiteIds.value.filter((id) => rooms.has(id))
+        if (rooms.size === 0) stopTransportCheck()
         if (room === ownRoom || rooms.size === 0) {
             ownRoom = null
             stopHeartbeat()
@@ -686,8 +740,9 @@ export const useLiveStore = defineStore('live', () => {
         }
 
         // Lewat socket gateway: tanpa request HTTP, tanpa PHP. HTTP hanya
-        // cadangan kalau socket sedang tidak tersambung.
-        const reply = await reportOverSocket(state)
+        // cadangan kalau socket sedang tidak tersambung. Jalur video hanya
+        // penanda tampilan di gateway, tidak dikirim ke heartbeat HTTP.
+        const reply = await reportOverSocket({ ...state, transport: mediaTransport.value })
         if (reply?.closed) return disconnect()
         if (reply?.ok) {
             myStatus.value = reply.status ?? null
@@ -720,10 +775,13 @@ export const useLiveStore = defineStore('live', () => {
             auth: { token: auth.token },
         })
         liveSocket.on('connect', () => {
-            if (liveWatchIds.length) liveSocket.emit('live:watch', { organizationIds: liveWatchIds })
+            if (liveWatchIds.length) emitWatch()
             if (mode.value === 'broadcasting') scheduleReport()
         })
-        liveSocket.on('live:status', (event) => liveStatusListeners.forEach((listener) => listener(event)))
+        liveSocket.on('live:status', (event) => {
+            if ('transport' in event) setTransportOf(event.participant_identity, event.transport)
+            liveStatusListeners.forEach((listener) => listener(event))
+        })
         liveSocket.on('session:expired', async () => {
             auth.clearSession()
             await disconnect()
@@ -752,12 +810,27 @@ export const useLiveStore = defineStore('live', () => {
         })
     }
 
+    function setTransportOf(identity, transport) {
+        const next = { ...transportByIdentity.value }
+        if (transport) next[identity] = transport
+        else delete next[identity]
+        transportByIdentity.value = next
+    }
+
+    /** Gabung room status site & ambil jalur video staf yang sudah siaran. */
+    function emitWatch() {
+        ensureLiveSocket()?.emit('live:watch', { organizationIds: liveWatchIds }, (reply) => {
+            if (reply?.transports) transportByIdentity.value = { ...reply.transports }
+        })
+    }
+
     /** Terima perubahan status staf di site-site ini (kosong = berhenti menonton). */
     function watchLiveStatus(organizationIds) {
         liveWatchIds = [...organizationIds]
         if (liveWatchIds.length) {
-            ensureLiveSocket()?.emit('live:watch', { organizationIds: liveWatchIds })
+            emitWatch()
         } else {
+            transportByIdentity.value = {}
             liveSocket?.emit('live:watch', { organizationIds: [] })
             releaseLiveSocketIfUnused()
         }
@@ -940,6 +1013,9 @@ export const useLiveStore = defineStore('live', () => {
         screenLive,
         localMicState,
         listening,
+        mediaTransport,
+        mediaOverTcp,
+        transportByIdentity,
         connecting,
         isBroadcasting,
         remoteParticipants,
