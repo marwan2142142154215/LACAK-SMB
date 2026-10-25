@@ -51,7 +51,9 @@ export default await Env.create(new URL('../', import.meta.url), {
     ACCOUNTCENTER_TIMEOUT_MS: Env.schema.number.optional(),
 
     // Penyimpanan file (lihat app/services/storage.ts). Disk "local" = folder
-    // storage/app/private backend-api di server yang sama.
+    // STORAGE_PATH (path absolut di luar folder build). LARAVEL_STORAGE_PATH
+    // = nama lama, masih dibaca kalau STORAGE_PATH kosong.
+    STORAGE_PATH: Env.schema.string.optional(),
     LARAVEL_STORAGE_PATH: Env.schema.string.optional(),
     DOCUMENTS_DISK: Env.schema.enum.optional(['local', 'spaces'] as const),
     CHAT_IMAGES_DISK: Env.schema.enum.optional(['local', 'spaces'] as const),
@@ -77,6 +79,13 @@ export default await Env.create(new URL('../', import.meta.url), {
     LACAKSMB_APK_BUILD_RUNNER: Env.schema.enum.optional(['bash', 'wsl'] as const),
 
     // Redis: cache, rate limit, dan antrean (build APK) -- lihat config/redis.ts
+    // Seeder (node ace db:seed / demo:seed-accounts): password awal akun.
+    // Kosong = dibuat acak dan dicetak sekali di terminal.
+    INITIAL_SUPERADMIN_PASSWORD: Env.schema.secret.optional(),
+    FORTUNESMB_SUPERADMIN_PASSWORD: Env.schema.secret.optional(),
+    DEMO_ACCOUNTS_PASSWORD: Env.schema.secret.optional(),
+    ROOT_PASSWORD: Env.schema.secret.optional(),
+
     REDIS_HOST: Env.schema.string({ format: 'host' }),
     REDIS_PORT: Env.schema.number(),
     REDIS_PASSWORD: Env.schema.string.optional(),

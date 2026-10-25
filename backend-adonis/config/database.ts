@@ -14,11 +14,13 @@ const dbConfig = defineConfig({
                 database: env.get('DB_DATABASE'),
             },
             migrations: {
-                // Selama migrasi, skema masih dikelola backend-api (Laravel).
-                // Migrasi Lucid baru dipakai setelah Tahap 5 (baseline).
+                // Skema dikelola migrasi Lucid (database/migrations), mulai
+                // dari 0000_baseline_schema = hasil migrasi Laravel lama.
                 naturalSort: true,
                 disableRollbacksInProduction: true,
             },
+            // Aplikasi memakai query builder, bukan model hasil generate.
+            schemaGeneration: { enabled: false },
         },
     },
 })
