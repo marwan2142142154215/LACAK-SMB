@@ -18,6 +18,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\URL;
 
 /**
@@ -31,6 +32,9 @@ use Illuminate\Support\Facades\URL;
 class WorkSessionController extends Controller
 {
     use ApiResponse, ResolvesOrganizationScope;
+
+    /** Umur cache GET /live/overview per kumpulan site (lihat overview()). */
+    private const OVERVIEW_CACHE_SECONDS = 5;
 
     public function __construct(
         private readonly LiveKitTokenIssuer $tokenIssuer,
@@ -63,19 +67,30 @@ class WorkSessionController extends Controller
         $user->can('live.watch') || abort(403);
 
         $sites = $this->watchableSites($user)->get(['id', 'name']);
-        $siteIds = $sites->pluck('id')->all();
+        $siteIds = $sites->pluck('id')->sort()->values()->all();
 
-        $sessions = WorkSession::open()
-            ->whereIn('organization_id', $siteIds)
-            ->with('user:id,name')
-            ->orderBy('started_at')
-            ->get();
+        // Dipanggil tiap 15 detik oleh SETIAP tab Live Kerja & Aktivitas --
+        // termasuk staf yang sedang siaran -- dan roster-nya berisi semua staf
+        // site itu. Hasilnya sama untuk semua yang menonton kumpulan site yang
+        // sama, jadi dihitung sekali per OVERVIEW_CACHE_SECONDS.
+        $live = Cache::remember(
+            'live:overview:'.implode(',', $siteIds),
+            self::OVERVIEW_CACHE_SECONDS,
+            function () use ($siteIds, $request): array {
+                $sessions = WorkSession::open()
+                    ->whereIn('organization_id', $siteIds)
+                    ->with('user:id,name')
+                    ->orderBy('started_at')
+                    ->get();
 
-        return $this->success('Semua staf yang sedang live', [
-            'sites' => $sites,
-            'items' => WorkSessionResource::collection($sessions),
-            'roster' => $this->rosterFor($siteIds, $sessions),
-        ]);
+                return [
+                    'items' => WorkSessionResource::collection($sessions)->resolve($request),
+                    'roster' => $this->rosterFor($siteIds, $sessions)->all(),
+                ];
+            },
+        );
+
+        return $this->success('Semua staf yang sedang live', ['sites' => $sites, ...$live]);
     }
 
     /** Site aktif yang boleh ditonton user ini, dengan jumlah staf yang sedang live. */
