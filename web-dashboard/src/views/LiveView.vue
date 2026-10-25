@@ -322,6 +322,59 @@ const isListening = (participant) => live.listening.includes(participant.identit
 // Yang didengarkan tapi sudah tidak live lagi tidak dihitung.
 const listeningCount = computed(() => live.remoteParticipants.filter(isListening).length)
 
+// ---- Cari staf yang sedang siaran: hasil muncul saat mengetik, pilih satu
+// nama = siarannya dibuka di tampilan besar. Tekan "/" untuk langsung mengetik.
+const SEARCH_RESULT_LIMIT = 8
+const searchInput = ref(null)
+const searchOpen = ref(false)
+const searchActive = ref(0)
+
+const searchResults = computed(() =>
+    search.value.trim() ? live.remoteParticipants.filter((p) => matchesSearch(p.name || p.identity)) : [],
+)
+const searchShown = computed(() => searchResults.value.slice(0, SEARCH_RESULT_LIMIT))
+const searchSiteName = (participant) => {
+    const siteId = live.participantSites[participant.identity]
+    return siteId === LEADERS_ROOM_KEY ? 'Leader' : (siteNames.value[siteId] ?? null)
+}
+
+watch(search, () => {
+    searchActive.value = 0
+    searchOpen.value = !!search.value.trim()
+})
+
+function openSearchResult(participant) {
+    focusedIdentity.value = participant.identity
+    searchOpen.value = false
+}
+
+function onSearchKeydown(event) {
+    const count = searchShown.value.length
+    if (event.key === 'Escape') {
+        if (searchOpen.value) searchOpen.value = false
+        else search.value = ''
+        return
+    }
+    if (!count) return
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        searchOpen.value = true
+        searchActive.value = (searchActive.value + (event.key === 'ArrowDown' ? 1 : count - 1)) % count
+    } else if (event.key === 'Enter' && searchOpen.value) {
+        event.preventDefault()
+        openSearchResult(searchShown.value[searchActive.value])
+    }
+}
+
+function focusSearchShortcut(event) {
+    if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return
+    const target = event.target
+    if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return
+    if (!searchInput.value) return
+    event.preventDefault()
+    searchInput.value.focus()
+}
+
 function focusStaff(staff) {
     if (live.remoteParticipants.some((p) => p.identity === staff.participant_identity)) {
         focusedIdentity.value = staff.participant_identity
@@ -482,6 +535,7 @@ async function endWork() {
 
 onMounted(async () => {
     document.addEventListener('fullscreenchange', syncFullscreen)
+    document.addEventListener('keydown', focusSearchShortcut)
     stopLiveStatus = live.onLiveStatus(applyLiveStatus)
     statusTimer = setInterval(loadStatus, STATUS_RESYNC_MS)
 
@@ -519,6 +573,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
     document.removeEventListener('fullscreenchange', syncFullscreen)
+    document.removeEventListener('keydown', focusSearchShortcut)
     clearInterval(statusTimer)
     clearTimeout(earlyLoadTimer)
     stopLiveStatus?.()
@@ -761,11 +816,85 @@ onBeforeUnmount(() => {
                 </div>
                 <p v-else class="flex-1 px-2 text-sm font-medium text-base-100">{{ ownSiteName ?? sites[0]?.name }}</p>
 
-                <label class="relative w-full sm:w-56">
-                    <span class="sr-only">Cari staf</span>
+                <div v-if="!auth.seesOnlySelf" class="relative w-full sm:w-72">
+                    <label for="live-search" class="sr-only">Cari staf yang sedang siaran</label>
                     <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-base-500" />
-                    <input v-model="search" type="search" placeholder="Cari staf…" class="field-control !py-2 pl-9" />
-                </label>
+                    <input
+                        id="live-search"
+                        ref="searchInput"
+                        v-model="search"
+                        type="search"
+                        role="combobox"
+                        autocomplete="off"
+                        placeholder="Cari nama staf yang live…"
+                        class="field-control !py-2 pr-9 pl-9"
+                        aria-controls="live-search-results"
+                        :aria-expanded="searchOpen"
+                        :aria-activedescendant="
+                            searchOpen && searchShown[searchActive] ? `live-search-${searchShown[searchActive].identity}` : undefined
+                        "
+                        @focus="searchOpen = !!search.trim()"
+                        @blur="searchOpen = false"
+                        @keydown="onSearchKeydown"
+                    />
+                    <kbd
+                        v-if="!search"
+                        class="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded border border-base-700 px-1.5 font-mono text-[11px] text-base-500"
+                        aria-hidden="true"
+                        >/</kbd
+                    >
+
+                    <div
+                        v-if="searchOpen"
+                        class="absolute inset-x-0 top-full z-30 mt-1.5 overflow-hidden rounded-xl border border-base-800 bg-base-900 shadow-(--shadow-raised)"
+                    >
+                        <ul
+                            v-if="searchShown.length"
+                            id="live-search-results"
+                            role="listbox"
+                            aria-label="Staf yang sedang siaran"
+                            class="max-h-80 overflow-y-auto py-1"
+                        >
+                            <li
+                                v-for="(participant, index) in searchShown"
+                                :id="`live-search-${participant.identity}`"
+                                :key="participant.identity"
+                                role="option"
+                                :aria-selected="index === searchActive"
+                                class="flex cursor-pointer items-center gap-3 px-3 py-2"
+                                :class="index === searchActive ? 'bg-base-850' : 'hover:bg-base-850'"
+                                @mousedown.prevent="openSearchResult(participant)"
+                                @mousemove="searchActive = index"
+                            >
+                                <span class="beacon shrink-0" />
+                                <span class="min-w-0 flex-1">
+                                    <span class="block truncate text-sm font-semibold text-base-50">{{
+                                        participant.name || participant.identity
+                                    }}</span>
+                                    <span class="block truncate text-xs text-base-500">
+                                        <template v-if="searchSiteName(participant)">{{ searchSiteName(participant) }} · </template>live
+                                        {{ formatElapsed(liveSince(participant), now) }}
+                                    </span>
+                                </span>
+                                <span
+                                    v-if="statusOf(participant)"
+                                    class="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+                                    :class="workStatus(statusOf(participant)).chip"
+                                    >{{ workStatus(statusOf(participant)).label }}</span
+                                >
+                            </li>
+                        </ul>
+                        <p v-else id="live-search-results" class="px-3 py-3 text-sm text-base-400">
+                            Tidak ada staf live bernama “{{ search.trim() }}”.
+                        </p>
+                        <p
+                            v-if="searchResults.length > searchShown.length"
+                            class="border-t border-base-800 px-3 py-2 text-xs text-base-500"
+                        >
+                            {{ searchResults.length - searchShown.length }} lainnya tampil di dinding video.
+                        </p>
+                    </div>
+                </div>
 
                 <div class="flex flex-wrap items-center gap-2">
                     <BaseButton v-if="listeningCount" variant="outline" size="sm" @click="live.muteAll()">
