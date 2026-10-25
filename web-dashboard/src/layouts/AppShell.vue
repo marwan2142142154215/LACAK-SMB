@@ -3,6 +3,7 @@ import {
     Activity,
     Building2,
     FileSignature,
+    Film,
     History,
     LogOut,
     MapPinned,
@@ -61,6 +62,7 @@ const navGroups = computed(() => [
             { to: { name: 'radar' }, label: 'Radar', icon: Radar },
             { to: { name: 'live' }, label: 'Live Kerja', icon: Video, live: live.isBroadcasting },
             { to: { name: 'activity' }, label: 'Aktivitas user', icon: Activity, hidden: !auth.hasPermission('live.watch') },
+            { to: { name: 'recordings' }, label: 'Rekaman', icon: Film, hidden: !auth.hasPermission('live.watch') },
         ],
     },
     {

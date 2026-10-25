@@ -1,0 +1,18 @@
+# Salin jadi egress.yaml (JANGAN di-commit -- berisi secret, sudah di .gitignore).
+# Key & secret SAMA dengan livekit.yaml dan LIVEKIT_API_* di backend-adonis/.env.
+api_key: GANTI_API_KEY
+api_secret: GANTI_SECRET_MINIMAL_32_KARAKTER
+ws_url: ws://127.0.0.1:7880
+# Redis yang SAMA dengan blok redis: di livekit.yaml -- lewat Redis inilah
+# LiveKit meneruskan perintah rekam ke Egress.
+redis:
+  address: 127.0.0.1:6379
+  db: 5
+health_port: 9090
+logging:
+  level: info
+cpu_cost:
+  # Track egress hanya menyalin video apa adanya (tanpa transcoding), jauh
+  # lebih ringan dari bawaan 1 core per rekaman. Tanpa ini Egress menolak
+  # rekaman baru begitu jumlahnya melewati jumlah core.
+  track_cpu_cost: 0.1

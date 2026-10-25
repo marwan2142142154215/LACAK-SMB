@@ -8,6 +8,11 @@ rtc:
   # UDP ini di firewall.
   udp_port: 7882-7889
   use_external_ip: true
+  # Jangan pindahkan peserta UDP ke TCP saat UDP "tidak stabil": saat server
+  # sibuk, perpindahan ini membuat makin banyak peserta lewat TCP yang jauh
+  # lebih berat, dan server makin kewalahan. Peserta yang jaringannya memang
+  # memblokir UDP tetap tersambung lewat tcp_port sejak awal.
+  allow_tcp_fallback: false
   # Gabungkan penulisan paket keluar jadi lebih sedikit system call -- SFU
   # menghabiskan sebagian besar CPU-nya di sini. Tambahan jeda maks 2 ms.
   batch_io:
@@ -25,3 +30,12 @@ room:
 logging:
   level: info
   pion_level: error
+# ---- Rekaman Live Kerja (opsional, lihat README "Rekaman") ----
+# Aktifkan bersama service egress (docker compose --profile recording up -d).
+# redis:
+#   address: 127.0.0.1:6379
+#   db: 5
+# webhook:
+#   api_key: GANTI_API_KEY
+#   urls:
+#     - https://api.salahmu.fun/api/v1/livekit/webhook

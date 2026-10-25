@@ -15,8 +15,12 @@ import { middleware } from '#start/kernel'
 const AuthController = () => import('#controllers/auth_controller')
 const WorkSessionsController = () => import('#controllers/work_sessions_controller')
 const DashboardSummaryController = () => import('#controllers/dashboard_summary_controller')
+const LiveRecordingsController = () => import('#controllers/live_recordings_controller')
 
 router.get('/health', () => ({ success: true, message: 'OK', data: null }))
+
+// Webhook LiveKit: tanpa login, diverifikasi tanda tangan API secret LiveKit.
+router.post('/api/v1/livekit/webhook', [LiveRecordingsController, 'webhook'])
 
 router
     .group(() => {
@@ -45,6 +49,7 @@ router
                 router.post('/live/sessions/end', [WorkSessionsController, 'end'])
                 router.get('/live/app', [WorkSessionsController, 'app'])
                 router.get('/live/activity', [WorkSessionsController, 'activity'])
+                router.get('/live/recordings', [LiveRecordingsController, 'index'])
                 router
                     .post('/live/watch-token', [WorkSessionsController, 'watchToken'])
                     .use(middleware.throttle({ max: 30, minutes: 1 }))
