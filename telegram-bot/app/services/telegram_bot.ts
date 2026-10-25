@@ -190,10 +190,10 @@ export function createTelegramBot(token: string, logger: Logger): Bot {
                 requested === 'master' ? 'master' : requested === 'server' ? 'server' : 'tracker'
             const label =
                 apkType === 'master'
-                    ? 'APK Master'
+                    ? 'SMB Admin'
                     : apkType === 'server'
                       ? 'Server Controller'
-                      : 'APK Pelacak'
+                      : 'SMB Pelacak'
 
             let build
             try {
