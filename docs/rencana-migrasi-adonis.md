@@ -149,8 +149,12 @@ Berkas siap pakai ada di `backend-adonis/deploy/`: contoh nginx (`nginx-api.conf
    - `LACAKSMB_STATUS_SYSTEMD_UNITS` di `backend-adonis/.env` diganti ke `lacak-api,lacak-api-queue,lacak-api-scheduler,lacak-gateway`.
 6. **Membatalkan** langkah mana pun: komentari blok nginx-nya, `sudo nginx -s reload`. Untuk langkah 5, nyalakan lagi `lacak-queue`/`lacak-scheduler` dan hentikan pasangan Adonis-nya.
 
-- [ ] Semua path diarahkan ke Adonis; Laravel tetap hidup tapi tidak menerima trafik, selama sekitar satu minggu.
-- [ ] Halaman Status server dan `LACAKSMB_STATUS_SYSTEMD_UNITS` disesuaikan.
+Status (25 Okt, ±06:15 UTC): **peralihan berjalan di produksi.**
+
+- [x] Semua path `/api/` diarahkan ke Adonis lewat `/etc/nginx/snippets/lacak-adonis.conf` (di-`include` dari `/etc/nginx/sites-available/lacak`, upstream di `/etc/nginx/conf.d/lacak-adonis-upstream.conf`). Laravel (php-fpm) tetap hidup tanpa trafik sebagai cadangan, sekitar satu minggu.
+- [x] `lacak-api`, `lacak-api-queue`, `lacak-api-scheduler` aktif (User www-data). `lacak-queue` & `lacak-scheduler` di-disable, cron `schedule:run` milik www-data dikomentari.
+- [x] `LACAKSMB_STATUS_SYSTEMD_UNITS` disesuaikan.
+- Insiden saat peralihan: CORS Adonis menolak semua origin di produksi (salinan konfigurasi gateway) -> login gagal, dikembalikan ke Laravel, diperbaiki di commit `7afc998`, lalu dialihkan ulang bertahap.
 - [ ] Baseline migrasi Lucid ditandai sudah jalan, lalu `backend-api/` dihapus dari repo.
 - [ ] `php8.3-fpm` dan `lacak-queue` dimatikan.
 
