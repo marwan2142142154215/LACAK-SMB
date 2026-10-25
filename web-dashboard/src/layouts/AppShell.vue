@@ -110,8 +110,14 @@ onBeforeUnmount(() => clearInterval(clockTimer))
 
 const readouts = computed(() => [
     { label: 'Site', value: telemetry.sites.value },
+    // Staf yang sedang login (Online atau sedang kerja) / semua staf.
     {
-        label: 'Online',
+        label: 'Staf online',
+        value: telemetry.staffTotal.value == null ? null : `${telemetry.staffOnline.value}/${telemetry.staffTotal.value}`,
+        led: telemetry.staffOnline.value ? 'text-st-online' : 'text-base-500 led-off',
+    },
+    {
+        label: 'Device online',
         value: telemetry.devicesTotal.value == null ? null : `${telemetry.devicesOnline.value}/${telemetry.devicesTotal.value}`,
         led: 'text-accent-400',
     },
