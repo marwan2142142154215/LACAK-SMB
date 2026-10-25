@@ -54,10 +54,17 @@ export async function openSessionOf(userId: number): Promise<LiveSession | null>
     return (await openSessionsQuery(db).where('work_sessions.user_id', userId).first()) ?? null
 }
 
-export async function openSessionsIn(organizationIds: number[]): Promise<LiveSession[]> {
-    if (!organizationIds.length) return []
+/** Sesi terbuka di site-site ini, plus sesi leader (organization_id NULL) kalau diminta. */
+export async function openSessionsIn(
+    organizationIds: number[],
+    includeLeaders = false
+): Promise<LiveSession[]> {
+    if (!organizationIds.length && !includeLeaders) return []
     const db = await getDb()
-    return openSessionsQuery(db).whereIn('work_sessions.organization_id', organizationIds)
+    return openSessionsQuery(db).where((query) => {
+        if (organizationIds.length) query.whereIn('work_sessions.organization_id', organizationIds)
+        if (includeLeaders) query.orWhereNull('work_sessions.organization_id')
+    })
 }
 
 /**

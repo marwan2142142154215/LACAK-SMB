@@ -31,8 +31,21 @@ type Ack = (response: Record<string, unknown>) => void
 
 const SWEEP_INTERVAL_MS = 10_000
 const ROOM_PREFIX = 'live:'
+const LEADERS_ROOM = `${ROOM_PREFIX}leaders`
 
-export const liveRoom = (organizationId: number) => `${ROOM_PREFIX}${organizationId}`
+/** Room status per site; null = ruang leader (sesi leader tanpa site). */
+export const liveRoom = (organizationId: number | null) =>
+    organizationId === null ? LEADERS_ROOM : `${ROOM_PREFIX}${organizationId}`
+
+/** Ruang leader ditonton leader, admin & root -- tidak pernah staf. */
+export function canWatchLeaders(user: AuthenticatedUser): boolean {
+    return ['super_admin', 'admin', 'leader'].some((role) => user.roles.includes(role))
+}
+
+/** Leader menyiarkan ke ruang leader; staf butuh izin live.broadcast. */
+export function canBroadcast(user: AuthenticatedUser): boolean {
+    return user.permissions.includes('live.broadcast') || user.roles.includes('leader')
+}
 
 /** Sama dengan aturan watchableSites() di WorkSessionController backend-api. */
 export function canWatchSite(user: AuthenticatedUser, organizationId: number): boolean {
@@ -45,7 +58,10 @@ export function canWatchSite(user: AuthenticatedUser, organizationId: number): b
 }
 
 /** Status terakhir yang sudah dikirim, per sesi kerja terbuka. */
-const lastKnown = new Map<number, { userId: number; organizationId: number; status: WorkStatus }>()
+const lastKnown = new Map<
+    number,
+    { userId: number; organizationId: number | null; status: WorkStatus }
+>()
 
 type MediaTransport = 'udp' | 'tcp'
 
@@ -54,15 +70,15 @@ type MediaTransport = 'udp' | 'tcp'
  * `live:state`): 'tcp' = UDP terblokir (biasanya VPN), jauh lebih berat untuk
  * server LiveKit. Hanya di memori -- penanda tampilan, bukan data kerja.
  */
-const transports = new Map<number, { organizationId: number; transport: MediaTransport }>()
+const transports = new Map<number, { organizationId: number | null; transport: MediaTransport }>()
 
 export function parseTransport(payload: unknown): MediaTransport | null {
     const value = (payload as { transport?: unknown } | null)?.transport
     return value === 'udp' || value === 'tcp' ? value : null
 }
 
-/** identity peserta -> jalur video, untuk staf di site-site ini. */
-function transportsIn(organizationIds: number[]): Record<string, MediaTransport> {
+/** identity peserta -> jalur video, untuk staf di site-site ini (null = leader). */
+function transportsIn(organizationIds: Array<number | null>): Record<string, MediaTransport> {
     const snapshot: Record<string, MediaTransport> = {}
     for (const [userId, entry] of transports) {
         if (organizationIds.includes(entry.organizationId)) {
@@ -90,7 +106,7 @@ function publishSession(opsNs: OpsNamespace, session: LiveSession, now: Date) {
     })
 }
 
-async function publishEnded(opsNs: OpsNamespace, userId: number, organizationId: number) {
+async function publishEnded(opsNs: OpsNamespace, userId: number, organizationId: number | null) {
     // Selesai kerja tapi masih login = 'online'; logout / sesi habis = 'offline'.
     const status = (await hasActiveLogin(userId)) ? 'online' : 'offline'
     transports.delete(userId)
@@ -112,28 +128,39 @@ export function registerLiveHandlers(
 ) {
     const ack = (callback: unknown): Ack =>
         typeof callback === 'function' ? (callback as Ack) : () => {}
-    const watching = new Set<number>()
+    // null = ruang leader.
+    const watching = new Set<number | null>()
 
-    socket.on('live:watch', (payload: { organizationIds?: unknown }, callback?: unknown) => {
-        const requested = Array.isArray(payload?.organizationIds) ? payload.organizationIds : []
-        const allowed = requested
-            .map(Number)
-            .filter((id) => Number.isInteger(id) && id > 0 && canWatchSite(user, id))
+    socket.on(
+        'live:watch',
+        (payload: { organizationIds?: unknown; leaders?: unknown }, callback?: unknown) => {
+            const requested = Array.isArray(payload?.organizationIds) ? payload.organizationIds : []
+            const allowed: Array<number | null> = requested
+                .map(Number)
+                .filter((id) => Number.isInteger(id) && id > 0 && canWatchSite(user, id))
+            const leaders = payload?.leaders === true && canWatchLeaders(user)
+            if (leaders) allowed.push(null)
 
-        for (const id of watching) {
-            if (!allowed.includes(id)) socket.leave(liveRoom(id))
+            for (const id of watching) {
+                if (!allowed.includes(id)) socket.leave(liveRoom(id))
+            }
+            watching.clear()
+            for (const id of allowed) {
+                socket.join(liveRoom(id))
+                watching.add(id)
+            }
+
+            ack(callback)({
+                ok: true,
+                organizationIds: allowed.filter((id) => id !== null),
+                leaders,
+                transports: transportsIn(allowed),
+            })
         }
-        watching.clear()
-        for (const id of allowed) {
-            socket.join(liveRoom(id))
-            watching.add(id)
-        }
-
-        ack(callback)({ ok: true, organizationIds: allowed, transports: transportsIn(allowed) })
-    })
+    )
 
     socket.on('live:state', async (payload: unknown, callback?: unknown) => {
-        if (!user.permissions.includes('live.broadcast')) {
+        if (!canBroadcast(user)) {
             return ack(callback)({ ok: false, message: 'Anda tidak berwenang' })
         }
 
@@ -168,11 +195,16 @@ export function startLiveSweeper(opsNs: OpsNamespace): () => void {
         if (running) return
         running = true
         try {
-            const watched = [...opsNs.adapter.rooms.keys()]
-                .filter((room) => room.startsWith(ROOM_PREFIX))
+            const rooms = [...opsNs.adapter.rooms.keys()].filter((room) =>
+                room.startsWith(ROOM_PREFIX)
+            )
+            const leadersWatched = rooms.includes(LEADERS_ROOM)
+            const watched = rooms
+                .filter((room) => room !== LEADERS_ROOM)
                 .map((room) => Number(room.slice(ROOM_PREFIX.length)))
-            const watchedSet = new Set(watched)
-            const sessions = await openSessionsIn(watched)
+            const watchedSet = new Set<number | null>(watched)
+            if (leadersWatched) watchedSet.add(null)
+            const sessions = await openSessionsIn(watched, leadersWatched)
             const openIds = new Set(sessions.map((session) => session.id))
             const now = new Date()
 

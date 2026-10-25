@@ -10,6 +10,17 @@ import log from '@adonisjs/core/services/logger'
 
 export const roomForOrganization = (organizationId: number) => `site-${organizationId}`
 
+/**
+ * Ruang Live Kerja leader: satu room global untuk semua leader (leader bisa
+ * memegang beberapa site), hanya bisa ditonton leader, admin & root. Sesi
+ * kerja leader disimpan dengan organization_id NULL.
+ */
+export const LEADERS_ROOM = 'leaders'
+
+/** Room LiveKit sesi kerja: site-{id}, atau ruang leader kalau tanpa site. */
+export const roomForSession = (organizationId: number | null) =>
+    organizationId === null ? LEADERS_ROOM : roomForOrganization(organizationId)
+
 export type LiveKitConfig = {
     url: string
     apiKey: string
@@ -28,7 +39,7 @@ export function liveKitConfig(): LiveKitConfig {
 
 /** Staf yang Mulai kerja: menyiarkan kamera, mikrofon, layar, dan menonton rekan se-site. */
 export function broadcasterToken(
-    organizationId: number,
+    organizationId: number | null,
     userId: number,
     displayName: string,
     config: LiveKitConfig = liveKitConfig(),
@@ -38,7 +49,7 @@ export function broadcasterToken(
         `user-${userId}`,
         displayName,
         {
-            room: roomForOrganization(organizationId),
+            room: roomForSession(organizationId),
             roomJoin: true,
             canPublish: true,
             canPublishSources: ['camera', 'microphone', 'screen_share'],
@@ -53,7 +64,7 @@ export function broadcasterToken(
 
 /** Penonton saja; `hidden` & identity acak supaya bisa dari beberapa tab sekaligus. */
 export function viewerToken(
-    organizationId: number,
+    organizationId: number | null,
     userId: number,
     displayName: string,
     config: LiveKitConfig = liveKitConfig()
@@ -62,7 +73,7 @@ export function viewerToken(
         `viewer-${userId}-${randomBytes(4).toString('hex')}`,
         displayName,
         {
-            room: roomForOrganization(organizationId),
+            room: roomForSession(organizationId),
             roomJoin: true,
             canPublish: false,
             canSubscribe: true,
@@ -78,9 +89,9 @@ export function viewerToken(
  * Paksa keluarkan staf dari room site-nya. Best-effort, sama seperti
  * backend-api: kegagalan hanya dicatat (404 = memang sudah tidak di room).
  */
-export async function removeBroadcaster(organizationId: number, userId: number) {
+export async function removeBroadcaster(organizationId: number | null, userId: number) {
     const config = liveKitConfig()
-    const room = roomForOrganization(organizationId)
+    const room = roomForSession(organizationId)
     const httpUrl = config.url.replace(/\/+$/, '').replace(/^ws(s?):\/\//, 'http$1://')
 
     try {
