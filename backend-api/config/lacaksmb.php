@@ -23,6 +23,10 @@ return [
     // Gradle tidak bisa jalan langsung di Windows native di mesin ini).
     'wsl_distro' => env('LACAKSMB_WSL_DISTRO', 'Ubuntu'),
 
+    // Cara menjalankan scripts/build_only.sh: 'bash' (server Linux, langsung)
+    // atau 'wsl' (mesin build Windows). Bawaan mengikuti OS.
+    'apk_build_runner' => env('LACAKSMB_APK_BUILD_RUNNER', PHP_OS_FAMILY === 'Windows' ? 'wsl' : 'bash'),
+
     // Tipe 'server' tidak perlu Gradle -- ApkBuilder cukup menyalin
     // lacak-server.exe yang sudah ter-build (server-gui).
     'server_exe_path' => env('LACAKSMB_SERVER_EXE_PATH', base_path('../lacak-server.exe')),

@@ -9,9 +9,12 @@ import env from '#start/env'
 import { disk, documentsDiskName } from '#services/storage'
 
 /**
- * Build APK on-demand per site lewat WSL2 -- padanan App\Services\ApkBuilder
- * di backend-api. Gradle tidak bisa jalan langsung di Windows native di mesin
- * build, jadi skrip build_only.sh dijalankan lewat `wsl --exec`. Dipanggil
+ * Build APK on-demand per site -- padanan App\Services\ApkBuilder di
+ * backend-api. Skrip build_only.sh proyek Android dijalankan:
+ * - di server Linux: langsung dengan `bash` (runner 'bash'),
+ * - di Windows: lewat WSL2 (`wsl --exec`, runner 'wsl') -- Gradle tidak bisa
+ *   jalan di Windows native di mesin build.
+ * Runner dipilih otomatis dari OS, bisa dipaksa dengan LACAKSMB_APK_BUILD_RUNNER. Dipanggil
  * dari app/jobs/build_apk_job.ts (antrean BullMQ), bukan dari controller,
  * supaya request HTTP dashboard/APK master tidak menunggu 30-90 detik build.
  *
@@ -29,7 +32,10 @@ export const BUILD_TIMEOUT_SECONDS = 300
 /** mb_substr($output, -5000): build_log hanya menyimpan ekor output. */
 export const BUILD_LOG_TAIL = 5000
 
+export type ApkBuildRunner = 'bash' | 'wsl'
+
 export type ApkBuilderConfig = {
+    runner: ApkBuildRunner
     trackerProjectPath: string
     masterProjectPath: string
     liveProjectPath: string
@@ -46,6 +52,8 @@ export type ApkBuilderConfig = {
  */
 export function apkBuilderConfig(): ApkBuilderConfig {
     return {
+        runner:
+            env.get('LACAKSMB_APK_BUILD_RUNNER') ?? (process.platform === 'win32' ? 'wsl' : 'bash'),
         trackerProjectPath:
             env.get('LACAKSMB_TRACKER_PROJECT_PATH') ?? app.makePath('..', 'android-tracked-app'),
         masterProjectPath:
@@ -98,15 +106,20 @@ export function siteIdentityFor(
     return [organization.unique_site_code, organization.name]
 }
 
+/** Path skrip build sesuai runner: apa adanya (bash) atau /mnt/c/... (WSL). */
+export function buildScriptPath(projectPath: string, config: ApkBuilderConfig): string {
+    const script = `${projectPath}/scripts/build_only.sh`
+    return config.runner === 'wsl' ? toWslPath(script) : script
+}
+
 /**
- * `--exec` (bukan `--`): argumen diteruskan langsung ke bash tanpa di-parse
- * ulang oleh shell default WSL, jadi `$(...)`/backtick di nama site atau
- * versi tidak bisa dieksekusi sebagai perintah. Proses juga dijalankan tanpa
- * shell di sisi Node (spawn dengan array argumen).
+ * Argumen selalu diteruskan sebagai array -- tanpa shell di sisi Node (spawn)
+ * maupun di WSL (`--exec`, bukan `--`), jadi `$(...)`/backtick di nama site
+ * atau versi tidak bisa dieksekusi sebagai perintah.
  */
 export function buildCommand(options: {
     config: ApkBuilderConfig
-    scriptPathWsl: string
+    scriptPath: string
     siteCode: string
     siteName: string
     version: string
@@ -114,13 +127,11 @@ export function buildCommand(options: {
     deviceSecret: string | null
 }): string[] {
     const { config } = options
+    const runner =
+        config.runner === 'wsl' ? ['wsl', '-d', config.wslDistro, '--exec', 'bash'] : ['bash']
     return [
-        'wsl',
-        '-d',
-        config.wslDistro,
-        '--exec',
-        'bash',
-        options.scriptPathWsl,
+        ...runner,
+        options.scriptPath,
         options.siteCode,
         config.publicGatewayUrl,
         options.siteName,
@@ -291,7 +302,7 @@ export async function buildApk(
     }
 
     const projectPath = trimTrailingSlashes(projectPathFor(apkBuild.apk_type, config))
-    const scriptPathWsl = toWslPath(`${projectPath}/scripts/build_only.sh`)
+    const scriptPath = buildScriptPath(projectPath, config)
     const [siteCode, siteName] = siteIdentityFor(apkBuild.apk_type, organization)
 
     // $apkBuild->device?->device_uuid -- relasi Eloquent mengabaikan device
@@ -308,7 +319,7 @@ export async function buildApk(
     const result = await runProcess(
         buildCommand({
             config,
-            scriptPathWsl,
+            scriptPath,
             siteCode,
             siteName,
             version: apkBuild.version,
@@ -333,9 +344,9 @@ export async function buildApk(
         return
     }
 
-    // SENGAJA tidak memakai path dari baris APK_PATH= apa adanya -- itu path
-    // ala WSL (/mnt/c/...) karena skrip jalan di dalam WSL, padahal proses
-    // Node ini jalan di Windows native. Dihitung ulang dari config Windows.
+    // SENGAJA tidak memakai path dari baris APK_PATH= apa adanya -- dengan
+    // runner WSL itu path /mnt/c/..., padahal proses Node ini jalan di Windows
+    // native. Dihitung ulang dari path proyek (berlaku untuk kedua runner).
     const apkPathWindows = `${projectPath}/app/build/outputs/apk/debug/app-debug.apk`
 
     if (!(await isFile(apkPathWindows))) {
