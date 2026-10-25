@@ -9,3 +9,18 @@ services:
     network_mode: host
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml:ro
+
+  # Perekam Live Kerja (LiveKit Egress) -- hanya jalan dengan profil
+  # "recording": docker compose --profile recording up -d
+  # Merekam tiap track kamera & layar staf apa adanya (tanpa transcoding)
+  # langsung ke DigitalOcean Spaces. Rekaman diatur backend-adonis (webhook
+  # LiveKit); tanpa DO_SPACES_* di backend-adonis/.env tidak ada yang direkam.
+  egress:
+    image: livekit/egress:v1.14.1
+    profiles: [recording]
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress.yaml
+    volumes:
+      - ./egress.yaml:/etc/egress.yaml:ro
