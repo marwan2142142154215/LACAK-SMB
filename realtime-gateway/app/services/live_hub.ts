@@ -37,9 +37,9 @@ const LEADERS_ROOM = `${ROOM_PREFIX}leaders`
 export const liveRoom = (organizationId: number | null) =>
     organizationId === null ? LEADERS_ROOM : `${ROOM_PREFIX}${organizationId}`
 
-/** Ruang leader ditonton leader, admin & root -- tidak pernah staf. */
+/** Ruang leader hanya ditonton peran di atas leader: admin & root. */
 export function canWatchLeaders(user: AuthenticatedUser): boolean {
-    return ['super_admin', 'admin', 'leader'].some((role) => user.roles.includes(role))
+    return ['super_admin', 'admin'].some((role) => user.roles.includes(role))
 }
 
 /** Leader menyiarkan ke ruang leader; staf butuh izin live.broadcast. */

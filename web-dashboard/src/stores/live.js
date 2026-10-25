@@ -39,7 +39,7 @@ const REJOIN_JITTER_MS = 10_000
 // tidak ikut memuat livekit-client (~500 kB). Library-nya baru di-import
 // dinamis di connect(), saat staf benar-benar membuka siaran.
 // Ruang Live Kerja leader (room LiveKit "leaders"): satu ruang global untuk
-// semua leader, hanya ditonton leader, admin & root. Dipakai sebagai kunci
+// semua leader, hanya ditonton admin & root. Dipakai sebagai kunci
 // `rooms` / watchedSiteIds di samping id site.
 export const LEADERS_ROOM_KEY = 'leaders'
 

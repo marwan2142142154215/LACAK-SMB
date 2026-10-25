@@ -59,9 +59,10 @@ const confirmStartOpen = ref(false)
 const confirmEndOpen = ref(false)
 
 // Leader juga Live Kerja, tapi di ruang leader (terpisah dari staf) yang hanya
-// ditonton leader, admin & root.
+// ditonton peran di atasnya (admin & root).
 const isLeader = computed(() => auth.user?.roles?.includes('leader') ?? false)
-const canWatchLeaders = computed(() => ['super_admin', 'admin', 'leader'].some((role) => auth.user?.roles?.includes(role)))
+// Siaran leader hanya ditonton peran di atasnya (admin & root).
+const canWatchLeaders = computed(() => ['super_admin', 'admin'].some((role) => auth.user?.roles?.includes(role)))
 const canBroadcast = computed(() => isLeader.value || (auth.hasPermission('live.broadcast') && !!auth.user?.organization_id))
 const isAllSites = computed(() => selectedSiteId.value === ALL_SITES)
 const siteNames = computed(() => Object.fromEntries(sites.value.map((site) => [site.id, site.name])))
@@ -836,12 +837,12 @@ onBeforeUnmount(() => {
             <div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
                 <!-- Dinding video -->
                 <section ref="wallEl" aria-labelledby="live-wall-title" :class="isFullscreen && 'overflow-auto bg-base-950 p-4'">
-                    <!-- Ruang leader: terpisah dari dinding staf, hanya untuk leader, admin & root. -->
+                    <!-- Ruang leader: terpisah dari dinding staf, hanya untuk admin & root. -->
                     <div v-if="canWatchLeaders && leaderParticipants.length" class="mb-6" aria-labelledby="live-leaders-title" role="region">
                         <h2 id="live-leaders-title" class="mb-3 flex items-center gap-2 font-display text-lg font-bold text-base-50 tracking-[-0.015em]">
                             Leader
                             <span class="font-mono text-sm font-medium text-base-500 tabular-nums">{{ leaderParticipants.length }}</span>
-                            <span class="text-xs font-normal text-base-500">· hanya terlihat oleh leader, admin & root</span>
+                            <span class="text-xs font-normal text-base-500">· hanya terlihat oleh admin & root</span>
                         </h2>
                         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
                             <div v-for="participant in leaderParticipants" :key="participant.identity" class="relative">
@@ -1090,7 +1091,7 @@ onBeforeUnmount(() => {
                         </div>
                     </div>
 
-                    <!-- Status leader: hanya untuk leader, admin & root. -->
+                    <!-- Status leader: hanya untuk admin & root. -->
                     <div v-if="canWatchLeaders && leadersRoster.length" class="border-b border-base-800">
                         <p class="eyebrow flex items-center justify-between px-4 pt-3 pb-1">
                             Leader

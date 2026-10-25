@@ -16,6 +16,7 @@ const AuthController = () => import('#controllers/auth_controller')
 const WorkSessionsController = () => import('#controllers/work_sessions_controller')
 const DashboardSummaryController = () => import('#controllers/dashboard_summary_controller')
 const LiveRecordingsController = () => import('#controllers/live_recordings_controller')
+const BriefingsController = () => import('#controllers/briefings_controller')
 
 router.get('/health', () => ({ success: true, message: 'OK', data: null }))
 
@@ -50,6 +51,14 @@ router
                 router.get('/live/app', [WorkSessionsController, 'app'])
                 router.get('/live/activity', [WorkSessionsController, 'activity'])
                 router.get('/live/recordings', [LiveRecordingsController, 'index'])
+
+                // Briefing: rapat video dengan peran & site yang diundang.
+                router.get('/briefings', [BriefingsController, 'index'])
+                router
+                    .post('/briefings', [BriefingsController, 'store'])
+                    .use(middleware.throttle({ max: 10, minutes: 1 }))
+                router.post('/briefings/:id/join', [BriefingsController, 'join'])
+                router.post('/briefings/:id/end', [BriefingsController, 'end'])
                 router
                     .post('/live/watch-token', [WorkSessionsController, 'watchToken'])
                     .use(middleware.throttle({ max: 30, minutes: 1 }))
