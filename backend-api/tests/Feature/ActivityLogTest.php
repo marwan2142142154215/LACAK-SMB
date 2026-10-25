@@ -132,7 +132,7 @@ class ActivityLogTest extends TestCase
         // Data awal tes (pembuatan akun di atas) bukan bagian yang diuji.
         Activity::query()->delete();
 
-        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
         $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/heartbeat', ['camera_active' => true])->assertOk();
         $this->actingAs($staff, 'sanctum')->getJson('/api/v1/devices')->assertOk();
 

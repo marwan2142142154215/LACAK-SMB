@@ -128,6 +128,7 @@ let heartbeatTimer = null
 let cameraCheckTimer = null
 let cameraDeadSince = null
 let cameraMutedSince = null
+let screenDeadSince = null
 let reportTimer = null
 let bumpTimer = null
 let wakeLock = null
@@ -177,6 +178,8 @@ export const useLiveStore = defineStore('live', () => {
     // Kamera benar-benar mengirim gambar? false = kamera mati lebih dari
     // CAMERA_DEAD_AFTER_MS -> dashboard dikunci (CameraLock) sampai menyala lagi.
     const cameraLive = ref(true)
+    // Sama untuk layar: false = layar tidak terkirim lebih dari CAMERA_DEAD_AFTER_MS.
+    const screenLive = ref(true)
     // Penonton: identity staf yang suaranya sedang didengarkan. Default
     // kosong -- puluhan mikrofon sekaligus hanya jadi keributan, dan tidak
     // ada audio yang diunduh sebelum penonton memilih mendengarkan.
@@ -349,6 +352,8 @@ export const useLiveStore = defineStore('live', () => {
         cameraLive.value = true
         cameraDeadSince = null
         cameraMutedSince = null
+        screenLive.value = true
+        screenDeadSince = null
     }
 
     async function disconnect() {
@@ -449,6 +454,12 @@ export const useLiveStore = defineStore('live', () => {
      * menyala -- mulai kerja = layar + kamera langsung tersiar.
      */
     async function startWork({ resuming = false } = {}) {
+        // Layar & kamera wajib -- browser HP tidak bisa membagikan layar.
+        if (!canShareScreen) {
+            const error = new Error('Live Kerja hanya bisa dari komputer (Chrome atau Edge): layar & kamera wajib dibagikan.')
+            error.name = 'ComputerRequired'
+            throw error
+        }
         connecting.value = true
         cameraProblem.value = null
         let screenTrack = null
@@ -456,14 +467,16 @@ export const useLiveStore = defineStore('live', () => {
         // browser menolak dialog pilih layar tanpa klik -- layar dibagikan
         // lewat kunci "Layar wajib dibagikan" (ScreenShareLock) sesudahnya.
         try {
-            if (canShareScreen && !resuming) screenTrack = await captureEntireScreen()
+            if (!resuming) screenTrack = await captureEntireScreen()
         } catch (err) {
             connecting.value = false
             throw err
         }
         const idlePermission = resuming ? idlePermissionAlreadyGranted() : requestIdlePermission()
         try {
-            const response = await api.post('/live/sessions/start')
+            // device: backend menolak Mulai kerja dari selain komputer (APK
+            // Live / klien lama tidak mengirimnya) -- layar wajib dibagikan.
+            const response = await api.post('/live/sessions/start', { device: 'computer' })
             const { livekit_url, token, session } = response.data.data
             await disconnect()
             ownRoom = await connect(livekit_url, token, session.organization_id)
@@ -485,7 +498,7 @@ export const useLiveStore = defineStore('live', () => {
             // pilihan bisu terakhir staf.
             if (!resuming) setMicMutedPref(false)
             await enableMicrophone()
-            screenRequired.value = canShareScreen
+            screenRequired.value = true
             mode.value = 'broadcasting'
             broadcastStartedAt.value = session.started_at ?? new Date().toISOString()
             onBreak.value = !!session.on_break
@@ -616,6 +629,9 @@ export const useLiveStore = defineStore('live', () => {
         if (enabled) {
             const track = await captureEntireScreen()
             await ownRoom.localParticipant.publishTrack(track)
+            // Layar baru langsung terkirim -- jangan tunggu checkScreen() membuka kunci.
+            screenLive.value = true
+            screenDeadSince = null
         } else {
             await ownRoom.localParticipant.setScreenShareEnabled(false)
         }
@@ -673,7 +689,10 @@ export const useLiveStore = defineStore('live', () => {
     function startHeartbeat() {
         stopHeartbeat()
         heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS)
-        cameraCheckTimer = setInterval(checkCamera, CAMERA_CHECK_MS)
+        cameraCheckTimer = setInterval(() => {
+            checkCamera()
+            checkScreen()
+        }, CAMERA_CHECK_MS)
     }
 
     function stopHeartbeat() {
@@ -707,6 +726,25 @@ export const useLiveStore = defineStore('live', () => {
         if (!cameraLive.value) {
             cameraLive.value = true
             cameraProblem.value = null
+            scheduleReport()
+        }
+    }
+
+    // Layar: track bisa masih ada tapi sudah tidak mengirim (berakhir /
+    // dibisukan) -- status SCREEN OFF, jadi kunci layar juga harus tampil.
+    function checkScreen() {
+        if (mode.value !== 'broadcasting') return
+        if (trackIsLive(SCREEN_SOURCE)) {
+            screenDeadSince = null
+            if (!screenLive.value) {
+                screenLive.value = true
+                scheduleReport()
+            }
+            return
+        }
+        screenDeadSince ??= Date.now()
+        if (screenLive.value && Date.now() - screenDeadSince >= CAMERA_DEAD_AFTER_MS) {
+            screenLive.value = false
             scheduleReport()
         }
     }
@@ -810,6 +848,7 @@ export const useLiveStore = defineStore('live', () => {
         micMuted,
         micProblem,
         cameraLive,
+        screenLive,
         localMicState,
         listening,
         connecting,

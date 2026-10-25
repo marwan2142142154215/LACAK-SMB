@@ -297,7 +297,7 @@ test('login baru memutus siaran Live Kerja perangkat lama tanpa menutup sesi ker
     $staff->assignRole('staff_viewer');
 
     $this->withHeader('Authorization', 'Bearer '.loginToken($staff))
-        ->postJson('/api/v1/live/sessions/start')
+        ->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])
         ->assertCreated();
 
     loginToken($staff);
@@ -305,4 +305,19 @@ test('login baru memutus siaran Live Kerja perangkat lama tanpa menutup sesi ker
     Http::assertSent(fn ($request) => str_ends_with($request->url(), '/twirp/livekit.RoomService/RemoveParticipant')
         && $request['identity'] === "user-{$staff->id}");
     expect(WorkSession::open()->where('user_id', $staff->id)->exists())->toBeTrue();
+});
+
+test('login mencatat perangkat: browser HP dan APK = phone, browser komputer = computer', function () {
+    TwoFactorPolicy::setRequired(false);
+    $user = User::factory()->create(['password' => bcrypt('password-benar')]);
+    $deviceOfLatestLogin = fn () => $user->tokens()->latest('id')->value('device_type');
+
+    $this->withHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0')->postJson('/api/v1/auth/login', ['username' => $user->username, 'password' => 'password-benar'])->assertOk();
+    expect($deviceOfLatestLogin())->toBe('computer');
+
+    $this->withHeader('User-Agent', 'Mozilla/5.0 (Linux; Android 14) Chrome/130.0 Mobile Safari/537.36')->postJson('/api/v1/auth/login', ['username' => $user->username, 'password' => 'password-benar'])->assertOk();
+    expect($deviceOfLatestLogin())->toBe('phone');
+
+    $this->withHeader('User-Agent', 'okhttp/4.12.0')->postJson('/api/v1/auth/login', ['username' => $user->username, 'password' => 'password-benar', 'client' => 'master_app'])->assertOk();
+    expect($deviceOfLatestLogin())->toBe('phone');
 });

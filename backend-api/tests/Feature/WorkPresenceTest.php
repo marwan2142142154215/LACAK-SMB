@@ -52,7 +52,7 @@ class WorkPresenceTest extends TestCase
         $staff = $this->staffIn(Organization::factory()->create());
         $this->actingAs($staff, 'sanctum');
 
-        $this->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
         $this->postJson('/api/v1/live/sessions/heartbeat', ['camera_active' => true])->assertJsonPath('data.status', 'screen_off');
         $this->postJson('/api/v1/live/sessions/heartbeat', ['screen_active' => true])->assertJsonPath('data.status', 'working');
         // Heartbeat tanpa perubahan tidak menambah log.
@@ -81,7 +81,7 @@ class WorkPresenceTest extends TestCase
         $offline = $this->staffIn($org);
         $this->staffIn(Organization::factory()->create()); // site lain, tidak ikut
 
-        $this->actingAs($working, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->actingAs($working, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
         $this->actingAs($working, 'sanctum')->postJson('/api/v1/live/sessions/heartbeat', ['camera_active' => true, 'screen_active' => true]);
 
         $roster = collect($this->actingAs($offline, 'sanctum')->getJson('/api/v1/live/sessions')->assertOk()->json('data.roster'))
@@ -100,7 +100,7 @@ class WorkPresenceTest extends TestCase
         $staffC = $this->staffIn($orgC);
 
         foreach ([$staffA, $staffB, $staffC] as $staff) {
-            $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+            $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
         }
 
         $leader = User::factory()->create(['organization_id' => null]);
@@ -112,6 +112,8 @@ class WorkPresenceTest extends TestCase
         $this->assertEqualsCanonicalizing([$orgA->id, $orgB->id], array_column($data['sites'], 'id'));
         $this->assertEqualsCanonicalizing([$staffA->id, $staffB->id], array_column($data['items'], 'user_id'));
         $this->assertEqualsCanonicalizing([$staffA->id, $staffB->id], array_column($data['roster'], 'user_id'));
+        // actingAs tanpa token login -> tidak tercatat login dari perangkat mana pun.
+        $this->assertSame([null, null], array_column($data['roster'], 'login_device'));
 
         // Staf biasa hanya melihat site-nya sendiri.
         $this->assertSame([$orgA->id], array_column(
@@ -123,7 +125,7 @@ class WorkPresenceTest extends TestCase
     public function test_missed_heartbeats_log_disconnect_and_reconnect(): void
     {
         $staff = $this->staffIn(Organization::factory()->create());
-        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
         $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/heartbeat', ['camera_active' => true, 'screen_active' => true]);
 
         $this->travel(80)->seconds();
@@ -140,7 +142,7 @@ class WorkPresenceTest extends TestCase
         $staff = $this->staffIn(Organization::factory()->create());
         $this->actingAs($staff, 'sanctum');
 
-        $this->postJson('/api/v1/live/sessions/start')->assertJsonPath('data.session.status', 'camera_off');
+        $this->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertJsonPath('data.session.status', 'camera_off');
 
         $this->travel(61)->seconds();
         $this->postJson('/api/v1/live/sessions/heartbeat')->assertJsonPath('data.status', 'alert');
@@ -155,7 +157,7 @@ class WorkPresenceTest extends TestCase
         $this->travelTo($from->copy()->addMinutes(5));
         $this->actingAs($staff, 'sanctum');
 
-        $this->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
         $this->postJson('/api/v1/live/sessions/heartbeat', ['camera_active' => true, 'screen_active' => true]);
         $this->travel(60)->minutes();
         $this->postJson('/api/v1/live/sessions/heartbeat', ['on_break' => true]);
@@ -185,9 +187,9 @@ class WorkPresenceTest extends TestCase
 
         // Mulai kerja kemarin -> status sebelum rentang "hari ini" dimulai.
         $this->travelTo(now()->startOfDay()->subHours(2));
-        $this->actingAs($staffA, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->actingAs($staffA, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
         $this->actingAs($staffA, 'sanctum')->postJson('/api/v1/live/sessions/heartbeat', ['camera_active' => true, 'screen_active' => true]);
-        $this->actingAs($staffC, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->actingAs($staffC, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
         $this->travelBack();
         $this->actingAs($staffA, 'sanctum')->postJson('/api/v1/live/sessions/heartbeat', ['on_break' => true]);
 
@@ -234,7 +236,7 @@ class WorkPresenceTest extends TestCase
             ->assertOk()
             ->json('data.access_token');
 
-        $this->withToken($token)->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->withToken($token)->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
         $this->withToken($token)->postJson('/api/v1/auth/logout')->assertOk();
 
         $this->assertSame(0, WorkSession::open()->where('user_id', $staff->id)->count());
