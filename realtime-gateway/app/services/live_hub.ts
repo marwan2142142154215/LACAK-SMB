@@ -47,6 +47,31 @@ export function canWatchSite(user: AuthenticatedUser, organizationId: number): b
 /** Status terakhir yang sudah dikirim, per sesi kerja terbuka. */
 const lastKnown = new Map<number, { userId: number; organizationId: number; status: WorkStatus }>()
 
+type MediaTransport = 'udp' | 'tcp'
+
+/**
+ * Jalur video tiap staf yang siaran (dilaporkan browser-nya lewat
+ * `live:state`): 'tcp' = UDP terblokir (biasanya VPN), jauh lebih berat untuk
+ * server LiveKit. Hanya di memori -- penanda tampilan, bukan data kerja.
+ */
+const transports = new Map<number, { organizationId: number; transport: MediaTransport }>()
+
+export function parseTransport(payload: unknown): MediaTransport | null {
+    const value = (payload as { transport?: unknown } | null)?.transport
+    return value === 'udp' || value === 'tcp' ? value : null
+}
+
+/** identity peserta -> jalur video, untuk staf di site-site ini. */
+function transportsIn(organizationIds: number[]): Record<string, MediaTransport> {
+    const snapshot: Record<string, MediaTransport> = {}
+    for (const [userId, entry] of transports) {
+        if (organizationIds.includes(entry.organizationId)) {
+            snapshot[`user-${userId}`] = entry.transport
+        }
+    }
+    return snapshot
+}
+
 function publishSession(opsNs: OpsNamespace, session: LiveSession, now: Date) {
     const status = statusOf(session, now)
     lastKnown.set(session.id, {
@@ -61,12 +86,14 @@ function publishSession(opsNs: OpsNamespace, session: LiveSession, now: Date) {
         status,
         started_at: session.started_at,
         session: sessionPayload(session, now),
+        transport: transports.get(session.user_id)?.transport ?? null,
     })
 }
 
 async function publishEnded(opsNs: OpsNamespace, userId: number, organizationId: number) {
     // Selesai kerja tapi masih login = 'online'; logout / sesi habis = 'offline'.
     const status = (await hasActiveLogin(userId)) ? 'online' : 'offline'
+    transports.delete(userId)
     opsNs.to(liveRoom(organizationId)).emit('live:status', {
         organization_id: organizationId,
         user_id: userId,
@@ -74,6 +101,7 @@ async function publishEnded(opsNs: OpsNamespace, userId: number, organizationId:
         status,
         started_at: null,
         session: null,
+        transport: null,
     })
 }
 
@@ -101,7 +129,7 @@ export function registerLiveHandlers(
             watching.add(id)
         }
 
-        ack(callback)({ ok: true, organizationIds: allowed })
+        ack(callback)({ ok: true, organizationIds: allowed, transports: transportsIn(allowed) })
     })
 
     socket.on('live:state', async (payload: unknown, callback?: unknown) => {
@@ -119,6 +147,10 @@ export function registerLiveHandlers(
             // Selama siaran, sesi login diperpanjang lewat cek ulang berkala
             // di socket.ts (heartbeat HTTP yang dulu melakukannya sudah tidak ada).
             socket.data.liveBroadcasting = true
+            const transport = parseTransport(payload)
+            if (transport) {
+                transports.set(user.id, { organizationId: session.organization_id, transport })
+            }
             const now = new Date()
             ack(callback)({ ok: true, status: statusOf(session, now) })
             publishSession(opsNs, session, now)

@@ -11,6 +11,7 @@ import {
     Minimize,
     MonitorUp,
     MonitorX,
+    Network,
     Play,
     RefreshCw,
     Search,
@@ -222,10 +223,27 @@ function rosterRank(status) {
     return status === 'offline' ? 2 : 1
 }
 
+// ---- Jalur video staf (UDP normal / TCP lewat VPN yang memblokir UDP).
+const transportFilter = ref(null)
+
+function transportOf(participant) {
+    return live.transportByIdentity[participant.identity] ?? null
+}
+
+const transportCounts = computed(() => {
+    const counts = { udp: 0, tcp: 0 }
+    for (const participant of live.remoteParticipants) {
+        const transport = transportOf(participant)
+        if (transport) counts[transport]++
+    }
+    return counts
+})
+
 const wallParticipants = computed(() =>
     live.remoteParticipants.filter(
         (participant) =>
             (!statusFilter.value || statusOf(participant) === statusFilter.value) &&
+            (!transportFilter.value || transportOf(participant) === transportFilter.value) &&
             matchesSearch(participant.name || participant.identity),
     ),
 )
@@ -251,7 +269,7 @@ watch(visibleParticipants, (participants) => live.setVisibleParticipants(partici
 watch(pageCount, (count) => {
     if (page.value >= count) page.value = count - 1
 })
-watch([search, statusFilter], () => (page.value = 0))
+watch([search, statusFilter, transportFilter], () => (page.value = 0))
 
 function trackOf(participant, source) {
     return participant.getTrackPublication(source)?.track ?? null
@@ -494,6 +512,21 @@ onBeforeUnmount(() => {
                 >
             </div>
 
+            <!-- Video lewat TCP (biasanya VPN/firewall memblokir UDP): berat untuk
+                 server & gambar patah-patah. Yang memperbaiki tim IT, bukan staf. -->
+            <div
+                v-if="live.mediaOverTcp"
+                class="flex items-start gap-3 rounded-lg border border-warning-500/30 bg-warning-500/10 px-4 py-3 text-sm text-pretty text-warning-400"
+                role="note"
+            >
+                <Network class="mt-0.5 size-4 shrink-0" />
+                <span>
+                    Video Live Kerja di perangkat ini lewat <strong>TCP</strong>, bukan UDP, biasanya karena VPN atau
+                    firewall memblokir UDP. Gambar bisa patah-patah dan server jauh lebih berat. Minta tim IT
+                    mengizinkan <strong>UDP port 7882-7889</strong> ke server Live.
+                </span>
+            </div>
+
             <!-- Layar & kamera wajib: browser HP tidak bisa membagikan layar,
                  jadi kerja (siaran) hanya bisa dimulai dari komputer. -->
             <div
@@ -528,6 +561,7 @@ onBeforeUnmount(() => {
                     :screen-track="live.localScreenTrack"
                     :camera-track="live.localCameraTrack"
                     :status="live.myStatus"
+                    :transport="live.mediaTransport"
                     :swapped="swapped"
                     :camera-size="cameraSize"
                     mirror-camera
@@ -746,7 +780,37 @@ onBeforeUnmount(() => {
                                 >· {{ siteNames[selectedSiteId] }}</span
                             >
                         </h2>
-                        <div class="flex items-center gap-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <!-- Jalur video: klik untuk menyaring (mis. hanya yang lewat TCP). -->
+                            <div
+                                v-if="transportCounts.udp || transportCounts.tcp"
+                                class="inline-flex overflow-hidden rounded-full border border-base-700 font-mono text-[11px] tracking-[0.08em] uppercase tabular-nums"
+                                role="group"
+                                aria-label="Saring menurut jalur video"
+                            >
+                                <button
+                                    v-for="entry in [
+                                        { key: 'udp', label: 'UDP', on: 'bg-st-online/15 text-st-online' },
+                                        { key: 'tcp', label: 'TCP', on: 'bg-warning-500/15 text-warning-400' },
+                                    ]"
+                                    :key="entry.key"
+                                    type="button"
+                                    class="px-2.5 py-1 transition-colors"
+                                    :class="[
+                                        transportFilter === entry.key ? entry.on : 'text-base-400 hover:text-base-200',
+                                        entry.key === 'tcp' && transportCounts.tcp && transportFilter !== 'tcp' && 'text-warning-400',
+                                    ]"
+                                    :aria-pressed="transportFilter === entry.key"
+                                    :title="
+                                        entry.key === 'tcp'
+                                            ? 'Video lewat TCP: UDP diblokir (biasanya VPN/firewall). Berat untuk server.'
+                                            : 'Video lewat UDP (normal)'
+                                    "
+                                    @click="transportFilter = transportFilter === entry.key ? null : entry.key"
+                                >
+                                    {{ entry.label }} {{ transportCounts[entry.key] }}
+                                </button>
+                            </div>
                             <button
                                 v-if="statusFilter"
                                 type="button"
@@ -814,6 +878,7 @@ onBeforeUnmount(() => {
                                     :status="statusOf(participant)"
                                     :since="liveSince(participant)"
                                     :speaking="participant.isSpeaking"
+                                    :transport="transportOf(participant)"
                                 />
                             </button>
                             <LiveAudioButton
@@ -842,6 +907,7 @@ onBeforeUnmount(() => {
                                     :status="statusOf(participant)"
                                     :since="liveSince(participant)"
                                     :quality="participant.connectionQuality"
+                                    :transport="transportOf(participant)"
                                     :swapped="swapped"
                                     :camera-size="cameraSize"
                                     :speaking="participant.isSpeaking"
@@ -1002,6 +1068,7 @@ onBeforeUnmount(() => {
                         :status="statusOf(focused)"
                         :since="focusedSince"
                         :quality="focused.connectionQuality"
+                        :transport="transportOf(focused)"
                         :swapped="swapped"
                         :camera-size="cameraSize"
                         :speaking="focused.isSpeaking"
