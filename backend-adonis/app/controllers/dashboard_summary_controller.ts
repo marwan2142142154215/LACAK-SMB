@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import { accessOf } from '#services/access'
 import { fail, success } from '#services/api_response'
+import { LARAVEL_USER_MORPH } from '#services/laravel/index'
 import { organizationFilter } from '#services/organization_scope'
 
 /**
@@ -32,15 +33,71 @@ export default class DashboardSummaryController {
             return Object.fromEntries(rows.map((row) => [row[column], Number(row.total)]))
         }
 
-        const [organizations, devicesCount, devicesByStatus, apkCount, apkByType, apkSuccess] =
-            await Promise.all([
-                countOf(scoped('organizations', 'id').whereNull('deleted_at')),
-                countOf(devices()),
-                totalsBy(devices(), 'status'),
-                countOf(apkBuilds()),
-                totalsBy(apkBuilds(), 'apk_type'),
-                countOf(apkBuilds().where('status', 'success')),
-            ])
+        // Staf = user yang boleh Live Kerja (izin live.broadcast, langsung atau
+        // lewat peran), aktif, tidak dihapus -- sama dengan roster Live Kerja.
+        const staff = () =>
+            scoped('users')
+                .where('is_active', true)
+                .whereNull('deleted_at')
+                .where((query) => {
+                    const permissionId = db
+                        .from('permissions')
+                        .where('name', 'live.broadcast')
+                        .select('id')
+                    query
+                        .whereIn(
+                            'id',
+                            db
+                                .from('model_has_permissions')
+                                .where('model_type', LARAVEL_USER_MORPH)
+                                .whereIn('permission_id', permissionId)
+                                .select('model_id')
+                        )
+                        .orWhereIn(
+                            'id',
+                            db
+                                .from('model_has_roles')
+                                .join(
+                                    'role_has_permissions',
+                                    'role_has_permissions.role_id',
+                                    'model_has_roles.role_id'
+                                )
+                                .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
+                                .whereIn('role_has_permissions.permission_id', permissionId)
+                                .select('model_has_roles.model_id')
+                        )
+                })
+        // Online = masih punya token login berlaku (status Online / sedang
+        // kerja di daftar staf); token login selalu punya expires_at.
+        const staffOnline = () =>
+            staff().whereIn(
+                'id',
+                db
+                    .from('personal_access_tokens')
+                    .where('tokenable_type', LARAVEL_USER_MORPH)
+                    .where('expires_at', '>', new Date())
+                    .select('tokenable_id')
+            )
+
+        const [
+            organizations,
+            devicesCount,
+            devicesByStatus,
+            apkCount,
+            apkByType,
+            apkSuccess,
+            staffCount,
+            staffOnlineCount,
+        ] = await Promise.all([
+            countOf(scoped('organizations', 'id').whereNull('deleted_at')),
+            countOf(devices()),
+            totalsBy(devices(), 'status'),
+            countOf(apkBuilds()),
+            totalsBy(apkBuilds(), 'apk_type'),
+            countOf(apkBuilds().where('status', 'success')),
+            countOf(staff()),
+            countOf(staffOnline()),
+        ])
 
         return success('Ringkasan dashboard', {
             organizations_count: organizations,
@@ -49,6 +106,8 @@ export default class DashboardSummaryController {
             apk_builds_count: apkCount,
             apk_builds_by_type: apkByType,
             apk_builds_success_count: apkSuccess,
+            staff_count: staffCount,
+            staff_online_count: staffOnlineCount,
         })
     }
 }

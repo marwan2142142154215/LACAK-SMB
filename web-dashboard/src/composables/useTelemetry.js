@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 const REFRESH_MS = 60_000
 
 /**
- * Angka ringkas untuk strip telemetri di AppShell: jumlah site, device per
+ * Angka ringkas untuk strip telemetri di AppShell: jumlah site, staf online, device per
  * status, dan staf yang sedang Live Kerja. Diambil dari endpoint yang sudah
  * di-scope backend sesuai akses user -- strip ini tidak pernah menampilkan
  * angka site yang tidak boleh dilihat user tersebut.
@@ -42,6 +42,8 @@ export function useTelemetry() {
         devicesTotal: computed(() => summary.value?.devices_count ?? null),
         devicesOnline: computed(() => (summary.value ? (byStatus.value.online ?? 0) : null)),
         devicesLocked: computed(() => (summary.value ? (byStatus.value.locked ?? 0) : null)),
+        staffTotal: computed(() => summary.value?.staff_count ?? null),
+        staffOnline: computed(() => summary.value?.staff_online_count ?? null),
         liveCount,
     }
 }

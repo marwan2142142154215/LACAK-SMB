@@ -100,3 +100,39 @@ test.group('Live Kerja: status Online di daftar staf', (group) => {
         assert.equal(statuses[viewer], 'online')
     })
 })
+
+test.group('Ringkasan dashboard: staf online', (group) => {
+    group.each.setup(() => testUtils.db().withGlobalTransaction())
+
+    test('menghitung staf dan staf yang masih login di site sendiri', async ({ client }) => {
+        const newOrg = async () => {
+            const [org] = await db
+                .table('organizations')
+                .insert({
+                    name: 'Site Ringkasan',
+                    type: 'company_asset',
+                    unique_site_code: `UJI-${randomBytes(4).toString('hex').toUpperCase()}`,
+                    is_active: true,
+                    created_at: new Date(),
+                    updated_at: new Date(),
+                })
+                .returning(['id'])
+            return org.id as number
+        }
+        const orgId = await newOrg()
+        const online = await staffIn(orgId)
+        const expired = await staffIn(orgId)
+        await staffIn(orgId) // tidak pernah login
+        const viewer = await staffIn(orgId)
+        await loginToken(await staffIn(await newOrg()), DateTime.now().plus({ hours: 1 })) // site lain
+
+        await loginToken(online, DateTime.now().plus({ hours: 2 }))
+        await loginToken(expired, DateTime.now().minus({ minutes: 1 }))
+        const viewerBearer = await loginToken(viewer, DateTime.now().plus({ hours: 2 }))
+
+        const response = await client.get('/api/v1/dashboard-summary').bearerToken(viewerBearer)
+
+        response.assertStatus(200)
+        response.assertBodyContains({ data: { staff_count: 4, staff_online_count: 2 } })
+    })
+})
