@@ -241,6 +241,8 @@ export const useLiveStore = defineStore('live', () => {
 
     const remoteParticipants = computed(() => {
         revision.value // dependensi reaktif, lihat catatan di atas
+        // Staf biasa tidak menonton rekan (token-nya juga tanpa izin subscribe).
+        if (auth.seesOnlySelf) return []
         return [...rooms.values()]
             .flatMap((room) => [...room.remoteParticipants.values()])
             .filter((p) => p.getTrackPublication(CAMERA_SOURCE) || p.getTrackPublication(SCREEN_SOURCE))
@@ -523,8 +525,7 @@ export const useLiveStore = defineStore('live', () => {
         if (Date.now() - lastRepublishAt < REPUBLISH_MIN_GAP_MS) return
         const participant = ownRoom.localParticipant
         const missingCamera = !participant.getTrackPublication(CAMERA_SOURCE) && !onBreak.value
-        const missingScreen =
-            !participant.getTrackPublication(SCREEN_SOURCE) && ownScreenTrack?.mediaStreamTrack?.readyState === 'live'
+        const missingScreen = !participant.getTrackPublication(SCREEN_SOURCE) && ownScreenTrack?.mediaStreamTrack?.readyState === 'live'
         if (!missingCamera && !missingScreen) return
 
         republishing = true

@@ -1,7 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import log from '@adonisjs/core/services/logger'
-import { accessOf, can } from '#services/access'
+import { accessOf, can, seesOnlySelf } from '#services/access'
 import { writeActivity } from '#services/activity_log'
 import { fail, success } from '#services/api_response'
 import { authorizedOrganizationId } from '#services/organization_scope'
@@ -39,6 +39,8 @@ export default class LiveRecordingsController {
         const staff = await db.from('users').where('id', userId).whereNull('deleted_at').first()
         if (
             !staff ||
+            // Staf biasa hanya boleh memutar rekamannya sendiri.
+            (seesOnlySelf(access) && userId !== access.userId) ||
             authorizedOrganizationId(access, staff.organization_id) !== staff.organization_id
         ) {
             return ctx.response
