@@ -70,6 +70,18 @@ Paket `barryvdh/laravel-dompdf` dan `maatwebsite/excel` ada di `composer.json` t
 
 ### Tahap 1 — Endpoint Live Kerja yang paling sering dipanggil (±4 hari)
 
+Status (25 Okt): **kode selesai, belum diuji dengan database, belum dilayani nginx.**
+
+- [x] Status realtime (heartbeat & push status) dipindah ke `realtime-gateway` lewat socket (commit `8dfa294`), bukan ke backend-adonis.
+- [x] `backend-adonis`: `/live/sites`, `/live/overview` (cache Redis 5 detik), `/live/sessions` (index, start, heartbeat, end), `/live/app`, `/live/activity`, `/live/watch-token`, `/dashboard-summary`.
+- [x] Token LiveKit identik byte per byte dengan Laravel (test vector), aturan status, ringkasan jam kerja, dan cakupan site diuji tes unit.
+- [x] Log aktivitas sesi kerja (`created`/`updated` WorkSession) ditulis dengan format spatie yang sama.
+- [ ] Tes fungsional terhadap database `lacak_master_test`.
+- [ ] Rate limit (`throttle:10,1` start, `throttle:60,1` heartbeat) lewat `@adonisjs/limiter`.
+- [ ] Nginx mengarahkan path di atas ke `backend-adonis`.
+
+Catatan perbedaan kecil yang tidak mengubah perilaku dashboard: tanggal dikirim sebagai `...000Z` (milidetik) bukan `...000000Z` (mikrodetik), dan objek kosong `devices_by_status` dikirim `{}` bukan `[]`.
+
 `/live/overview`, `/live/sites`, `/live/activity`, `/live/sessions` (index, start, heartbeat, end), `/live/watch-token`, `/live/app`, `/dashboard-summary`, `/auth/me`, `/auth/session`.
 
 Termasuk `WorkPresence` (status dan log kerja), `LiveKitTokenIssuer` (`livekit-server-sdk`), dan cache overview. Ini tahap dengan dampak beban terbesar, jadi dikerjakan paling awal.

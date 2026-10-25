@@ -20,4 +20,5 @@ router.use([() => import('@adonisjs/core/bodyparser_middleware')])
 export const middleware = router.named({
     auth: () => import('#middleware/auth_middleware'),
     extendToken: () => import('#middleware/extend_token_expiry_middleware'),
+    throttle: () => import('#middleware/throttle_middleware'),
 })

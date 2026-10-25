@@ -31,6 +31,45 @@ export default await Env.create(new URL('../', import.meta.url), {
     DB_PASSWORD: Env.schema.string.optional(),
     DB_DATABASE: Env.schema.string(),
 
+    // LiveKit: sama dengan LIVEKIT_* di backend-api/.env (lihat app/services/livekit.ts)
+    LIVEKIT_URL: Env.schema.string(),
+    LIVEKIT_API_KEY: Env.schema.string(),
+    LIVEKIT_API_SECRET: Env.schema.secret(),
+    LIVEKIT_TOKEN_TTL_SECONDS: Env.schema.number.optional(),
+
+    LIVE_HEARTBEAT_TIMEOUT_SECONDS: Env.schema.number.optional(),
+
+    // Account Center (login email) -- sama dengan ACCOUNTCENTER_* di backend-api/.env
+    ACCOUNTCENTER_ENABLED: Env.schema.boolean.optional(),
+    ACCOUNTCENTER_URI: Env.schema.string.optional(),
+    ACCOUNTCENTER_NAME: Env.schema.string.optional(),
+    ACCOUNTCENTER_SECRET: Env.schema.secret.optional(),
+    ACCOUNTCENTER_TIMEOUT_MS: Env.schema.number.optional(),
+
+    // Penyimpanan file (lihat app/services/storage.ts). Disk "local" = folder
+    // storage/app/private backend-api di server yang sama.
+    LARAVEL_STORAGE_PATH: Env.schema.string.optional(),
+    DOCUMENTS_DISK: Env.schema.enum.optional(['local', 'spaces'] as const),
+    CHAT_IMAGES_DISK: Env.schema.enum.optional(['local', 'spaces'] as const),
+    DO_SPACES_KEY: Env.schema.string.optional(),
+    DO_SPACES_SECRET: Env.schema.secret.optional(),
+    DO_SPACES_REGION: Env.schema.string.optional(),
+    DO_SPACES_BUCKET: Env.schema.string.optional(),
+    DO_SPACES_ENDPOINT: Env.schema.string.optional(),
+    DO_SPACES_URL: Env.schema.string.optional(),
+
+    // Lain-lain dari config/lacaksmb.php backend-api
+    LACAKSMB_PUBLIC_GATEWAY_URL: Env.schema.string.optional(),
+    LACAKSMB_PUBLIC_BACKEND_API_URL: Env.schema.string.optional(),
+    LACAKSMB_STATUS_GATEWAY_URL: Env.schema.string.optional(),
+    LACAKSMB_STATUS_LIVEKIT_URL: Env.schema.string.optional(),
+    LACAKSMB_STATUS_SYSTEMD_UNITS: Env.schema.string.optional(),
+    LACAKSMB_TRACKER_PROJECT_PATH: Env.schema.string.optional(),
+    LACAKSMB_MASTER_PROJECT_PATH: Env.schema.string.optional(),
+    LACAKSMB_LIVE_PROJECT_PATH: Env.schema.string.optional(),
+    LACAKSMB_SERVER_EXE_PATH: Env.schema.string.optional(),
+    LACAKSMB_WSL_DISTRO: Env.schema.string.optional(),
+
     // Redis: cache, rate limit, dan antrean (build APK) -- lihat config/redis.ts
     REDIS_HOST: Env.schema.string({ format: 'host' }),
     REDIS_PORT: Env.schema.number(),
