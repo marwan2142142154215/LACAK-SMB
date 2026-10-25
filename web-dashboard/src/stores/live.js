@@ -104,6 +104,10 @@ async function captureEntireScreen() {
                 : `Layar tidak bisa dibagikan: ${err.message}`,
         )
         error.name = 'ScreenShareFailed'
+        // Dipanggil tanpa klik di Chrome biasa -> InvalidStateError (butuh
+        // gestur). Chrome kantor dengan kebijakan
+        // ScreenCaptureWithoutGestureAllowedForOrigins tidak menolaknya.
+        error.needsGesture = err.name === 'InvalidStateError'
         throw error
     }
     const video = tracks.find((track) => track.kind === 'video')

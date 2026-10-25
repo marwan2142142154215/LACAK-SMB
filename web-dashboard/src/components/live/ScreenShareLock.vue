@@ -81,13 +81,42 @@ function stopAlert() {
 const ALERT_DELAY_MS = 10_000
 let alertDelay = null
 
+// Chrome kantor (kebijakan ScreenCaptureWithoutGestureAllowedForOrigins, lihat
+// docs/chrome-kantor.md): dialog pilih layar boleh dibuka tanpa klik, jadi
+// begitu staf menekan "Stop sharing" dialognya langsung dibuka lagi, dan
+// diulang tiap AUTO_SHARE_RETRY_MS kalau dibatalkan. Di Chrome biasa browser
+// menolaknya (butuh klik) -> berhenti mencoba, staf memakai tombol Bagikan lagi.
+const AUTO_SHARE_DELAY_MS = 3_000
+const AUTO_SHARE_RETRY_MS = 30_000
+let autoShareTimer = null
+let autoShareAllowed = true
+
+async function autoShare() {
+    autoShareTimer = null
+    if (!locked.value || !autoShareAllowed || sharing.value) return
+    sharing.value = true
+    try {
+        await live.setScreenShare(true)
+    } catch (err) {
+        if (err.needsGesture) autoShareAllowed = false
+    } finally {
+        sharing.value = false
+    }
+    if (locked.value && autoShareAllowed) autoShareTimer = setTimeout(autoShare, AUTO_SHARE_RETRY_MS)
+}
+
 watch(locked, (isLocked) => {
     clearTimeout(alertDelay)
+    clearTimeout(autoShareTimer)
     stopAlert()
-    if (isLocked) alertDelay = setTimeout(startAlert, ALERT_DELAY_MS)
+    if (isLocked) {
+        alertDelay = setTimeout(startAlert, ALERT_DELAY_MS)
+        autoShareTimer = setTimeout(autoShare, AUTO_SHARE_DELAY_MS)
+    }
 })
 onBeforeUnmount(() => {
     clearTimeout(alertDelay)
+    clearTimeout(autoShareTimer)
     stopAlert()
 })
 
