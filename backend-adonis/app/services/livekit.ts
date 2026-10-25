@@ -53,7 +53,9 @@ export function broadcasterToken(
             roomJoin: true,
             canPublish: true,
             canPublishSources: ['camera', 'microphone', 'screen_share'],
-            canSubscribe: true,
+            // Ruang leader hanya ditonton peran di atasnya: leader yang siaran
+            // tidak bisa melihat leader lain di ruang itu.
+            canSubscribe: organizationId !== null,
             canPublishData: false,
             canUpdateOwnMetadata: false,
         },

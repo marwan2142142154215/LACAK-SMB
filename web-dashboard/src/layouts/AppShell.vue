@@ -10,6 +10,7 @@ import {
     Menu,
     Moon,
     PackageOpen,
+    Presentation,
     Radar,
     Send,
     ServerCog,
@@ -29,6 +30,7 @@ import CameraLock from '@/components/live/CameraLock.vue'
 import ScreenShareLock from '@/components/live/ScreenShareLock.vue'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useTheme } from '@/composables/useTheme'
+import api from '@/lib/api'
 import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
@@ -63,6 +65,7 @@ const navGroups = computed(() => [
         items: [
             { to: { name: 'radar' }, label: 'Radar', icon: Radar },
             { to: { name: 'live' }, label: 'Live Kerja', icon: Video, live: live.isBroadcasting },
+            { to: { name: 'briefing' }, label: 'Briefing', icon: Presentation, live: briefings.value.length > 0 },
             { to: { name: 'activity' }, label: 'Aktivitas user', icon: Activity, hidden: !auth.hasPermission('live.watch') },
             { to: { name: 'recordings' }, label: 'Rekaman', icon: Film, hidden: !auth.hasPermission('live.watch') },
         ],
@@ -111,6 +114,29 @@ onMounted(() => {
     })
 })
 onBeforeUnmount(() => clearInterval(clockTimer))
+
+// Briefing yang mengundang user ini: banner "Gabung" di semua halaman.
+const BRIEFING_POLL_MS = 60_000
+const briefings = ref([])
+let briefingTimer = null
+async function loadBriefings() {
+    try {
+        const { data } = await api.get('/briefings')
+        briefings.value = data.data.items
+    } catch {
+        // Diam saja: banner hanya bantuan, halaman Briefing tetap bisa dibuka.
+    }
+}
+const briefingInvite = computed(() => (route.name === 'briefing' ? null : (briefings.value.find((briefing) => !briefing.is_host) ?? null)))
+onMounted(() => {
+    loadBriefings()
+    briefingTimer = setInterval(loadBriefings, BRIEFING_POLL_MS)
+})
+onBeforeUnmount(() => clearInterval(briefingTimer))
+watch(
+    () => route.name,
+    () => loadBriefings(),
+)
 
 const readouts = computed(() => [
     { label: 'Site', value: telemetry.sites.value },
@@ -307,6 +333,24 @@ async function handleLogout() {
 
             <!-- pb-24: ruang untuk tombol chat mengambang supaya tidak menutup baris terakhir -->
             <main class="min-w-0 flex-1 pb-24">
+                <div
+                    v-if="briefingInvite"
+                    class="mx-4 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-accent-500/30 bg-accent-500/10 px-4 py-3 sm:mx-8"
+                    role="status"
+                >
+                    <span class="beacon" />
+                    <p class="min-w-0 flex-1 text-sm text-base-100">
+                        <span class="font-semibold">Briefing berlangsung:</span> {{ briefingInvite.title }}
+                        <span class="text-base-400">· dipimpin {{ briefingInvite.host_name ?? '—' }}</span>
+                    </p>
+                    <router-link
+                        :to="{ name: 'briefing', query: { join: briefingInvite.id } }"
+                        class="inline-flex items-center gap-2 rounded-lg bg-accent-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-600"
+                    >
+                        <Presentation class="size-4" />
+                        Gabung
+                    </router-link>
+                </div>
                 <router-view />
                 <ScreenShareLock />
                 <CameraLock />

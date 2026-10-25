@@ -15,8 +15,8 @@ function user(roles: string[], permissions: string[] = ['live.watch']): Authenti
 }
 
 test.group('Live Kerja: ruang leader', () => {
-    test('ruang leader hanya untuk leader, admin & root -- bukan staf', ({ assert }) => {
-        assert.isTrue(canWatchLeaders(user(['leader'])))
+    test('ruang leader hanya untuk admin & root -- bukan sesama leader atau staf', ({ assert }) => {
+        assert.isFalse(canWatchLeaders(user(['leader'])))
         assert.isTrue(canWatchLeaders(user(['admin'])))
         assert.isTrue(canWatchLeaders(user(['super_admin'])))
         assert.isFalse(canWatchLeaders(user(['staff_viewer'], ['live.watch', 'live.broadcast'])))
