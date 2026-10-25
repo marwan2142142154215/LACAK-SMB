@@ -130,13 +130,19 @@ class WorkSessionController extends Controller
             ->get(['id', 'name', 'organization_id']);
 
         $loginDevices = $this->loginDevicesOf($staff->pluck('id')->all());
+        $loggedIn = $this->loggedInUserIds($staff->pluck('id')->all());
 
         return $staff->map(fn (User $member) => [
             'user_id' => $member->id,
             'name' => $member->name,
             'organization_id' => $member->organization_id,
             'participant_identity' => "user-{$member->id}",
-            'status' => $this->presence->statusOf($sessionsByUser->get($member->id)),
+            // Login tapi belum Mulai kerja = 'online', bukan 'offline'. Hanya
+            // tampilan roster -- log & jam kerja tetap memakai statusOf().
+            'status' => ($status = $this->presence->statusOf($sessionsByUser->get($member->id))) === WorkPresence::OFFLINE
+                && isset($loggedIn[$member->id])
+                ? 'online'
+                : $status,
             'started_at' => $sessionsByUser->get($member->id)?->started_at,
             // 'computer' | 'phone' | null (tidak sedang login) -- ikon laptop/HP.
             'login_device' => $loginDevices[$member->id] ?? null,
@@ -159,6 +165,24 @@ class WorkSessionController extends Controller
             ->where('expires_at', '>', now())
             ->orderBy('id')
             ->pluck('device_type', 'tokenable_id')
+            ->all();
+    }
+
+    /**
+     * User yang masih punya token login berlaku (termasuk token lama tanpa
+     * device_type). Token login selalu punya expires_at; token akun layanan tidak.
+     *
+     * @param  list<int>  $userIds
+     * @return array<int, true>
+     */
+    private function loggedInUserIds(array $userIds): array
+    {
+        return PersonalAccessToken::query()
+            ->where('tokenable_type', (new User)->getMorphClass())
+            ->whereIn('tokenable_id', $userIds)
+            ->where('expires_at', '>', now())
+            ->pluck('tokenable_id')
+            ->mapWithKeys(fn ($id) => [(int) $id => true])
             ->all();
     }
 
