@@ -7,6 +7,7 @@ import {
     recordHeartbeat,
     SCHEDULER_HEARTBEAT_KEY,
 } from '#services/queue'
+import { pruneRecordings, rotateRecordings } from '#services/recording'
 import { closeStaleWorkSessions } from './close_stale_work_sessions.js'
 
 /** Milidetik sampai awal menit berikutnya (jadwal Laravel jalan tepat di detik 0). */
@@ -20,8 +21,10 @@ export function msUntilNextMinute(now: Date = new Date()): number {
  *
  * 1. work-sessions:close-stale (withoutOverlapping: dilewati kalau putaran
  *    sebelumnya belum selesai),
- * 2. detak scheduler (ditulis langsung),
- * 3. job detak antrean (baru tercatat kalau queue worker memprosesnya).
+ * 2. rekaman Live Kerja: potong per jam & hapus yang lewat masa simpan
+ *    (lihat app/services/recording.ts; tidak melakukan apa pun kalau rekaman mati),
+ * 3. detak scheduler (ditulis langsung),
+ * 4. job detak antrean (baru tercatat kalau queue worker memprosesnya).
  */
 export default class SchedulerRun extends BaseCommand {
     static commandName = 'scheduler:run'
@@ -72,6 +75,15 @@ export default class SchedulerRun extends BaseCommand {
             } finally {
                 this.#closingStale = false
             }
+        }
+
+        try {
+            const rotated = await rotateRecordings()
+            const pruned = await pruneRecordings()
+            if (rotated || pruned)
+                this.logger.info(`Rekaman: ${rotated} dipotong per jam, ${pruned} dihapus.`)
+        } catch (error) {
+            this.logger.error(`Rekaman Live Kerja gagal diproses: ${String(error)}`)
         }
 
         try {

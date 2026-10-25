@@ -61,3 +61,33 @@ layar besar). Penonton hanya mengunduh video yang tampil di halaman grid
 - Bandwidth keluar server: ±(jumlah penonton × 12 tile × ~150 kbps)
 
 Cek beban dengan `docker compose logs -f livekit`.
+
+## Rekaman (playback 3 hari)
+
+Live Kerja bisa direkam penuh (kamera & layar tiap staf, dipotong per jam)
+lewat **LiveKit Egress** langsung ke **DigitalOcean Spaces**, lalu diputar
+ulang di dashboard menu **Rekaman**. File & datanya dihapus otomatis setelah
+**72 jam** oleh scheduler backend-adonis.
+
+**Rekaman mati** selama `DO_SPACES_KEY`, `DO_SPACES_SECRET`, dan
+`DO_SPACES_BUCKET` di `backend-adonis/.env` kosong -- webhook tetap diterima
+tapi tidak ada yang direkam, dan menu Rekaman menampilkan "belum aktif".
+
+Menyalakan:
+
+1. `backend-adonis/.env`: isi `DO_SPACES_KEY`, `DO_SPACES_SECRET`,
+   `DO_SPACES_REGION` (mis. `sgp1`), `DO_SPACES_BUCKET` (bucket privat), lalu
+   restart `lacak-api` & `lacak-api-scheduler`.
+2. `livekit.yaml`: buka komentar blok `redis:` dan `webhook:` (lihat
+   `livekit.yaml.example`; `api_key` webhook = API key LiveKit).
+3. `cp egress.yaml.example egress.yaml`, isi key/secret yang sama.
+4. `docker compose --profile recording up -d --force-recreate`
+
+Cek: `docker compose logs --tail 30 egress` dan, setelah staf Mulai kerja,
+baris baru di tabel `live_recordings`.
+
+**Kapasitas:** satu staf = 2 rekaman berjalan (kamera + layar), masing-masing
+satu proses Egress. Ukuran kasar ±12 GB per staf per 12 jam; 60 staf ±2,2 TB
+dan 500 staf ±18 TB tersimpan untuk 3 hari. Untuk puluhan staf ke atas,
+jalankan Egress (dan LiveKit) di droplet terpisah dari server aplikasi --
+Egress dan LiveKit harus memakai Redis yang sama.

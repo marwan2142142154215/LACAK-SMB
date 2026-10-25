@@ -40,6 +40,8 @@ const bodyParserConfig = defineConfig({
             'application/json-patch+json',
             'application/vnd.api+json',
             'application/csp-report',
+            // Webhook LiveKit (rekaman Live Kerja).
+            'application/webhook+json',
         ],
     },
 
