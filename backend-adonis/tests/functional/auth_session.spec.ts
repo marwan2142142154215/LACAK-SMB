@@ -109,3 +109,21 @@ test.group('Auth: token Sanctum dari backend-api', (group) => {
         response.assertStatus(401)
     })
 })
+
+test.group('CORS', () => {
+    /** Regresi: dulu CORS menolak semua origin di luar mode development -- login dashboard gagal di produksi. */
+    test('preflight dari dashboard diizinkan seperti Laravel (origin *, tanpa credentials)', async ({
+        client,
+        assert,
+    }) => {
+        const response = await client
+            .options('/api/v1/auth/login')
+            .header('Origin', 'https://app.salahmu.fun')
+            .header('Access-Control-Request-Method', 'POST')
+            .header('Access-Control-Request-Headers', 'content-type,authorization')
+
+        assert.equal(response.header('access-control-allow-origin'), '*')
+        assert.include(response.header('access-control-allow-methods'), 'POST')
+        assert.isUndefined(response.header('access-control-allow-credentials'))
+    })
+})
