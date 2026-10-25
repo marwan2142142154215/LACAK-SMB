@@ -7,7 +7,9 @@ import { createApp } from 'vue'
 import App from '@/App.vue'
 import api from '@/lib/api'
 import router from '@/router'
+import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
+import { useLiveStore } from '@/stores/live'
 
 import './style.css'
 
@@ -54,6 +56,15 @@ api.interceptors.response.use(
     (error) => {
         if (error.response?.status === 401 && auth.isAuthenticated) {
             auth.clearSession()
+            // Token tidak berlaku lagi -> siaran Live Kerja di tab ini ikut
+            // berhenti, jangan terus menyiarkan tanpa akun yang login.
+            useLiveStore(pinia)
+                .disconnect()
+                .catch(() => {})
+            // Satu akun = satu sesi: login di perangkat lain mengakhiri sesi ini.
+            if (error.response.data?.errors?.reason === 'session_replaced') {
+                useToast().error('Anda telah keluar', error.response.data.message)
+            }
             router.push({ name: 'login' })
         }
         return Promise.reject(error)

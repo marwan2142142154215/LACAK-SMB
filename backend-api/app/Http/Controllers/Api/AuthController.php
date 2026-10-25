@@ -64,6 +64,9 @@ class AuthController extends Controller
     // membiarkan token null tetap null, tidak pernah memberinya expiry.
     public const TOKEN_IDLE_HOURS = 2;
 
+    /** Penanda token yang dicabut karena akunnya login di perangkat lain. */
+    public const REPLACED_TOKEN_CACHE_PREFIX = 'auth:replaced_token:';
+
     public function login(Request $request)
     {
         $credentials = $request->validate([
@@ -346,6 +349,8 @@ class AuthController extends Controller
      */
     private function issueLoginToken(User $user, Request $request): string
     {
+        $this->endOtherSessions($user);
+
         $token = $user->createToken($this->tokenNameFor($request), ['*'], now()->addHours(self::TOKEN_IDLE_HOURS))->plainTextToken;
 
         if ($user->can('live.broadcast')) {
@@ -353,6 +358,36 @@ class AuthController extends Controller
         }
 
         return $token;
+    }
+
+    /**
+     * Satu akun = satu sesi aktif: login baru mengakhiri sesi login lain akun
+     * ini (web, APK Master, APK Live). Yang terbaru menang -- sesi lama yang
+     * terlupa di perangkat lain tidak bisa mengunci staf keluar.
+     *
+     * Hanya token login (selalu punya expires_at, lihat TOKEN_IDLE_HOURS);
+     * token akun layanan (expires_at null, mis. bot Telegram) tidak disentuh.
+     * Id token lama diingat sebentar supaya perangkat lama diberi tahu
+     * alasannya (lihat handler AuthenticationException di bootstrap/app.php).
+     */
+    private function endOtherSessions(User $user): void
+    {
+        $tokenIds = $user->tokens()->whereNotNull('expires_at')->pluck('id');
+
+        if ($tokenIds->isEmpty()) {
+            return;
+        }
+
+        foreach ($tokenIds as $tokenId) {
+            Cache::put(self::REPLACED_TOKEN_CACHE_PREFIX.$tokenId, true, now()->addHours(self::TOKEN_IDLE_HOURS));
+        }
+        $user->tokens()->whereKey($tokenIds)->delete();
+
+        // Siaran Live Kerja dari perangkat lama ikut diputus. Sesi kerjanya
+        // tetap terbuka -- staf bisa "Lanjutkan siaran" dari perangkat baru.
+        if ($session = WorkSession::open()->where('user_id', $user->id)->first()) {
+            app(LiveKitTokenIssuer::class)->removeBroadcaster($session->organization_id, $session->user_id);
+        }
     }
 
     private function tokenNameFor(Request $request): string
