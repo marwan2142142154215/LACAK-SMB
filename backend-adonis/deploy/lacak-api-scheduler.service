@@ -17,6 +17,8 @@ Environment=NODE_ENV=production
 ExecStart=/usr/bin/env node ace scheduler:run
 Restart=on-failure
 RestartSec=5
+# Scheduler hanya menunggu putaran close-stale yang sedang jalan.
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
