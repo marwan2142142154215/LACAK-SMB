@@ -10,12 +10,14 @@ SITE_NAME="${3:?SITE_NAME wajib diisi}"
 VERSION="${4:-1.0.0}"
 BACKEND_API_URL="${5:?BACKEND_API_URL wajib diisi}"
 
-export ANDROID_HOME="$HOME/android-sdk"
-export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+# Server: bisa diatur dari luar (mis. unit systemd); bawaan ~/android-sdk.
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"
+export JAVA_HOME="${JAVA_HOME:-$(dirname "$(dirname "$(readlink -f "$(which java)")")")}"
 
 cd "$(dirname "$0")/.."
 
-./gradlew assembleDebug --no-daemon \
+# bash: gradlew di repo tidak selalu punya bit executable (checkout di Linux).
+bash ./gradlew assembleDebug --no-daemon \
     -PsiteCode="$SITE_CODE" \
     -PgatewayUrl="$GATEWAY_URL" \
     -PsiteName="$SITE_NAME" \

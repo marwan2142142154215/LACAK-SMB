@@ -62,8 +62,11 @@ class ApkBuilder
             default => config('lacaksmb.tracker_project_path'),
         };
 
-        $scriptPathWindows = rtrim($projectPath, '/\\').'/scripts/build_only.sh';
-        $scriptPathWsl = $this->toWslPath($scriptPathWindows);
+        $usesWsl = config('lacaksmb.apk_build_runner') === 'wsl';
+        $scriptPath = rtrim($projectPath, '/\\').'/scripts/build_only.sh';
+        if ($usesWsl) {
+            $scriptPath = $this->toWslPath($scriptPath);
+        }
 
         // APK master bersifat UNIVERSAL -- bukan milik salah satu site. Akses
         // ke site ditentukan oleh akun yang login (role + site_access), bukan
@@ -76,11 +79,14 @@ class ApkBuilder
             default => [$organization->unique_site_code, $organization->name],
         };
 
-        // `--exec` (bukan `--`): argumen diteruskan langsung ke bash tanpa
-        // di-parse ulang oleh shell default WSL, jadi `$(...)`/backtick di
-        // nama site atau versi tidak bisa dieksekusi sebagai perintah.
+        // Server Linux: langsung `bash`. Windows: lewat WSL dengan `--exec`
+        // (bukan `--`) -- argumen diteruskan apa adanya tanpa di-parse ulang
+        // shell, jadi `$(...)`/backtick di nama site atau versi tidak bisa
+        // dieksekusi sebagai perintah.
+        $runner = $usesWsl ? ['wsl', '-d', config('lacaksmb.wsl_distro'), '--exec', 'bash'] : ['bash'];
         $command = [
-            'wsl', '-d', config('lacaksmb.wsl_distro'), '--exec', 'bash', $scriptPathWsl,
+            ...$runner,
+            $scriptPath,
             $siteCode,
             config('lacaksmb.public_gateway_url'),
             $siteName,
@@ -116,10 +122,10 @@ class ApkBuilder
             return;
         }
 
-        // SENGAJA tidak memakai path dari baris APK_PATH= apa adanya -- itu
-        // path ala WSL (/mnt/c/...) karena skrip jalan di dalam WSL, padahal
-        // proses PHP ini jalan di Windows native. Dihitung ulang langsung
-        // dari config Windows-nya supaya is_file()/file_get_contents() benar.
+        // SENGAJA tidak memakai path dari baris APK_PATH= apa adanya -- dengan
+        // runner WSL itu path /mnt/c/..., padahal proses PHP ini jalan di
+        // Windows native. Dihitung ulang dari path proyek (berlaku untuk
+        // kedua runner) supaya is_file()/file_get_contents() benar.
         $apkPathWindows = rtrim($projectPath, '/\\').'/app/build/outputs/apk/debug/app-debug.apk';
 
         if (! is_file($apkPathWindows)) {
