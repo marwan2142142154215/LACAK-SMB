@@ -7,6 +7,7 @@ use App\Http\Responses\ApiResponse;
 use App\Models\ApkBuild;
 use App\Models\Device;
 use App\Models\Organization;
+use App\Models\User;
 use App\Support\ResolvesOrganizationScope;
 use Illuminate\Http\Request;
 
@@ -44,7 +45,15 @@ class DashboardSummaryController extends Controller
                 : $orgQuery->where('id', $user->organization_id);
         }
 
+        // Staf = boleh Live Kerja, aktif (sama dengan roster Live Kerja). Online =
+        // masih punya token login berlaku; token login selalu punya expires_at.
+        $staffQuery = $this->scopeToOrganization(User::permission('live.broadcast')->where('is_active', true), $user);
+
         return $this->success('Ringkasan dashboard', [
+            'staff_count' => (clone $staffQuery)->count(),
+            'staff_online_count' => (clone $staffQuery)
+                ->whereHas('tokens', fn ($tokens) => $tokens->where('expires_at', '>', now()))
+                ->count(),
             'organizations_count' => (clone $orgQuery)->count(),
             'devices_count' => (clone $deviceQuery)->count(),
             'devices_by_status' => (clone $deviceQuery)
