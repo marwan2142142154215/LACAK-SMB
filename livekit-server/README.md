@@ -29,13 +29,27 @@ LIVEKIT_API_SECRET=...
 | Port | Protokol | Untuk |
 |---|---|---|
 | 7880 | TCP (WebSocket) | signaling — boleh lewat Cloudflare Tunnel / reverse proxy TLS sebagai `wss://live.salahmu.fun` |
-| 7882 | **UDP** | video — **harus** terbuka langsung ke internet (IP publik) |
+| 7882-7889 | **UDP** | video — **harus** terbuka langsung ke internet (IP publik) |
 | 7881 | TCP | cadangan video kalau UDP diblokir jaringan |
 
 **Cloudflare Tunnel tidak bisa meneruskan UDP/WebRTC.** Signaling (7880)
-boleh lewat tunnel seperti backend-api & gateway, tetapi port 7881/7882
-wajib bisa dijangkau langsung di IP publik server (buka di firewall VPS).
-Tanpa itu staf bisa "terhubung" tapi videonya tidak pernah muncul.
+boleh lewat tunnel seperti backend-api & gateway, tetapi port 7881 dan
+7882-7889 wajib bisa dijangkau langsung di IP publik server (buka di
+firewall VPS). Tanpa itu staf bisa "terhubung" tapi videonya tidak pernah
+muncul.
+
+## Hemat CPU
+
+- `udp_port: 7882-7889` (bukan satu port): tiap port punya socket sendiri,
+  jadi paket dibaca paralel di semua core. Rentang minimal = jumlah vCPU.
+- `batch_io`: paket keluar dikirim berkelompok, system call jauh berkurang.
+- Buffer UDP kernel diperbesar supaya paket video tidak dibuang saat ramai
+  (dibuang = penonton minta kirim ulang = CPU terbuang):
+
+```bash
+echo -e 'net.core.rmem_max=5000000\nnet.core.wmem_max=5000000' | sudo tee /etc/sysctl.d/90-livekit.conf
+sudo sysctl --system
+```
 
 ## Kapasitas (perkiraan)
 
