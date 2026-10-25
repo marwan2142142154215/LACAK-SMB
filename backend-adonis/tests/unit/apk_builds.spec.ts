@@ -191,11 +191,11 @@ test.group('APK build: resource & unduhan', () => {
     test('nama berkas unduhan sama dengan ApkBuildController::download', ({ assert }) => {
         assert.equal(
             downloadFilename({ apk_type: 'master', version: '1.0.0', organization_name: 'X' }),
-            'apk-master-v1.0.0.apk'
+            'smb-admin-v1.0.0.apk'
         )
         assert.equal(
             downloadFilename({ apk_type: 'live', version: '2.0.0', organization_name: null }),
-            'apk-live-v2.0.0.apk'
+            'smb-live-kerja-v2.0.0.apk'
         )
         assert.equal(
             downloadFilename({
@@ -203,7 +203,7 @@ test.group('APK build: resource & unduhan', () => {
                 version: '1.0.1',
                 organization_name: 'Gudang Utama',
             }),
-            'apk-pelacak-gudang-utama-v1.0.1.apk'
+            'smb-pelacak-gudang-utama-v1.0.1.apk'
         )
         assert.equal(
             downloadFilename({ apk_type: 'server', version: '1.0.0', organization_name: null }),
@@ -212,7 +212,7 @@ test.group('APK build: resource & unduhan', () => {
         // Unggahan lama: apk_type null (model create() tanpa refresh) -> label pelacak.
         assert.equal(
             downloadFilename({ apk_type: null, version: '1.0.0', organization_name: 'A' }),
-            'apk-pelacak-a-v1.0.0.apk'
+            'smb-pelacak-a-v1.0.0.apk'
         )
     })
 

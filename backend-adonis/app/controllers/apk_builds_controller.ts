@@ -470,11 +470,11 @@ export function downloadFilename(build: {
     version: string
     organization_name?: string | null
 }): string {
-    if (build.apk_type === 'master' || build.apk_type === 'live') {
-        return `apk-${build.apk_type}-v${build.version}.apk`
-    }
+    // Nama file = nama aplikasinya di HP (SMB Admin, SMB Live Kerja, SMB Pelacak).
+    if (build.apk_type === 'master') return `smb-admin-v${build.version}.apk`
+    if (build.apk_type === 'live') return `smb-live-kerja-v${build.version}.apk`
     const isServer = build.apk_type === 'server'
-    const typeLabel = isServer ? 'lacak-server' : 'apk-pelacak'
+    const typeLabel = isServer ? 'lacak-server' : 'smb-pelacak'
     const slugName = laravelSlug(build.organization_name ?? 'site')
     return `${typeLabel}-${slugName}-v${build.version}${isServer ? '.exe' : '.apk'}`
 }
