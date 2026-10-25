@@ -35,6 +35,8 @@ import { useChatStore } from '@/stores/chat'
 import { useLiveStore } from '@/stores/live'
 
 const auth = useAuthStore()
+// Admin & leader membuka halaman Staf hanya untuk menonaktifkan staf di site-nya.
+const canSeeStaff = computed(() => auth.isSuperAdmin || ['admin', 'leader'].some((role) => auth.user?.roles?.includes(role)))
 const live = useLiveStore()
 const chat = useChatStore()
 const toast = useToast()
@@ -79,7 +81,7 @@ const navGroups = computed(() => [
         items: [
             { to: { name: 'telegram-bindings' }, label: 'Bot Telegram', icon: Send },
             { to: { name: 'organizations' }, label: 'Site', icon: Building2, hidden: !auth.isSuperAdmin },
-            { to: { name: 'staff' }, label: 'Staf', icon: Users, hidden: !auth.isSuperAdmin },
+            { to: { name: 'staff' }, label: 'Staf', icon: Users, hidden: !canSeeStaff.value },
             { to: { name: 'activity-logs' }, label: 'Log aktivitas', icon: History, hidden: !auth.hasPermission('activity-logs.view') },
             { to: { name: 'settings' }, label: 'Pengaturan', icon: Settings, hidden: !auth.isSuperAdmin },
             { to: { name: 'server-status' }, label: 'Status server', icon: ServerCog, hidden: !auth.isSuperAdmin },
