@@ -16,8 +16,13 @@ import RowMenu from '@/components/ui/RowMenu.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
+import { useAuthStore } from '@/stores/auth'
 
 const toast = useToast()
+const auth = useAuthStore()
+// Root mengelola semua akun; admin & leader hanya bisa menonaktifkan /
+// mengaktifkan kembali staf di site yang dipegangnya (dibatasi server).
+const canManageAll = computed(() => auth.isSuperAdmin)
 
 const staff = ref([])
 const organizations = ref([])
@@ -110,7 +115,7 @@ async function submitPassword() {
 async function loadStaff() {
     loading.value = true
     try {
-        const response = await api.get('/users', { params: { per_page: 100 } })
+        const response = await api.get('/users', { params: { per_page: 1000 } })
         staff.value = response.data.data.items
     } finally {
         loading.value = false
@@ -118,6 +123,11 @@ async function loadStaff() {
 }
 
 async function loadOrganizations() {
+    if (!canManageAll.value) {
+        const response = await api.get('/live/sites')
+        organizations.value = response.data.data
+        return
+    }
     const response = await api.get('/organizations', { params: { per_page: 200 } })
     organizations.value = response.data.data.items
 }
@@ -215,6 +225,12 @@ async function confirmDelete() {
 const activeCount = computed(() => staff.value.filter((user) => user.is_active).length)
 
 function menuItems(user) {
+    if (!canManageAll.value) {
+        return [
+            { label: 'Nonaktifkan akun', icon: Ban, onSelect: () => (suspendTarget.value = user), hidden: !user.is_active },
+            { label: 'Aktifkan kembali', icon: CheckCircle2, onSelect: () => reactivate(user), hidden: user.is_active },
+        ]
+    }
     return [
         { label: 'Ganti password', icon: KeyRound, onSelect: () => openPasswordDialog(user) },
         { label: 'Reset 2FA', icon: ShieldOff, onSelect: () => (resetTwoFactorTarget.value = user) },
@@ -234,9 +250,13 @@ onMounted(async () => {
         <PageHeader
             eyebrow="Akses"
             title="Staf"
-            subtitle="Siapa yang bisa masuk ke dashboard dan aplikasi SMB Admin, dengan peran dan site masing-masing."
+            :subtitle="
+                canManageAll
+                    ? 'Siapa yang bisa masuk ke dashboard dan aplikasi SMB Admin, dengan peran dan site masing-masing.'
+                    : 'Staf di site Anda. Staf yang dinonaktifkan langsung keluar dari semua perangkat dan harus login ulang setelah diaktifkan kembali.'
+            "
         >
-            <template #actions>
+            <template v-if="canManageAll" #actions>
                 <BaseButton @click="openCreate"><UserPlus class="size-4" /> Tambah staf</BaseButton>
             </template>
             <template v-if="!loading" #readouts>
@@ -255,7 +275,7 @@ onMounted(async () => {
                     title="Belum ada staf"
                     description="Tambahkan staf supaya mereka bisa masuk dan memantau site mereka."
                 >
-                    <BaseButton @click="openCreate"><UserPlus class="size-4" /> Tambah staf</BaseButton>
+                    <BaseButton v-if="canManageAll" @click="openCreate"><UserPlus class="size-4" /> Tambah staf</BaseButton>
                 </EmptyState>
                 <div v-else class="overflow-x-auto">
                     <table class="data-table">
@@ -304,7 +324,7 @@ onMounted(async () => {
                                 </td>
                                 <td>
                                     <div class="flex items-center justify-end gap-1">
-                                        <BaseButton size="sm" variant="outline" @click="openEdit(user)"
+                                        <BaseButton v-if="canManageAll" size="sm" variant="outline" @click="openEdit(user)"
                                             ><Pencil class="size-3.5" /> <span class="max-sm:sr-only">Ubah</span></BaseButton
                                         >
                                         <RowMenu :items="menuItems(user)" :label="`Aksi lain untuk ${user.name}`" />
@@ -422,7 +442,7 @@ onMounted(async () => {
         <ConfirmDialog
             :open="!!suspendTarget"
             :title="suspendTarget ? `Suspen ${suspendTarget.name}?` : ''"
-            description="Semua sesi login staf ini dicabut, dan akunnya tidak bisa dipakai sampai diaktifkan kembali."
+            description="Staf langsung keluar dari dashboard, aplikasi HP, dan Live Kerja di semua perangkat (dalam ±10 detik), dan tidak bisa login sampai diaktifkan kembali."
             confirm-label="Suspen"
             :loading="suspending"
             @update:open="(v) => !v && (suspendTarget = null)"

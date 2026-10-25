@@ -69,7 +69,8 @@ const routes = [
                 path: 'staff',
                 name: 'staff',
                 component: () => import('@/views/StaffView.vue'),
-                meta: { requiresSuperAdmin: true },
+                // Admin & leader: hanya menonaktifkan / mengaktifkan staf di site-nya.
+                meta: { roles: ['super_admin', 'admin', 'leader'] },
             },
             {
                 path: 'settings',
@@ -121,10 +122,12 @@ router.beforeEach((to) => {
     const isAuthenticated = !!token
     let isSuperAdmin = false
     let permissions = []
+    let roles = []
     try {
         const user = JSON.parse(localStorage.getItem(USER_STORAGE_KEY) || 'null')
         isSuperAdmin = user?.roles?.includes('super_admin') ?? false
         permissions = user?.permissions ?? []
+        roles = user?.roles ?? []
     } catch {
         isSuperAdmin = false
     }
@@ -141,6 +144,10 @@ router.beforeEach((to) => {
     }
 
     if (to.meta.requiresSuperAdmin && !isSuperAdmin) {
+        return { name: 'radar' }
+    }
+
+    if (to.meta.roles && !to.meta.roles.some((role) => roles.includes(role))) {
         return { name: 'radar' }
     }
 

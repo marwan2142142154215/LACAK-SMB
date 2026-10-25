@@ -10,6 +10,7 @@ import GeofenceRule from '#models/geofence_rule'
 import socketManager from '#services/socket_manager'
 import { extendSession, isSessionStillValid, verifyBearerToken } from '#services/backend_api_client'
 import { registerLiveHandlers, startLiveSweeper } from '#services/live_hub'
+import { startSessionSweeper } from '#services/session_sweeper'
 import { evaluateGeofence } from '#services/geofence_evaluator'
 import { markCommandAcknowledged } from '#services/command_dispatcher'
 import { beaconUuidFor, isDeviceSecretValid } from '#services/device_credentials'
@@ -74,6 +75,7 @@ export function registerSocketHandlers(io: SocketIoServer) {
     registerDeviceNamespace(deviceNs)
     registerOpsNamespace(opsNs)
     startLiveSweeper(opsNs)
+    startSessionSweeper(opsNs)
 }
 
 // Pembatas percobaan handshake device per alamat IP: tiap percobaan (termasuk

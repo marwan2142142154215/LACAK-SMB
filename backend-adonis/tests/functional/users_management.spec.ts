@@ -413,3 +413,98 @@ test.group('Pengaturan keamanan (security.manage)', (group) => {
         })
     })
 })
+
+test.group('Staf: admin & leader menonaktifkan staf di site-nya', (group) => {
+    group.each.setup(() => testUtils.db().withGlobalTransaction())
+
+    async function grant(userId: number, organizationId: number) {
+        await db.table('user_site_access').insert({
+            user_id: userId,
+            organization_id: organizationId,
+            created_at: new Date(),
+            updated_at: new Date(),
+        })
+    }
+
+    test('leader menonaktifkan staf: token dicabut & sesi Live Kerja ditutup', async ({
+        client,
+        assert,
+    }) => {
+        const site = await organization()
+        const leader = await userWithRole('leader')
+        await grant(leader.id, site)
+        const staff = await userWithRole('staff_viewer', { organization_id: site })
+        const now = new Date()
+        await db.table('work_sessions').insert({
+            user_id: staff.id,
+            organization_id: site,
+            started_at: now,
+            last_heartbeat_at: now,
+            created_at: now,
+            updated_at: now,
+        })
+
+        const response = await client
+            .post(`/api/v1/users/${staff.id}/suspend`)
+            .bearerToken(leader.bearer)
+
+        response.assertStatus(200)
+        const user = await db.from('users').where('id', staff.id).first()
+        assert.isFalse(user.is_active)
+        const tokens = await db
+            .from('personal_access_tokens')
+            .where('tokenable_id', staff.id)
+            .count('* as total')
+            .first()
+        assert.equal(Number(tokens?.total), 0)
+        const session = await db.from('work_sessions').where('user_id', staff.id).first()
+        assert.isNotNull(session.ended_at)
+        assert.equal(session.end_reason, 'suspended')
+
+        // Token lama langsung tidak berlaku.
+        const after = await client.get('/api/v1/auth/me').bearerToken(staff.bearer)
+        after.assertStatus(401)
+
+        const back = await client
+            .post(`/api/v1/users/${staff.id}/reactivate`)
+            .bearerToken(leader.bearer)
+        back.assertStatus(200)
+    })
+
+    test('leader tidak bisa menyentuh staf site lain, admin, atau root', async ({ client }) => {
+        const site = await organization()
+        const otherSite = await organization('Site Lain')
+        const leader = await userWithRole('leader')
+        await grant(leader.id, site)
+        const targets = [
+            await userWithRole('staff_viewer', { organization_id: otherSite }),
+            await userWithRole('admin', { organization_id: site }),
+            await userWithRole('super_admin', { organization_id: site }),
+        ]
+
+        for (const target of targets) {
+            const response = await client
+                .post(`/api/v1/users/${target.id}/suspend`)
+                .bearerToken(leader.bearer)
+            response.assertStatus(403)
+        }
+    })
+
+    test('daftar staf untuk admin hanya berisi staf di site-nya', async ({ client, assert }) => {
+        const site = await organization()
+        const otherSite = await organization('Site Lain')
+        const admin = await userWithRole('admin')
+        await grant(admin.id, site)
+        const mine = await userWithRole('staff_viewer', { organization_id: site })
+        const other = await userWithRole('staff_viewer', { organization_id: otherSite })
+        const leader = await userWithRole('leader', { organization_id: site })
+
+        const response = await client.get('/api/v1/users').bearerToken(admin.bearer)
+
+        response.assertStatus(200)
+        const ids = response.body().data.items.map((user: { id: number }) => user.id)
+        assert.include(ids, mine.id)
+        assert.notInclude(ids, other.id)
+        assert.notInclude(ids, leader.id)
+    })
+})
