@@ -321,3 +321,17 @@ test('login mencatat perangkat: browser HP dan APK = phone, browser komputer = c
     $this->withHeader('User-Agent', 'okhttp/4.12.0')->postJson('/api/v1/auth/login', ['username' => $user->username, 'password' => 'password-benar', 'client' => 'master_app'])->assertOk();
     expect($deviceOfLatestLogin())->toBe('phone');
 });
+
+test('logout benar-benar mencabut token -- tidak dihidupkan lagi oleh ExtendTokenExpiry', function () {
+    TwoFactorPolicy::setRequired(false);
+    $user = User::factory()->create(['password' => bcrypt('password-benar')]);
+    $token = loginToken($user);
+    app('auth')->forgetGuards();
+
+    $this->withHeader('Authorization', 'Bearer '.$token)->postJson('/api/v1/auth/logout')->assertOk();
+
+    expect($user->tokens()->count())->toBe(0);
+
+    app('auth')->forgetGuards();
+    $this->withHeader('Authorization', 'Bearer '.$token)->getJson('/api/v1/auth/me')->assertStatus(401);
+});
