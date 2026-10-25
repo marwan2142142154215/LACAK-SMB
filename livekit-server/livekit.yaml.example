@@ -2,8 +2,17 @@
 port: 7880            # signaling WebSocket (lewat reverse proxy/Cloudflare -> wss://live.salahmu.fun)
 rtc:
   tcp_port: 7881      # fallback media lewat TCP kalau UDP diblokir jaringan kantor
-  udp_port: 7882      # media utama, satu port UDP untuk semua peserta
+  # Media utama lewat UDP mux. Satu port = satu socket = satu core yang membaca
+  # semua paket; rentang port >= jumlah vCPU membagi beban ke semua core
+  # (rekomendasi LiveKit). 7882-7889 cukup sampai 8 vCPU. Buka semua port
+  # UDP ini di firewall.
+  udp_port: 7882-7889
   use_external_ip: true
+  # Gabungkan penulisan paket keluar jadi lebih sedikit system call -- SFU
+  # menghabiskan sebagian besar CPU-nya di sini. Tambahan jeda maks 2 ms.
+  batch_io:
+    batch_size: 128
+    max_flush_interval: 2ms
 keys:
   # <LIVEKIT_API_KEY>: <LIVEKIT_API_SECRET> -- harus sama dengan backend-api/.env
   # Secret minimal 32 karakter: openssl rand -base64 48
@@ -15,3 +24,4 @@ room:
   max_participants: 0
 logging:
   level: info
+  pion_level: error
