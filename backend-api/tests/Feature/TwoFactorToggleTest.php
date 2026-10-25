@@ -91,5 +91,7 @@ test('seeder akun dummy membuat akun per peran dan aman dijalankan ulang', funct
         ->and(User::where('username', 'like', '%.%')->orWhere('username', 'root')->count())->toBe(77)
         ->and(User::role('super_admin')->whereIn('username', ['root', 'root2', 'root3'])->count())->toBe(3)
         ->and(User::role('admin')->where('username', 'like', 'auditlc%')->count())->toBe(10)
-        ->and(User::where('username', 'auditlc10')->first()->siteAccess()->count())->toBe(2);
+        ->and(User::where('username', 'auditlc10')->first()->siteAccess()->count())->toBe(2)
+        ->and(User::role('leader')->where('username', 'like', 'leader%')->whereRaw("username ~ '^leader[0-9]+$'")->count())->toBe(20)
+        ->and(User::where('username', 'leader20')->first()->siteAccess()->count())->toBe(2);
 });
