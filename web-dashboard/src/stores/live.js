@@ -30,15 +30,16 @@ export const SCREEN_SOURCE = 'screen_share'
 export const MICROPHONE_SOURCE = 'microphone'
 const CONNECTED = 'connected'
 
-// Pilihan bisu mikrofon staf diingat lintas muat ulang -- staf yang sudah
-// membisukan diri tidak boleh tiba-tiba bersuara lagi setelah refresh.
+// Pilihan bisu mikrofon staf diingat lintas muat ulang. Bawaannya BISU:
+// mikrofon yang selalu menyala membuat LiveKit terus menganalisis suara
+// semua staf (siapa yang bicara) -- staf menyalakannya sendiri saat perlu.
 const MIC_MUTED_KEY = 'lacak_live_mic_muted'
 
 function readMicMuted() {
     try {
-        return localStorage.getItem(MIC_MUTED_KEY) === '1'
+        return localStorage.getItem(MIC_MUTED_KEY) !== '0'
     } catch {
-        return false
+        return true
     }
 }
 
@@ -60,16 +61,22 @@ export function micStateOf(participant) {
 /** Browser ini bisa berbagi layar? (HP: tidak -- iOS/Android browser tidak punya getDisplayMedia.) */
 export const canShareScreen = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia
 
+// Frame rate siaran. Tiap frame = paket yang harus diteruskan LiveKit ke
+// setiap penonton -- untuk memantau kerja, gambar tajam lebih penting daripada
+// gerakan mulus.
+const CAMERA_FPS = 15
+const SCREEN_FPS = 5
+
 // Layar kerja: SELURUH layar (bukan satu jendela/tab), tanpa audio sistem
 // (suara staf lewat mikrofon, track tersendiri). Teks harus
-// terbaca -> 1080p, cukup 15 fps. displaySurface 'monitor' membuat dialog
+// terbaca -> 1080p, cukup 5 fps. displaySurface 'monitor' membuat dialog
 // Chrome/Edge langsung terbuka di tab "Entire screen"; staf tetap harus
 // menekan Share sekali -- browser tidak mengizinkan situs melewatinya.
 const SCREEN_CAPTURE_OPTIONS = {
     audio: false,
     video: { displaySurface: 'monitor' },
     contentHint: 'detail',
-    resolution: { width: 1920, height: 1080, frameRate: 15 },
+    resolution: { width: 1920, height: 1080, frameRate: SCREEN_FPS },
     selfBrowserSurface: 'exclude',
     surfaceSwitching: 'include',
 }
@@ -246,7 +253,7 @@ export const useLiveStore = defineStore('live', () => {
 
     /** Sambung ke room satu site dan simpan di `rooms`. */
     async function connect(livekitUrl, token, siteId) {
-        const { Room, RoomEvent, ScreenSharePresets, VideoPresets } = await import('livekit-client')
+        const { Room, RoomEvent, ScreenSharePresets, VideoPreset, VideoPresets } = await import('livekit-client')
         const room = new Room({
             // adaptiveStream: kualitas video tiap peserta otomatis
             // mengikuti ukuran elemen <video> & dijeda saat tidak terlihat
@@ -260,19 +267,22 @@ export const useLiveStore = defineStore('live', () => {
             // dynacast: pengirim berhenti meng-encode layer resolusi yang
             // tidak ada satu pun penonton yang memintanya.
             dynacast: true,
-            // 720p untuk tampilan besar; facingMode user: di HP pakai kamera
-            // depan (wajah staf), bukan belakang.
-            videoCaptureDefaults: { resolution: VideoPresets.h720.resolution, facingMode: 'user' },
+            // 720p untuk tampilan besar, 15 fps: untuk memantau orang di meja
+            // kerja tidak perlu gerakan mulus, dan jumlah paket yang harus
+            // diteruskan LiveKit kira-kira separuh 30 fps. facingMode user: di
+            // HP pakai kamera depan (wajah staf), bukan belakang.
+            videoCaptureDefaults: {
+                resolution: { ...VideoPresets.h720.resolution, frameRate: CAMERA_FPS },
+                facingMode: 'user',
+            },
             publishDefaults: {
                 simulcast: true,
-                // 720p dengan bitrate lebih longgar dari preset (1,7 Mbps) supaya
-                // detail meja kerja tidak pecah jadi kotak-kotak.
-                videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 30 },
+                videoEncoding: { maxBitrate: 1_300_000, maxFramerate: CAMERA_FPS },
                 // Layer bawah untuk ubin kecil/jaringan lemah; penonton menerima
                 // layer sesuai ukuran ubinnya (dynacast mematikan yang tak diminta).
-                videoSimulcastLayers: [VideoPresets.h360, VideoPresets.h540],
-                // Layar kerja: teks harus terbaca -> 1080p, cukup 15 fps.
-                screenShareEncoding: ScreenSharePresets.h1080fps15.encoding,
+                videoSimulcastLayers: [new VideoPreset(640, 360, 300_000, CAMERA_FPS), new VideoPreset(960, 540, 600_000, CAMERA_FPS)],
+                // Layar kerja: teks harus terbaca -> 1080p, cukup 5 fps.
+                screenShareEncoding: new VideoPreset(1920, 1080, 1_200_000, SCREEN_FPS).encoding,
                 screenShareSimulcastLayers: [ScreenSharePresets.h360fps3, ScreenSharePresets.h720fps5],
                 // Saat bandwidth/CPU pas-pasan, turunkan frame rate -- bukan
                 // resolusi. Untuk memantau kerja, gambar tajam lebih penting
@@ -503,9 +513,9 @@ export const useLiveStore = defineStore('live', () => {
                 throw error
             }
             if (screenTrack) await ownRoom.localParticipant.publishTrack(screenTrack)
-            // Siaran baru = mikrofon menyala; melanjutkan setelah reload = ikut
-            // pilihan bisu terakhir staf.
-            if (!resuming) setMicMutedPref(false)
+            // Siaran baru = mikrofon BISU (hemat server); melanjutkan setelah
+            // reload = ikut pilihan bisu terakhir staf.
+            if (!resuming) setMicMutedPref(true)
             await enableMicrophone()
             screenRequired.value = true
             mode.value = 'broadcasting'
