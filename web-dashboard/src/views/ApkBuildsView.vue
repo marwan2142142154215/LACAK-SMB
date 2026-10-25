@@ -77,7 +77,7 @@ const uploadForm = ref({
 const hasActiveBuild = computed(() => builds.value.some((b) => b.status === 'pending' || b.status === 'building'))
 
 function typeLabel(build) {
-    return TYPE_LABEL[build.apk_type] ?? 'APK Pelacak'
+    return TYPE_LABEL[build.apk_type] ?? 'SMB Pelacak'
 }
 
 async function confirmDelete() {
@@ -98,9 +98,9 @@ const countByStatus = computed(() =>
     builds.value.reduce((counts, build) => ({ ...counts, [build.status]: (counts[build.status] ?? 0) + 1 }), {}),
 )
 
-const TYPE_LABEL = { tracker: 'APK Pelacak', master: 'APK Master', live: 'APK Live', server: 'Server' }
+const TYPE_LABEL = { tracker: 'SMB Pelacak', master: 'SMB Admin', live: 'SMB Live Kerja', server: 'Server' }
 const TYPE_BADGE = { tracker: 'neutral', master: 'accent', live: 'accent', server: 'neutral' }
-// APK Master & Live universal (akses/site mengikuti akun yang login).
+// SMB Admin & SMB Live Kerja universal (akses/site mengikuti akun yang login).
 const UNIVERSAL_TYPES = ['master', 'live']
 
 // Untuk siapa paket ini: APK master & live universal, sisanya milik satu site
@@ -203,7 +203,7 @@ onBeforeUnmount(() => {
         <PageHeader
             eyebrow="Perangkat"
             title="Build APK"
-            subtitle="APK pelacak terikat ke satu device sejak dibuat, APK Master & APK Live berlaku untuk semua site, dan server untuk komputer kantor."
+            subtitle="SMB Pelacak terikat ke satu device sejak dibuat, SMB Admin & SMB Live Kerja berlaku untuk semua site, dan server untuk komputer kantor."
         >
             <template #actions>
                 <BaseButton variant="outline" @click="uploadDialogOpen = true"><Upload class="size-4" /> Unggah manual</BaseButton>
@@ -228,7 +228,7 @@ onBeforeUnmount(() => {
                     v-else-if="builds.length === 0"
                     :icon="PackageOpen"
                     title="Belum ada APK"
-                    description="Buat APK pelacak untuk satu device, atau APK Master untuk tim. Server menyusunnya dalam 1–2 menit."
+                    description="Buat SMB Pelacak untuk satu device, atau SMB Admin untuk tim. Server menyusunnya dalam 1–2 menit."
                 >
                     <BaseButton @click="generateDialogOpen = true"><Hammer class="size-4" /> Buat build</BaseButton>
                 </EmptyState>
@@ -299,9 +299,9 @@ onBeforeUnmount(() => {
         >
             <form id="generate-form" class="space-y-4" @submit.prevent="submitGenerate">
                 <BaseSelect v-model="generateForm.apk_type" label="Jenis paket">
-                    <option value="tracker">APK pelacak — untuk satu device di satu site</option>
-                    <option value="master">APK Master — untuk tim, akses mengikuti akun</option>
-                    <option value="live">APK Live — siaran Live Kerja dari HP staf</option>
+                    <option value="tracker">SMB Pelacak — pelacak lokasi & kunci untuk satu device di satu site</option>
+                    <option value="master">SMB Admin — untuk tim admin/leader, akses mengikuti akun</option>
+                    <option value="live">SMB Live Kerja — siaran Live Kerja dari HP staf</option>
                     <option value="server">Server — lacak-server.exe untuk komputer kantor</option>
                 </BaseSelect>
                 <BaseSelect
@@ -331,13 +331,13 @@ onBeforeUnmount(() => {
                     v-else-if="generateForm.apk_type === 'master'"
                     class="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-pretty text-base-300"
                 >
-                    Satu APK Master untuk semua site. Site yang terlihat ditentukan oleh akun yang masuk, bukan oleh APK-nya.
+                    Satu SMB Admin untuk semua site. Site yang terlihat ditentukan oleh akun yang masuk, bukan oleh APK-nya.
                 </p>
                 <p
                     v-else-if="generateForm.apk_type === 'live'"
                     class="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-pretty text-base-300"
                 >
-                    Satu APK Live untuk semua site: siaran kamera tetap jalan saat staf pindah aplikasi atau layar mati. Build terbaru
+                    Satu SMB Live Kerja untuk semua site: siaran kamera tetap jalan saat staf pindah aplikasi atau layar mati. Build terbaru
                     otomatis muncul sebagai tombol unduh di halaman Live Kerja.
                 </p>
             </form>

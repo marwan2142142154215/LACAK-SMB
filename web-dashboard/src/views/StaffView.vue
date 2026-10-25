@@ -234,7 +234,7 @@ onMounted(async () => {
         <PageHeader
             eyebrow="Akses"
             title="Staf"
-            subtitle="Siapa yang bisa masuk ke dashboard dan APK Master, dengan peran dan site masing-masing."
+            subtitle="Siapa yang bisa masuk ke dashboard dan aplikasi SMB Admin, dengan peran dan site masing-masing."
         >
             <template #actions>
                 <BaseButton @click="openCreate"><UserPlus class="size-4" /> Tambah staf</BaseButton>

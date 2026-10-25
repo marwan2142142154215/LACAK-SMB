@@ -219,12 +219,13 @@ class ApkBuildController extends Controller
         $slugName = str($apkBuild->organization?->name ?? 'site')->slug()->value();
         $ext = $apkBuild->apk_type === 'server' ? '.exe' : '.apk';
 
-        // APK master & live bersifat universal (bukan milik satu site) -- nama
-        // file tidak menyebut site, cukup apk-{tipe}-v{version}.apk.
+        // Nama file = nama aplikasinya di HP. APK admin & live bersifat
+        // universal (bukan milik satu site) -- nama file tidak menyebut site.
         if (in_array($apkBuild->apk_type, ['master', 'live'], true)) {
-            $filename = "apk-{$apkBuild->apk_type}-v{$apkBuild->version}.apk";
+            $appSlug = $apkBuild->apk_type === 'master' ? 'smb-admin' : 'smb-live-kerja';
+            $filename = "{$appSlug}-v{$apkBuild->version}.apk";
         } else {
-            $typeLabel = $apkBuild->apk_type === 'server' ? 'lacak-server' : 'apk-pelacak';
+            $typeLabel = $apkBuild->apk_type === 'server' ? 'lacak-server' : 'smb-pelacak';
             $filename = "{$typeLabel}-{$slugName}-v{$apkBuild->version}{$ext}";
         }
 

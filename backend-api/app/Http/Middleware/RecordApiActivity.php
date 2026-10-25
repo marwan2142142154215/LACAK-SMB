@@ -293,9 +293,9 @@ class RecordApiActivity
     private function apkLabel(?string $type): string
     {
         return match ($type) {
-            'tracker' => 'APK pelacak',
-            'master' => 'APK Master',
-            'live' => 'APK Live',
+            'tracker' => 'SMB Pelacak',
+            'master' => 'SMB Admin',
+            'live' => 'SMB Live Kerja',
             'server' => 'Server (lacak-server.exe)',
             default => 'APK',
         };

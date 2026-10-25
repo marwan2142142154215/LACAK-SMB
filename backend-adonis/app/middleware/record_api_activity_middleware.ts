@@ -151,11 +151,11 @@ export function commandLabel(command: unknown): string {
 export function apkLabel(type: unknown): string {
     switch (type) {
         case 'tracker':
-            return 'APK pelacak'
+            return 'SMB Pelacak'
         case 'master':
-            return 'APK Master'
+            return 'SMB Admin'
         case 'live':
-            return 'APK Live'
+            return 'SMB Live Kerja'
         case 'server':
             return 'Server (lacak-server.exe)'
         default:

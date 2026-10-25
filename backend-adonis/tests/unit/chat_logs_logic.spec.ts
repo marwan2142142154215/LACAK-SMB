@@ -358,7 +358,7 @@ test.group('Log aktivitas: middleware RecordApiActivity', () => {
                 201,
                 null
             ),
-            'Membuat build APK pelacak v1.2.0 untuk HP Gudang'
+            'Membuat build SMB Pelacak v1.2.0 untuk HP Gudang'
         )
         assert.equal(
             ACTIONS['PUT /api/v1/settings/security'].describe(
