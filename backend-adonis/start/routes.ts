@@ -36,12 +36,18 @@ router
                 router.get('/live/sites', [WorkSessionsController, 'sites'])
                 router.get('/live/sessions', [WorkSessionsController, 'index'])
                 router.get('/live/overview', [WorkSessionsController, 'overview'])
-                router.post('/live/sessions/start', [WorkSessionsController, 'start'])
-                router.post('/live/sessions/heartbeat', [WorkSessionsController, 'heartbeat'])
+                router
+                    .post('/live/sessions/start', [WorkSessionsController, 'start'])
+                    .use(middleware.throttle({ max: 10, minutes: 1 }))
+                router
+                    .post('/live/sessions/heartbeat', [WorkSessionsController, 'heartbeat'])
+                    .use(middleware.throttle({ max: 60, minutes: 1 }))
                 router.post('/live/sessions/end', [WorkSessionsController, 'end'])
                 router.get('/live/app', [WorkSessionsController, 'app'])
                 router.get('/live/activity', [WorkSessionsController, 'activity'])
-                router.post('/live/watch-token', [WorkSessionsController, 'watchToken'])
+                router
+                    .post('/live/watch-token', [WorkSessionsController, 'watchToken'])
+                    .use(middleware.throttle({ max: 30, minutes: 1 }))
             })
             .use([middleware.auth(), middleware.extendToken()])
     })

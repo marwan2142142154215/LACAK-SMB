@@ -20,6 +20,7 @@
         "#services/*": "./app/services/*.js",
         "#middleware/*": "./app/middleware/*.js",
         "#validators/*": "./app/validators/*.js",
+        "#jobs/*": "./app/jobs/*.js",
         "#providers/*": "./providers/*.js",
         "#database/*": "./database/*.js",
         "#tests/*": "./tests/*.js",

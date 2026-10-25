@@ -64,7 +64,7 @@ Paket `barryvdh/laravel-dompdf` dan `maatwebsite/excel` ada di `composer.json` t
 - [x] Bentuk respons dan handler error (401, 403, 404, 422 VineJS, 500) dengan pesan yang sama.
 - [ ] Alasan `session_replaced` pada 401: penandanya masih di cache Laravel; pindah ke Redis bersama di Tahap 2.
 - [x] Service permission (tabel spatie). Endpoint pertama: `/auth/me` dan `/auth/session`.
-- [ ] Cakupan site (`ResolvesOrganizationScope`) dan writer log aktivitas: dikerjakan bersama modul pertama yang memakainya (Tahap 1).
+- [x] Cakupan site (`app/services/organization_scope.ts`) dan writer log aktivitas (`app/services/activity_log.ts`). Cabang `telegram_bot_service` (site dari header `X-Telegram-Chat-Id`) sengaja tidak di-port karena bot Telegram tidak dipakai.
 - [x] Harness tes Japa (`tests/bootstrap.ts`, `.env.test` ke `lacak_master_test`).
 - [ ] Nginx: upstream kedua dan aturan per path, awalnya belum ada path yang diarahkan.
 
@@ -77,7 +77,7 @@ Status (25 Okt): **kode selesai, belum diuji dengan database, belum dilayani ngi
 - [x] Token LiveKit identik byte per byte dengan Laravel (test vector), aturan status, ringkasan jam kerja, dan cakupan site diuji tes unit.
 - [x] Log aktivitas sesi kerja (`created`/`updated` WorkSession) ditulis dengan format spatie yang sama.
 - [ ] Tes fungsional terhadap database `lacak_master_test`.
-- [ ] Rate limit (`throttle:10,1` start, `throttle:60,1` heartbeat) lewat `@adonisjs/limiter`.
+- [x] Rate limit (`throttle:10,1` start, `throttle:60,1` heartbeat, `throttle:30,1` watch-token) lewat `app/middleware/throttle_middleware.ts` (Redis). Kuncinya per user/IP tanpa route, sama dengan `ThrottleRequests` Laravel, jadi semua route ber-throttle berbagi satu penghitung.
 - [ ] Nginx mengarahkan path di atas ke `backend-adonis`.
 
 Catatan perbedaan kecil yang tidak mengubah perilaku dashboard: tanggal dikirim sebagai `...000Z` (milidetik) bukan `...000000Z` (mikrodetik), dan objek kosong `devices_by_status` dikirim `{}` bukan `[]`.
@@ -89,6 +89,11 @@ Termasuk `WorkPresence` (status dan log kerja), `LiveKitTokenIssuer` (`livekit-s
 ### Tahap 2 — Auth (±4 hari)
 
 Login (password lokal dan Account Center, termasuk `AesCbc256` dengan test vektor yang sudah ada), 2FA (setup, verify, recovery code), logout, satu akun satu sesi, `device_type`, rate limit login, dan log aktivitas login.
+
+- [x] `POST /auth/login` (password lokal + Account Center, `AesCbc256` dengan test vektor), `/auth/2fa/setup/confirm`, `/auth/2fa/verify` (TOTP ±2 window, anti-replay, recovery code sekali pakai, 5 percobaan -> 429), `/auth/logout` (menutup sesi kerja). Satu akun satu sesi + `session_replaced`, `device_type`, `TwoFactorPolicy` (`app_settings`). Tes unit lulus.
+- [x] Log aktivitas API (`RecordApiActivity`) terpasang global di `start/kernel.ts` (`router.use`, setelah bodyparser), termasuk login/2FA publik.
+- [ ] Tes fungsional (`tests/functional/auth_login.spec.ts`) belum dijalankan: DB tes tidak bisa dihubungi.
+- [ ] Tanda `session_replaced`, token setup/challenge 2FA, dan anti-replay ada di Redis Adonis, BUKAN di cache Laravel (tabel `cache`). Selama dua backend hidup, semua path `/api/v1/auth/*` harus dialihkan nginx bersamaan; token yang dicabut oleh login di backend lain hanya mendapat 401 biasa.
 
 ### Tahap 3 — Modul admin (±1,5 minggu)
 
@@ -102,9 +107,24 @@ Login (password lokal dan Account Center, termasuk `AesCbc256` dengan test vekto
 | Chat | `chat/messages` (termasuk gambar dan balasan) |
 | Log | `activity-logs` |
 
+- [x] Semua route Tahap 3 ada di Adonis dengan method, path, dan nama parameter yang sama (dibandingkan otomatis dengan `php artisan route:list --path=api --json`: 73 route Laravel, 0 hilang). Middleware auth/extendToken/throttle/signed juga sama.
+- [x] Controller: `users`, `organizations`, `settings/security`, `system/status`, `devices` (+ perintah, OTP, enrollment, violations), `geofence-rules`, `consent-documents` (upload, unduh bertanda tangan, cabut), `telegram-bindings`, `telegram-user-links` (+ lookup), `chat/messages` (+ gambar, balasan), `activity-logs`. Pesan validasi = bawaan Laravel (locale `en`).
+- [x] Tautan Spaces bertanda waktu (`temporaryUrl()`) sekarang di `app/services/storage.ts`; consent, APK, dan gambar chat memakai `app/services/documents.ts`.
+- [x] Tes unit lulus (`node ace test unit`). Server boot dan menjawab 401/404 dengan amplop yang sama.
+- [ ] Tes fungsional (`tests/functional/{users,devices,rules,chat_logs}_*.spec.ts`) belum dijalankan: DB tes tidak bisa dihubungi. Belum ada uji end-to-end dari dashboard/APK.
+- [ ] Perbedaan kecil yang diketahui: id route bukan angka -> 404 (Laravel 500); `per_page` negatif -> 15 (Laravel 500); Vine hanya memberi satu pesan per field (Laravel bisa beberapa); `Str::slug`/`Str::ascii` didekati dengan NFKD; status server menyebut Node/AdonisJS dan driver redis.
+
 ### Tahap 4 — Latar belakang (±3 hari)
 
 Build APK lewat antrean, `CloseStaleWorkSessions` dan detak scheduler lewat systemd timer, command `bot:issue-telegram-token` dan pengaturan 2FA, serta unit systemd baru (`lacak-api`, `lacak-api-worker`).
+
+- [x] `apk-builds` (index, upload, generate -> 202, show, destroy, unduh bertanda tangan) + job `build-apk` di BullMQ (`app/jobs/build_apk_job.ts`, `node ace queue:work`, concurrency 1).
+- [x] `node ace scheduler:run` (tiap menit: `work-sessions:close-stale`, detak scheduler, job detak antrean), `bot:issue-telegram-token`, `security:two-factor [on|off]`.
+- [x] Status server menghitung antrean dari BullMQ + sisa tabel `jobs`/`failed_jobs` Laravel; detak dibaca dari Redis Adonis.
+- [x] Batas multipart bodyparser dinaikkan ke 210 MB (unggah APK `max:204800` KB tetap dijawab 422, bukan 413). Cek juga `client_max_body_size` nginx.
+- [ ] Tes fungsional (`tests/functional/apk_builds_zero_touch.spec.ts`) belum dijalankan (butuh DB tes dan Redis). Build Gradle/WSL belum diuji nyata.
+- [ ] Unit systemd baru belum dibuat: `node build/ace.js queue:work` (worker) dan `node build/ace.js scheduler:run` (scheduler). Jangan jalankan berdampingan dengan `schedule:work` Laravel; job lama di tabel `jobs` harus dihabiskan worker Laravel dulu.
+- [ ] Halaman Status server Laravel akan menganggap scheduler/antrean mati begitu hanya proses Adonis yang jalan (detak di Redis, bukan cache database Laravel).
 
 ### Tahap 5 — Peralihan penuh (±1 minggu)
 
