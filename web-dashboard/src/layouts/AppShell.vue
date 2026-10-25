@@ -133,7 +133,8 @@ const readouts = computed(() => [
     {
         label: 'Live',
         value: telemetry.liveCount.value,
-        led: telemetry.liveCount.value ? 'text-danger-400' : 'text-base-500 led-off',
+        led: 'text-base-500 led-off',
+        beacon: telemetry.liveCount.value > 0,
         hidden: !auth.hasPermission('live.watch'),
     },
 ])
@@ -171,123 +172,127 @@ async function handleLogout() {
             bersamaan membuat kondisi v-if/class diam-diam tidak berefek.
         -->
         <aside
-            class="fixed inset-y-0 left-0 z-50 flex w-60 shrink-0 flex-col border-r border-base-800 bg-base-900 transition-transform duration-200 lg:sticky lg:top-0 lg:h-dvh lg:!translate-x-0"
+            class="fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col p-3 transition-transform duration-200 lg:sticky lg:top-0 lg:h-dvh lg:!translate-x-0"
             :class="mobileNavOpen ? 'translate-x-0' : '-translate-x-full'"
         >
-            <div class="flex h-16 items-center justify-between gap-2 px-5">
-                <router-link
-                    :to="{ name: 'radar' }"
-                    class="flex items-center gap-3 rounded-md focus-visible:outline-2 focus-visible:outline-accent-400"
-                >
-                    <!-- Logo = radar mini yang menyapu, sama dengan halaman masuk -->
-                    <span
-                        class="brand-mark relative size-8 shrink-0 overflow-hidden rounded-full border border-base-700"
-                        aria-hidden="true"
+            <div class="flex min-h-0 flex-1 flex-col rounded-2xl border border-base-800 bg-base-900 shadow-(--shadow-card)">
+                <div class="flex h-16 items-center justify-between gap-2 px-4">
+                    <router-link
+                        :to="{ name: 'radar' }"
+                        class="flex items-center gap-3 rounded-xl focus-visible:outline-2 focus-visible:outline-accent-500"
                     >
-                        <span class="absolute inset-[5px] rounded-full border border-dashed border-base-700" />
-                        <span class="brand-sweep absolute inset-0 rounded-full" />
-                        <span class="absolute top-1/2 left-1/2 size-1 -translate-1/2 rounded-full bg-accent-300" />
-                    </span>
-                    <span class="leading-tight">
-                        <span class="block font-mono text-[13px] font-medium tracking-[0.16em] text-base-50 uppercase">Lacak SMB</span>
-                        <span class="eyebrow block !text-[9.5px] !text-base-500">Panel operasi</span>
-                    </span>
-                </router-link>
-                <button
-                    type="button"
-                    class="rounded-md p-1 text-base-500 hover:text-base-100 lg:hidden"
-                    aria-label="Tutup menu"
-                    @click="mobileNavOpen = false"
-                >
-                    <X class="size-5" />
-                </button>
-            </div>
-
-            <nav class="flex-1 space-y-6 overflow-y-auto px-3 py-4" aria-label="Menu utama">
-                <div v-for="group in navGroups" :key="group.label">
-                    <p class="eyebrow mb-1.5 px-3 !text-base-500">{{ group.label }}</p>
-                    <!--
-                        Pakai exact-active-class (bukan active-class): active-class
-                        bawaan Vue Router mencocokkan prefix path, jadi link Radar
-                        (path "/") ikut ter-highlight di SEMUA halaman lain karena
-                        setiap path diawali "/". exact-active-class memastikan hanya
-                        route yang benar-benar aktif yang disorot.
-                    -->
-                    <template v-for="item in group.items" :key="item.label">
-                        <router-link
-                            v-if="!item.hidden"
-                            :to="item.to"
-                            class="nav-link group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm text-base-400 transition-colors hover:bg-base-850 hover:text-base-100 focus-visible:outline-2 focus-visible:outline-accent-400"
-                            exact-active-class="is-active"
-                        >
-                            <component :is="item.icon" class="nav-icon size-[17px] shrink-0" />
-                            {{ item.label }}
-                            <span v-if="item.live" class="ml-auto font-mono text-[10px] tracking-wider text-danger-400">LIVE</span>
-                        </router-link>
-                    </template>
-                </div>
-            </nav>
-
-            <div class="border-t border-base-800 p-3">
-                <div class="flex items-center gap-3 rounded-md px-2 py-2">
-                    <div
-                        class="flex size-9 shrink-0 items-center justify-center rounded-md bg-base-800 font-mono text-sm font-medium text-copper-400"
-                    >
-                        {{ auth.user?.name?.charAt(0)?.toUpperCase() ?? '?' }}
-                    </div>
-                    <div class="min-w-0 flex-1">
-                        <p class="truncate text-sm font-medium text-base-100">{{ auth.user?.name }}</p>
-                        <p class="truncate text-xs text-base-500">{{ roleLabel }}</p>
-                    </div>
+                        <!-- Logo: beacon oranye di atas tinta -- sinyal yang sedang dipantau -->
+                        <span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-base-50" aria-hidden="true">
+                            <span class="beacon" />
+                        </span>
+                        <span class="leading-tight">
+                            <span class="block font-display text-[15px] font-extrabold tracking-[-0.02em] text-base-50">Lacak SMB</span>
+                            <span class="block text-xs text-base-500">Pusat pantau</span>
+                        </span>
+                    </router-link>
                     <button
                         type="button"
-                        aria-label="Keluar"
-                        title="Keluar"
-                        class="flex size-8 items-center justify-center rounded-md text-base-500 transition-colors hover:bg-danger-500/10 hover:text-danger-400 focus-visible:outline-2 focus-visible:outline-accent-400"
-                        :disabled="loggingOut"
-                        @click="handleLogout"
+                        class="rounded-lg p-1 text-base-500 hover:text-base-100 lg:hidden"
+                        aria-label="Tutup menu"
+                        @click="mobileNavOpen = false"
                     >
-                        <LogOut class="size-4" />
+                        <X class="size-5" />
                     </button>
+                </div>
+
+                <nav class="flex-1 space-y-5 overflow-y-auto px-3 pt-2 pb-4" aria-label="Menu utama">
+                    <div v-for="group in navGroups" :key="group.label">
+                        <p class="mb-1 px-3 text-[11px] font-semibold text-base-500">{{ group.label }}</p>
+                        <!--
+                            Pakai exact-active-class (bukan active-class): active-class
+                            bawaan Vue Router mencocokkan prefix path, jadi link Radar
+                            (path "/") ikut ter-highlight di SEMUA halaman lain karena
+                            setiap path diawali "/". exact-active-class memastikan hanya
+                            route yang benar-benar aktif yang disorot.
+                        -->
+                        <template v-for="item in group.items" :key="item.label">
+                            <router-link
+                                v-if="!item.hidden"
+                                :to="item.to"
+                                class="nav-link group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-base-400 transition-colors hover:bg-base-850 hover:text-base-100 focus-visible:outline-2 focus-visible:outline-accent-500"
+                                exact-active-class="is-active"
+                            >
+                                <component :is="item.icon" class="nav-icon size-[18px] shrink-0" />
+                                {{ item.label }}
+                                <span v-if="item.live" class="ml-auto flex items-center gap-1.5 text-[11px] font-bold text-accent-400">
+                                    <span class="beacon" />
+                                    Live
+                                </span>
+                            </router-link>
+                        </template>
+                    </div>
+                </nav>
+
+                <div class="border-t border-base-800 p-2">
+                    <div class="flex items-center gap-3 rounded-xl px-2 py-2">
+                        <div
+                            class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-copper-500/12 font-display text-sm font-extrabold text-copper-400"
+                        >
+                            {{ auth.user?.name?.charAt(0)?.toUpperCase() ?? '?' }}
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <p class="truncate text-sm font-semibold text-base-100">{{ auth.user?.name }}</p>
+                            <p class="truncate text-xs text-base-500">{{ roleLabel }}</p>
+                        </div>
+                        <button
+                            type="button"
+                            aria-label="Keluar"
+                            title="Keluar"
+                            class="flex size-8 items-center justify-center rounded-lg text-base-500 transition-colors hover:bg-danger-500/10 hover:text-danger-400 focus-visible:outline-2 focus-visible:outline-accent-500"
+                            :disabled="loggingOut"
+                            @click="handleLogout"
+                        >
+                            <LogOut class="size-4" />
+                        </button>
+                    </div>
                 </div>
             </div>
         </aside>
 
         <div class="flex min-w-0 flex-1 flex-col">
-            <!-- Strip telemetri: angka kunci yang berlaku di semua halaman -->
-            <div class="sticky top-0 z-30 flex h-12 items-center gap-4 border-b border-base-800 bg-base-950/85 px-4 backdrop-blur sm:px-8">
-                <button
-                    type="button"
-                    class="-ml-1 rounded-md p-1 text-base-300 hover:text-base-50 lg:hidden"
-                    aria-label="Buka menu"
-                    @click="mobileNavOpen = true"
+            <!-- Bar status: angka kunci yang berlaku di semua halaman -->
+            <div class="sticky top-0 z-30 px-3 pt-3 lg:pl-0">
+                <div
+                    class="flex h-14 items-center gap-3 rounded-2xl border border-base-800 bg-base-900/85 px-3 shadow-(--shadow-card) backdrop-blur sm:px-4"
                 >
-                    <Menu class="size-5" />
-                </button>
-                <dl
-                    class="flex min-w-0 flex-1 items-center gap-5 overflow-x-auto font-mono text-[11px] tracking-[0.12em] uppercase sm:gap-7"
-                >
-                    <template v-for="item in readouts" :key="item.label">
-                        <div v-if="!item.hidden" class="flex shrink-0 items-center gap-2">
-                            <span v-if="item.led" class="led" :class="item.led" />
-                            <dt class="text-base-500">{{ item.label }}</dt>
-                            <dd class="text-base-100 tabular-nums">{{ item.value ?? '—' }}</dd>
-                        </div>
-                    </template>
-                </dl>
-                <p class="hidden shrink-0 font-mono text-[11px] tracking-[0.12em] text-base-400 uppercase tabular-nums md:block">
-                    {{ now.format('ddd DD MMM') }} <span class="ml-2 text-base-100">{{ now.format('HH:mm:ss') }}</span>
-                </p>
-                <button
-                    type="button"
-                    class="flex size-8 shrink-0 items-center justify-center rounded-md text-base-400 transition-colors hover:bg-base-850 hover:text-base-50 focus-visible:outline-2 focus-visible:outline-accent-400"
-                    :aria-label="theme === 'dark' ? 'Pakai tema terang' : 'Pakai tema gelap'"
-                    :title="theme === 'dark' ? 'Tema terang' : 'Tema gelap'"
-                    @click="toggleTheme"
-                >
-                    <Sun v-if="theme === 'dark'" class="size-4" />
-                    <Moon v-else class="size-4" />
-                </button>
+                    <button
+                        type="button"
+                        class="rounded-lg p-1 text-base-300 hover:text-base-50 lg:hidden"
+                        aria-label="Buka menu"
+                        @click="mobileNavOpen = true"
+                    >
+                        <Menu class="size-5" />
+                    </button>
+                    <dl class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+                        <template v-for="item in readouts" :key="item.label">
+                            <div v-if="!item.hidden" class="flex shrink-0 items-center gap-2 rounded-full bg-base-850 px-3 py-1.5 text-xs">
+                                <span v-if="item.beacon" class="beacon" />
+                                <span v-else-if="item.led" class="led" :class="item.led" />
+                                <dt class="font-medium text-base-500">{{ item.label }}</dt>
+                                <dd class="font-mono font-medium text-base-50 tabular-nums">{{ item.value ?? '—' }}</dd>
+                            </div>
+                        </template>
+                    </dl>
+                    <p class="hidden shrink-0 text-xs font-medium text-base-500 md:block">
+                        {{ now.format('ddd, DD MMM') }}
+                        <span class="ml-1.5 font-mono text-sm text-base-50 tabular-nums">{{ now.format('HH:mm:ss') }}</span>
+                    </p>
+                    <button
+                        type="button"
+                        class="flex size-9 shrink-0 items-center justify-center rounded-xl text-base-400 transition-colors hover:bg-base-850 hover:text-base-50 focus-visible:outline-2 focus-visible:outline-accent-500"
+                        :aria-label="theme === 'dark' ? 'Pakai tema terang' : 'Pakai tema gelap'"
+                        :title="theme === 'dark' ? 'Tema terang' : 'Tema gelap'"
+                        @click="toggleTheme"
+                    >
+                        <Sun v-if="theme === 'dark'" class="size-4" />
+                        <Moon v-else class="size-4" />
+                    </button>
+                </div>
             </div>
 
             <!-- Pengingat siaran aktif, tampil di semua halaman selama staf live -->
@@ -312,41 +317,14 @@ async function handleLogout() {
 </template>
 
 <style scoped>
+/* Menu aktif: lapisan oranye tipis, ikon oranye -- sama di tema terang & gelap */
 .nav-link.is-active {
-    background-color: var(--color-base-850);
+    background-color: color-mix(in oklab, var(--color-accent-500) 12%, transparent);
     color: var(--color-base-50);
-}
-
-/* Penanda halaman aktif: garis teal di tepi kiri, seperti lampu pilihan panel */
-.nav-link.is-active::before {
-    content: '';
-    position: absolute;
-    left: -0.75rem;
-    top: 0.5rem;
-    bottom: 0.5rem;
-    width: 2px;
-    border-radius: 0 2px 2px 0;
-    background-color: var(--color-accent-400);
+    font-weight: 600;
 }
 
 .nav-link.is-active .nav-icon {
-    color: var(--color-accent-400);
-}
-
-.brand-sweep {
-    background: conic-gradient(from 0deg, transparent 0deg 270deg, color-mix(in oklab, var(--color-accent-400) 45%, transparent) 360deg);
-    animation: brand-sweep 6s linear infinite;
-}
-
-@keyframes brand-sweep {
-    to {
-        transform: rotate(1turn);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .brand-sweep {
-        animation: none;
-    }
+    color: var(--color-accent-500);
 }
 </style>

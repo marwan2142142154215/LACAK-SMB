@@ -383,7 +383,7 @@ onMounted(async () => {
                                     <span class="font-medium [overflow-wrap:anywhere]">{{ entry.description }}</span>
                                     <span
                                         v-if="entry.result !== 'ok'"
-                                        class="rounded border px-1.5 py-px font-mono text-[10px] tracking-[0.08em] uppercase"
+                                        class="rounded-full border px-1.5 py-px text-[11px] font-semibold"
                                         :class="RESULTS[entry.result]?.chip"
                                     >
                                         {{ RESULTS[entry.result]?.label }}

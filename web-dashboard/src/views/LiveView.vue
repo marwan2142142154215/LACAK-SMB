@@ -26,17 +26,17 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import LiveAudioButton from '@/components/live/LiveAudioButton.vue'
 import LiveMiniTile from '@/components/live/LiveMiniTile.vue'
+import LiveStatusBar from '@/components/live/LiveStatusBar.vue'
 import LivePairTile from '@/components/live/LivePairTile.vue'
 import LoginDeviceIcon from '@/components/live/LoginDeviceIcon.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import Readout from '@/components/ui/Readout.vue'
 import { formatElapsed, useNow } from '@/composables/useNow'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
 import { ATTENTION_STATUSES, WORK_STATUS, workStatus } from '@/lib/workStatus'
 import { useAuthStore } from '@/stores/auth'
-import { CAMERA_SOURCE, SCREEN_SOURCE, canShareScreen, micStateOf, useLiveStore } from '@/stores/live'
+import { CAMERA_SOURCE, LEADERS_ROOM_KEY, SCREEN_SOURCE, canShareScreen, micStateOf, useLiveStore } from '@/stores/live'
 
 const ALL_SITES = 'all'
 
@@ -58,7 +58,11 @@ const focused = computed(() => live.remoteParticipants.find((p) => p.identity ==
 const confirmStartOpen = ref(false)
 const confirmEndOpen = ref(false)
 
-const canBroadcast = computed(() => auth.hasPermission('live.broadcast') && !!auth.user?.organization_id)
+// Leader juga Live Kerja, tapi di ruang leader (terpisah dari staf) yang hanya
+// ditonton leader, admin & root.
+const isLeader = computed(() => auth.user?.roles?.includes('leader') ?? false)
+const canWatchLeaders = computed(() => ['super_admin', 'admin', 'leader'].some((role) => auth.user?.roles?.includes(role)))
+const canBroadcast = computed(() => isLeader.value || (auth.hasPermission('live.broadcast') && !!auth.user?.organization_id))
 const isAllSites = computed(() => selectedSiteId.value === ALL_SITES)
 const siteNames = computed(() => Object.fromEntries(sites.value.map((site) => [site.id, site.name])))
 const totalLive = computed(() => sites.value.reduce((total, site) => total + (site.live_count ?? 0), 0))
@@ -107,6 +111,7 @@ watch(cameraSize, (value) => writePref('lacak_live_camera_size', value))
 // hanya sesekali sebagai pengaman (staf baru di roster, socket sempat putus).
 const STATUS_RESYNC_MS = 2 * 60_000
 const roster = ref([])
+const leadersRoster = ref([])
 const sessionByIdentity = ref({})
 let statusTimer = null
 let stopLiveStatus = null
@@ -117,9 +122,10 @@ function applyLiveStatus(event) {
     else delete sessions[event.participant_identity]
     sessionByIdentity.value = sessions
 
-    roster.value = roster.value.map((staff) =>
-        staff.user_id === event.user_id ? { ...staff, status: event.status, started_at: event.started_at } : staff,
-    )
+    const update = (member) =>
+        member.user_id === event.user_id ? { ...member, status: event.status, started_at: event.started_at } : member
+    roster.value = roster.value.map(update)
+    leadersRoster.value = leadersRoster.value.map(update)
 }
 
 watch(
@@ -134,7 +140,10 @@ async function loadStatus() {
         const data = response.data.data
         sites.value = data.sites
         roster.value = data.roster
-        sessionByIdentity.value = Object.fromEntries(data.items.map((session) => [session.participant_identity, session]))
+        leadersRoster.value = data.leaders?.roster ?? []
+        sessionByIdentity.value = Object.fromEntries(
+            [...data.items, ...(data.leaders?.items ?? [])].map((session) => [session.participant_identity, session]),
+        )
     } catch {
         // Status & durasi tidak wajib -- tapi daftar site wajib ada supaya
         // video tetap bisa ditonton (mis. server belum punya /live/overview).
@@ -210,6 +219,16 @@ const statusCounts = computed(() =>
 )
 
 const countOf = (keys) => siteRoster.value.filter((staff) => keys.includes(staff.status)).length
+const liveNow = computed(() => siteRoster.value.filter((staff) => staff.started_at).length)
+
+// Cincin warna di ubin staf yang butuh perhatian -- terlihat dari jauh di dinding pantau.
+const ATTENTION_RING = {
+    alert: 'ring-2 ring-danger-500 ring-offset-2 ring-offset-base-950',
+    disconnected: 'ring-2 ring-st-disconnected/70',
+    screen_off: 'ring-2 ring-st-screen/70',
+    camera_off: 'ring-2 ring-st-camera/70',
+}
+const attentionRing = (participant) => ATTENTION_RING[statusOf(participant)] ?? ''
 
 const filteredRoster = computed(() =>
     siteRoster.value
@@ -239,14 +258,32 @@ const transportCounts = computed(() => {
     return counts
 })
 
+// Leader yang siaran tampil di bagian Leader sendiri, bukan di dinding staf.
+const isLeaderParticipant = (participant) => live.participantSites[participant.identity] === LEADERS_ROOM_KEY
+const leaderParticipants = computed(() => live.remoteParticipants.filter(isLeaderParticipant))
+const leadersLive = computed(() => leadersRoster.value.filter((leader) => leader.started_at).length)
+
 const wallParticipants = computed(() =>
     live.remoteParticipants.filter(
         (participant) =>
+            !isLeaderParticipant(participant) &&
             (!statusFilter.value || statusOf(participant) === statusFilter.value) &&
             (!transportFilter.value || transportOf(participant) === transportFilter.value) &&
             matchesSearch(participant.name || participant.identity),
     ),
 )
+
+// Urutan pindah staf di tampilan besar: leader dulu, lalu dinding staf (ikut saringan).
+const focusList = computed(() => [...leaderParticipants.value, ...wallParticipants.value])
+const focusIndex = computed(() => focusList.value.findIndex((p) => p.identity === focusedIdentity.value))
+const focusPosition = computed(() => (focusIndex.value >= 0 ? `${focusIndex.value + 1} dari ${focusList.value.length}` : ''))
+
+function focusStep(direction) {
+    const list = focusList.value
+    if (list.length < 2) return
+    const index = focusIndex.value < 0 ? 0 : (focusIndex.value + direction + list.length) % list.length
+    focusedIdentity.value = list[index].identity
+}
 
 // Hanya peserta di halaman yang tampil yang di-subscribe (lihat
 // live.setVisibleParticipants), jadi menonton 100+ staf tidak berarti
@@ -265,7 +302,12 @@ const wallGridClass = computed(() => {
 })
 watch(compact, () => (page.value = 0))
 
-watch(visibleParticipants, (participants) => live.setVisibleParticipants(participants.map((p) => p.identity)), { immediate: true })
+// Video yang diunduh: halaman dinding staf yang tampil + semua leader.
+watch(
+    [visibleParticipants, leaderParticipants],
+    ([participants, leaders]) => live.setVisibleParticipants([...participants, ...leaders].map((p) => p.identity)),
+    { immediate: true },
+)
 watch(pageCount, (count) => {
     if (page.value >= count) page.value = count - 1
 })
@@ -303,7 +345,9 @@ async function toggleFullscreen() {
 }
 
 const focusedSince = computed(() => (focused.value ? liveSince(focused.value) : null))
-const ownSiteName = computed(() => siteNames.value[live.organizationId] ?? null)
+const ownSiteName = computed(() =>
+    live.isBroadcasting && live.organizationId === null ? 'Ruang leader' : (siteNames.value[live.organizationId] ?? null),
+)
 const broadcastElapsed = computed(() => formatElapsed(live.broadcastStartedAt, now.value))
 const myStatusMeta = computed(() => (live.myStatus ? workStatus(live.myStatus) : null))
 // Dibaca ulang tiap detik (ikut `now`) -- kamera HP bisa menurunkan resolusi
@@ -315,17 +359,21 @@ const cameraSettings = computed(() => {
 })
 
 async function loadMySession() {
-    const response = await api.get('/live/sessions', { params: { organization_id: auth.user?.organization_id ?? undefined } })
+    const params = isLeader.value ? {} : { organization_id: auth.user?.organization_id ?? undefined }
+    const response = await api.get('/live/sessions', { params })
     mySession.value = response.data.data.my_session
 }
 
 /** Tonton satu site, atau ALL_SITES = semua site sekaligus (satu koneksi per site). */
 async function selectSite(siteId) {
-    if (live.isBroadcasting) return // siaran terkunci ke site sendiri
+    // Staf yang siaran terkunci ke site sendiri; leader yang siaran tetap bisa
+    // memantau site-site yang dipegangnya.
+    if (live.isBroadcasting && !isLeader.value) return
     selectedSiteId.value = siteId
     page.value = 0
     try {
-        await live.watchSites(siteId === ALL_SITES ? sites.value.map((site) => site.id) : [siteId])
+        const siteIds = siteId === ALL_SITES ? sites.value.map((site) => site.id) : [siteId]
+        await live.watchSites(canWatchLeaders.value ? [...siteIds, LEADERS_ROOM_KEY] : siteIds)
     } catch (err) {
         toast.error('Gagal membuka siaran', err.response?.data?.message ?? err.message)
     }
@@ -391,9 +439,14 @@ async function toggleBreak() {
 async function startWork() {
     try {
         await live.startWork()
-        selectedSiteId.value = live.organizationId
         mySession.value = null
         loadStatus()
+        if (isLeader.value) {
+            // Ruang leader sudah tersambung; site yang dipegang ditonton lagi.
+            await selectSite(selectedSiteId.value ?? ALL_SITES)
+        } else {
+            selectedSiteId.value = live.organizationId
+        }
         toast.success(
             'Mulai kerja',
             canShareScreen ? 'Layar & kamera Anda sedang disiarkan.' : 'Kamera Anda sedang disiarkan ke rekan se-site',
@@ -448,6 +501,9 @@ onMounted(async () => {
     // sambung ulang kalau memang sudah terhubung.
     if (live.mode !== 'idle') {
         selectedSiteId.value = live.watchedSiteIds.length > 1 ? ALL_SITES : live.organizationId
+        // Leader yang siarannya baru dilanjutkan: hanya ruang leader yang
+        // tersambung -- tonton lagi site-site yang dipegangnya.
+        if (isLeader.value && live.isBroadcasting && live.watchedSiteIds.length === 1) await selectSite(ALL_SITES)
         return
     }
 
@@ -474,30 +530,26 @@ onBeforeUnmount(() => {
         <!-- Tanpa judul besar: layar ini untuk memantau, ruang vertikal dipakai video.
              Judul tetap ada untuk pembaca layar. -->
         <h1 class="sr-only">Live Kerja</h1>
-        <div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 border-b border-base-800 px-4 pt-5 pb-4 sm:px-8">
-            <div class="flex flex-wrap gap-x-8 gap-y-3">
-                <Readout
-                    label="Sedang live"
-                    :value="live.mode === 'idle' ? '—' : live.remoteParticipants.length"
-                    :led="live.remoteParticipants.length ? 'danger' : 'muted'"
-                />
-                <Readout label="Working" :value="countOf(['working'])" :led="countOf(['working']) ? 'accent' : 'muted'" />
-                <Readout label="Break" :value="countOf(['break'])" />
-                <Readout
-                    label="Perlu perhatian"
-                    :value="countOf(ATTENTION_STATUSES)"
-                    :led="countOf(ATTENTION_STATUSES) ? 'warning' : 'muted'"
-                />
-                <Readout v-if="live.isBroadcasting" label="Siaran Anda" :value="myStatusMeta?.label ?? 'Aktif'" led="danger" />
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-                <template v-if="canBroadcast && canShareScreen">
-                    <BaseButton v-if="!live.isBroadcasting" :loading="live.connecting" @click="confirmStartOpen = true">
+        <div class="px-4 pt-5 sm:px-8 sm:pt-7">
+            <LiveStatusBar :segments="statusCounts" :live="liveNow" :total="siteRoster.length" :active="statusFilter" @select="statusFilter = $event">
+                <template #actions>
+                    <span
+                        v-if="live.isBroadcasting"
+                        class="inline-flex items-center gap-2 rounded-full bg-accent-500/12 px-3 py-1.5 text-xs font-bold text-accent-400"
+                    >
+                        <span class="beacon" />
+                        Siaran Anda · {{ myStatusMeta?.label ?? 'Aktif' }}
+                    </span>
+                    <BaseButton
+                        v-if="canBroadcast && canShareScreen && !live.isBroadcasting"
+                        :loading="live.connecting"
+                        @click="confirmStartOpen = true"
+                    >
                         <Play class="size-4" />
                         {{ mySession ? 'Lanjutkan siaran' : 'Mulai kerja' }}
                     </BaseButton>
                 </template>
-            </div>
+            </LiveStatusBar>
         </div>
 
         <div class="space-y-5 p-4 sm:p-8">
@@ -582,10 +634,10 @@ onBeforeUnmount(() => {
                 <aside class="flex flex-col gap-5 px-1 pb-1 xl:py-2 xl:pr-2">
                     <div>
                         <p class="eyebrow flex items-center gap-2">
-                            <span class="led text-danger-400" />
+                            <span class="beacon" />
                             Sedang disiarkan<template v-if="ownSiteName"> · {{ ownSiteName }}</template>
                         </p>
-                        <p class="mt-2 font-mono text-4xl font-medium tracking-tight text-base-50 tabular-nums sm:text-[2.75rem]">
+                        <p class="mt-2 font-display text-5xl leading-none font-extrabold tracking-[-0.045em] text-base-50 tabular-nums">
                             {{ broadcastElapsed }}
                         </p>
                         <p class="mt-1 text-xs text-base-500">lama sesi kerja</p>
@@ -679,7 +731,7 @@ onBeforeUnmount(() => {
                         class="inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent-400 disabled:cursor-not-allowed disabled:opacity-50"
                         :class="
                             selectedSiteId === option.id
-                                ? 'bg-accent-500 text-base-950'
+                                ? 'bg-base-50 text-base-950 shadow-(--shadow-card)'
                                 : 'text-base-300 hover:bg-base-850 hover:text-base-50'
                         "
                         @click="selectSite(option.id)"
@@ -692,7 +744,7 @@ onBeforeUnmount(() => {
                                 selectedSiteId === option.id
                                     ? 'bg-base-950/20'
                                     : option.live_count
-                                      ? 'bg-danger-500/10 text-danger-400'
+                                      ? 'bg-accent-500/12 text-accent-400'
                                       : 'bg-base-850 text-base-500'
                             "
                         >
@@ -746,7 +798,7 @@ onBeforeUnmount(() => {
                         role="radiogroup"
                         aria-label="Ukuran kamera"
                     >
-                        <span class="px-1.5 font-mono text-[10.5px] tracking-[0.1em] text-base-500 uppercase">Kamera</span>
+                        <span class="px-1.5 text-[11px] text-base-500 font-semibold">Kamera</span>
                         <button
                             v-for="option in CAMERA_SIZES"
                             :key="option.value"
@@ -784,8 +836,46 @@ onBeforeUnmount(() => {
             <div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
                 <!-- Dinding video -->
                 <section ref="wallEl" aria-labelledby="live-wall-title" :class="isFullscreen && 'overflow-auto bg-base-950 p-4'">
+                    <!-- Ruang leader: terpisah dari dinding staf, hanya untuk leader, admin & root. -->
+                    <div v-if="canWatchLeaders && leaderParticipants.length" class="mb-6" aria-labelledby="live-leaders-title" role="region">
+                        <h2 id="live-leaders-title" class="mb-3 flex items-center gap-2 font-display text-lg font-bold text-base-50 tracking-[-0.015em]">
+                            Leader
+                            <span class="font-mono text-sm font-medium text-base-500 tabular-nums">{{ leaderParticipants.length }}</span>
+                            <span class="text-xs font-normal text-base-500">· hanya terlihat oleh leader, admin & root</span>
+                        </h2>
+                        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
+                            <div v-for="participant in leaderParticipants" :key="participant.identity" class="relative">
+                                <button
+                                    type="button"
+                                    class="tile-button block w-full rounded-xl text-left focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:outline-none"
+                                    :aria-label="`Perbesar ${participant.name || participant.identity}`"
+                                    @click="focusedIdentity = participant.identity"
+                                >
+                                    <LiveMiniTile
+                                        :name="participant.name || participant.identity"
+                                        site="Leader"
+                                        :screen-track="trackOf(participant, SCREEN_SOURCE)"
+                                        :camera-track="trackOf(participant, CAMERA_SOURCE)"
+                                        :status="statusOf(participant)"
+                                        :since="liveSince(participant)"
+                                        :speaking="participant.isSpeaking"
+                                        :transport="transportOf(participant)"
+                                    />
+                                </button>
+                                <LiveAudioButton
+                                    class="!absolute top-1.5 right-1.5"
+                                    :name="participant.name || participant.identity"
+                                    :mic-state="micStateOf(participant)"
+                                    :listening="isListening(participant)"
+                                    :speaking="participant.isSpeaking"
+                                    @toggle="live.toggleListen(participant.identity)"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                        <h2 id="live-wall-title" class="flex items-center gap-2 font-display text-lg font-semibold text-base-50">
+                        <h2 id="live-wall-title" class="flex items-center gap-2 font-display text-lg font-bold text-base-50 tracking-[-0.015em]">
                             Sedang live
                             <span class="font-mono text-sm font-medium text-base-500 tabular-nums">{{ wallParticipants.length }}</span>
                             <span v-if="isFullscreen && !isAllSites" class="text-sm font-normal text-base-500"
@@ -796,7 +886,7 @@ onBeforeUnmount(() => {
                             <!-- Jalur video: klik untuk menyaring (mis. hanya yang lewat TCP). -->
                             <div
                                 v-if="transportCounts.udp || transportCounts.tcp"
-                                class="inline-flex overflow-hidden rounded-full border border-base-700 font-mono text-[11px] tracking-[0.08em] uppercase tabular-nums"
+                                class="inline-flex overflow-hidden rounded-full border border-base-700 text-[12px] tabular-nums font-semibold"
                                 role="group"
                                 aria-label="Saring menurut jalur video"
                             >
@@ -826,7 +916,7 @@ onBeforeUnmount(() => {
                             <button
                                 v-if="statusFilter"
                                 type="button"
-                                class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] tracking-[0.08em] uppercase"
+                                class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-semibold"
                                 :class="workStatus(statusFilter).chip"
                                 @click="statusFilter = null"
                             >
@@ -874,11 +964,16 @@ onBeforeUnmount(() => {
                          ukuran video, jadi bingkai besar = gambar lebih tajam. -->
                     <!-- Tombol suara SEJAJAR (bukan di dalam) tombol perbesar: tombol
                          bersarang tidak sah di HTML dan membingungkan pembaca layar. -->
-                    <div v-else-if="compact" class="grid gap-3" :class="wallGridClass">
-                        <div v-for="participant in visibleParticipants" :key="participant.identity" class="relative">
+                    <TransitionGroup v-else-if="compact" tag="div" name="tile" class="grid gap-3" :class="wallGridClass">
+                        <div
+                            v-for="participant in visibleParticipants"
+                            :key="participant.identity"
+                            class="relative rounded-xl"
+                            :class="attentionRing(participant)"
+                        >
                             <button
                                 type="button"
-                                class="block w-full rounded-xl text-left transition-shadow hover:ring-2 hover:ring-accent-400/50 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none"
+                                class="tile-button block w-full rounded-xl text-left focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:outline-none"
                                 :aria-label="`Perbesar ${participant.name || participant.identity}`"
                                 @click="focusedIdentity = participant.identity"
                             >
@@ -902,12 +997,17 @@ onBeforeUnmount(() => {
                                 @toggle="live.toggleListen(participant.identity)"
                             />
                         </div>
-                    </div>
-                    <div v-else class="grid gap-4" :class="wallGridClass">
-                        <div v-for="participant in visibleParticipants" :key="participant.identity" class="relative">
+                    </TransitionGroup>
+                    <TransitionGroup v-else tag="div" name="tile" class="grid gap-4" :class="wallGridClass">
+                        <div
+                            v-for="participant in visibleParticipants"
+                            :key="participant.identity"
+                            class="relative rounded-xl"
+                            :class="attentionRing(participant)"
+                        >
                             <button
                                 type="button"
-                                class="block w-full rounded-xl text-left transition-shadow hover:ring-2 hover:ring-accent-400/50 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none"
+                                class="tile-button block w-full rounded-xl text-left focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:outline-none"
                                 :aria-label="`Perbesar ${participant.name || participant.identity}`"
                                 @click="focusedIdentity = participant.identity"
                             >
@@ -935,7 +1035,7 @@ onBeforeUnmount(() => {
                                 @toggle="live.toggleListen(participant.identity)"
                             />
                         </div>
-                    </div>
+                    </TransitionGroup>
 
                     <div
                         v-if="pageCount > 1"
@@ -965,7 +1065,7 @@ onBeforeUnmount(() => {
                     <div class="border-b border-base-800 px-4 py-3">
                         <h2
                             id="live-status-title"
-                            class="flex items-center justify-between font-display text-base font-semibold text-base-50"
+                            class="flex items-center justify-between font-display text-base font-bold text-base-50 tracking-[-0.015em]"
                         >
                             Status staf
                             <span class="font-mono text-xs font-medium text-base-500 tabular-nums">{{ siteRoster.length }} staf</span>
@@ -976,7 +1076,7 @@ onBeforeUnmount(() => {
                                 :key="entry.key"
                                 type="button"
                                 :aria-pressed="statusFilter === entry.key"
-                                class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10.5px] tracking-[0.06em] uppercase tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-accent-400"
+                                class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-accent-400 font-semibold"
                                 :class="
                                     statusFilter === entry.key
                                         ? entry.chip
@@ -988,6 +1088,42 @@ onBeforeUnmount(() => {
                                 {{ entry.label }} {{ entry.count }}
                             </button>
                         </div>
+                    </div>
+
+                    <!-- Status leader: hanya untuk leader, admin & root. -->
+                    <div v-if="canWatchLeaders && leadersRoster.length" class="border-b border-base-800">
+                        <p class="eyebrow flex items-center justify-between px-4 pt-3 pb-1">
+                            Leader
+                            <span class="font-mono text-[10.5px] text-base-500 tabular-nums">{{ leadersLive }} live</span>
+                        </p>
+                        <ul class="max-h-48 divide-y divide-base-800 overflow-y-auto">
+                            <li v-for="leader in leadersRoster" :key="leader.user_id">
+                                <button
+                                    type="button"
+                                    class="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-base-850 focus-visible:bg-base-850 focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent"
+                                    :disabled="!sessionByIdentity[leader.participant_identity]"
+                                    @click="focusStaff(leader)"
+                                >
+                                    <span class="led" :class="workStatus(leader.status).led" />
+                                    <span class="min-w-0 flex-1">
+                                        <span class="flex items-center gap-1.5">
+                                            <span class="truncate text-sm font-medium text-base-100">{{ leader.name }}</span>
+                                            <LoginDeviceIcon :device="leader.login_device" />
+                                        </span>
+                                        <span class="block truncate text-xs text-base-500">
+                                            <template v-if="leader.started_at">live {{ formatElapsed(leader.started_at, now) }}</template>
+                                            <template v-else>belum mulai kerja</template>
+                                        </span>
+                                    </span>
+                                    <span
+                                        class="shrink-0 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold"
+                                        :class="workStatus(leader.status).chip"
+                                    >
+                                        {{ workStatus(leader.status).label }}
+                                    </span>
+                                </button>
+                            </li>
+                        </ul>
                     </div>
 
                     <p v-if="!filteredRoster.length" class="px-4 py-8 text-center text-sm text-base-500">
@@ -1020,7 +1156,7 @@ onBeforeUnmount(() => {
                                     </span>
                                 </span>
                                 <span
-                                    class="shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.08em] uppercase"
+                                    class="shrink-0 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold"
                                     :class="workStatus(staff.status).chip"
                                 >
                                     {{ workStatus(staff.status).label }}
@@ -1036,15 +1172,41 @@ onBeforeUnmount(() => {
             <DialogPortal>
                 <DialogOverlay class="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm" />
                 <DialogContent
+                    @keydown.left.prevent="focusStep(-1)"
+                    @keydown.right.prevent="focusStep(1)"
                     class="fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[min(110rem,calc((100dvh-9rem)*32/9))] -translate-x-1/2 -translate-y-1/2 overflow-auto focus:outline-none"
                 >
-                    <div class="mb-3 flex items-center justify-between gap-4">
-                        <div class="min-w-0">
-                            <DialogTitle class="sr-only">{{ focused?.name || focused?.identity }}</DialogTitle>
-                            <DialogDescription class="font-mono text-xs text-white/70 tabular-nums">
-                                Live sejak {{ focusedSince ? new Date(focusedSince).toLocaleTimeString('id-ID') : '—' }} · kualitas
-                                menyesuaikan koneksi otomatis
-                            </DialogDescription>
+                    <div class="mb-3 flex flex-wrap items-center justify-between gap-4">
+                        <div class="flex min-w-0 items-center gap-3">
+                            <div class="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    class="flex size-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-accent-400 disabled:opacity-30"
+                                    aria-label="Staf sebelumnya"
+                                    :disabled="focusList.length < 2"
+                                    @click="focusStep(-1)"
+                                >
+                                    <ChevronLeft class="size-5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    class="flex size-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-accent-400 disabled:opacity-30"
+                                    aria-label="Staf berikutnya"
+                                    :disabled="focusList.length < 2"
+                                    @click="focusStep(1)"
+                                >
+                                    <ChevronRight class="size-5" />
+                                </button>
+                            </div>
+                            <div class="min-w-0">
+                                <DialogTitle class="truncate font-display text-xl font-extrabold tracking-[-0.025em] text-white">
+                                    {{ focused?.name || focused?.identity }}
+                                </DialogTitle>
+                                <DialogDescription class="text-xs text-white/60 tabular-nums">
+                                    {{ focusPosition }} · live sejak
+                                    {{ focusedSince ? new Date(focusedSince).toLocaleTimeString('id-ID') : '—' }} · ← → untuk pindah staf
+                                </DialogDescription>
+                            </div>
                         </div>
                         <div class="flex items-center gap-2">
                             <LiveAudioButton
@@ -1114,3 +1276,43 @@ onBeforeUnmount(() => {
         />
     </div>
 </template>
+
+<style scoped>
+/* Ubin terangkat saat disorot -- isyarat bisa diklik untuk diperbesar */
+.tile-button {
+    transition:
+        transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+        box-shadow 200ms;
+}
+
+.tile-button:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-raised);
+}
+
+/* Staf baru mulai kerja: ubin muncul halus, yang selesai memudar */
+.tile-enter-active,
+.tile-leave-active {
+    transition:
+        opacity 300ms,
+        transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tile-enter-from,
+.tile-leave-to {
+    opacity: 0;
+    transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tile-button,
+    .tile-enter-active,
+    .tile-leave-active {
+        transition: none;
+    }
+
+    .tile-button:hover {
+        transform: none;
+    }
+}
+</style>

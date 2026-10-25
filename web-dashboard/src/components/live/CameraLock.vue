@@ -91,7 +91,7 @@ async function endWork() {
                 <span class="flex size-11 items-center justify-center rounded-xl bg-st-camera/10 text-st-camera">
                     <Camera class="size-6" />
                 </span>
-                <DialogTitle class="mt-4 font-display text-xl font-semibold text-base-50">Kamera wajib menyala</DialogTitle>
+                <DialogTitle class="mt-4 font-display text-xl font-bold text-base-50 tracking-[-0.015em]">Kamera wajib menyala</DialogTitle>
                 <DialogDescription class="mt-2 text-sm text-pretty text-base-400">
                     Kamera Anda berhenti mengirim gambar, jadi status Anda <strong class="text-st-camera">Camera off</strong> dan tercatat
                     di log kerja. Tutup aplikasi lain yang memakai kamera (Zoom, Teams, WhatsApp, tab lain), pastikan izin kamera di browser

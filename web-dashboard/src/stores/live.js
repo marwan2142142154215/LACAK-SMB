@@ -38,6 +38,11 @@ const REJOIN_JITTER_MS = 10_000
 // ditulis langsung supaya store ini (dipakai AppShell di SEMUA halaman)
 // tidak ikut memuat livekit-client (~500 kB). Library-nya baru di-import
 // dinamis di connect(), saat staf benar-benar membuka siaran.
+// Ruang Live Kerja leader (room LiveKit "leaders"): satu ruang global untuk
+// semua leader, hanya ditonton leader, admin & root. Dipakai sebagai kunci
+// `rooms` / watchedSiteIds di samping id site.
+export const LEADERS_ROOM_KEY = 'leaders'
+
 export const CAMERA_SOURCE = 'camera'
 export const SCREEN_SOURCE = 'screen_share'
 export const MICROPHONE_SOURCE = 'microphone'
@@ -571,21 +576,37 @@ export const useLiveStore = defineStore('live', () => {
     async function watchSites(siteIds) {
         connecting.value = true
         try {
-            await disconnect()
+            // Leader yang sedang siaran tetap di ruang leader-nya sendiri dan
+            // ikut menonton site yang dipegangnya.
+            const broadcasting = mode.value === 'broadcasting' && ownRoom
+            if (broadcasting) await disconnectWatchRooms()
+            else await disconnect()
             const results = await Promise.allSettled(
-                siteIds.map(async (siteId) => {
-                    const response = await api.post('/live/watch-token', { organization_id: siteId })
-                    const { livekit_url, token } = response.data.data
-                    await connect(livekit_url, token, siteId)
-                }),
+                siteIds
+                    .filter((siteId) => !rooms.has(siteId))
+                    .map(async (siteId) => {
+                        const params = siteId === LEADERS_ROOM_KEY ? { room: LEADERS_ROOM_KEY } : { organization_id: siteId }
+                        const response = await api.post('/live/watch-token', params)
+                        const { livekit_url, token } = response.data.data
+                        await connect(livekit_url, token, siteId)
+                    }),
             )
             if (!rooms.size) throw results.find((result) => result.status === 'rejected')?.reason ?? new Error('Tidak ada site')
-            watchedSiteIds.value = siteIds.filter((id) => rooms.has(id))
+            watchedSiteIds.value = [...rooms.keys()]
+            if (broadcasting) return
             organizationId.value = siteIds.length === 1 ? siteIds[0] : null
             mode.value = 'watching'
         } finally {
             connecting.value = false
         }
+    }
+
+    /** Putus semua room tonton, kecuali room siaran saya sendiri. */
+    async function disconnectWatchRooms() {
+        const watched = [...rooms].filter(([, room]) => room !== ownRoom)
+        watched.forEach(([siteId]) => rooms.delete(siteId))
+        await Promise.all(watched.map(([, room]) => room.removeAllListeners().disconnect()))
+        bump()
     }
 
     // Kamera/layar menyala atau mati -> laporkan segera (log kerja mencatat
@@ -659,9 +680,11 @@ export const useLiveStore = defineStore('live', () => {
             const response = await api.post('/live/sessions/start', { device: 'computer' })
             const { livekit_url, token, session } = response.data.data
             await disconnect()
-            ownRoom = await connect(livekit_url, token, session.organization_id)
+            // Sesi leader tanpa site -> ruang leader.
+            const roomKey = session.organization_id ?? LEADERS_ROOM_KEY
+            ownRoom = await connect(livekit_url, token, roomKey)
             organizationId.value = session.organization_id
-            watchedSiteIds.value = [session.organization_id]
+            watchedSiteIds.value = [roomKey]
             await ownRoom.localParticipant.setCameraEnabled(true)
             // Kamera bisa "berhasil" dibuka lalu langsung berhenti (mis. sedang
             // dipakai aplikasi lain) -- jangan anggap siaran jalan tanpa gambar.
@@ -721,11 +744,15 @@ export const useLiveStore = defineStore('live', () => {
         if (resumeUserId !== auth.user?.id) resumeTask = null
         resumeUserId = auth.user?.id
         resumeTask ??= (async () => {
-            if (mode.value !== 'idle' || !auth.hasPermission('live.broadcast') || !auth.user?.organization_id) {
+            // Leader menyiarkan ke ruang leader (tanpa site); staf ke site-nya.
+            const isLeader = auth.user?.roles?.includes('leader') ?? false
+            const isStaff = auth.hasPermission('live.broadcast') && !!auth.user?.organization_id
+            if (mode.value !== 'idle' || (!isLeader && !isStaff)) {
                 return { resumed: false }
             }
             try {
-                const response = await api.get('/live/sessions', { params: { organization_id: auth.user.organization_id } })
+                const params = isLeader ? {} : { organization_id: auth.user.organization_id }
+                const response = await api.get('/live/sessions', { params })
                 if (!response.data.data.my_session) return { resumed: false }
                 await startWork({ resuming: true })
                 return { resumed: true }
@@ -947,7 +974,9 @@ export const useLiveStore = defineStore('live', () => {
 
     /** Gabung room status site & ambil jalur video staf yang sudah siaran. */
     function emitWatch() {
-        ensureLiveSocket()?.emit('live:watch', { organizationIds: liveWatchIds }, (reply) => {
+        const organizationIds = liveWatchIds.filter((id) => typeof id === 'number')
+        const leaders = liveWatchIds.includes(LEADERS_ROOM_KEY)
+        ensureLiveSocket()?.emit('live:watch', { organizationIds, leaders }, (reply) => {
             if (reply?.transports) transportByIdentity.value = { ...reply.transports }
         })
     }

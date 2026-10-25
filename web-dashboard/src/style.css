@@ -1,45 +1,58 @@
 @import 'tailwindcss';
 
 /*
- * Palet & token desain "Lacak Master" — tema gelap, aksen tembaga/emerald,
- * dimaksudkan terasa seperti panel kontrol keamanan profesional (bukan
- * dashboard SaaS generik ungu-gradient). Semua warna didefinisikan sebagai
- * CSS variable di sini, dipakai lewat @theme supaya kelas Tailwind
- * (bg-surface, text-ink, dst) ikut konsisten di seluruh aplikasi.
+ * Palet & token desain "Lacak SMB" -- arah "Field Ops": tinta navy tua,
+ * oranye hi-vis (rompi & beacon lapangan) sebagai penanda, kanvas kabut yang
+ * lembut. Huruf Plus Jakarta Sans (karya Tokotype, Jakarta) untuk judul &
+ * teks, Geist Mono hanya untuk angka. Semua warna didefinisikan sebagai CSS
+ * variable di sini, dipakai lewat @theme supaya kelas Tailwind (bg-base-900,
+ * text-accent-400, dst) ikut konsisten di seluruh aplikasi.
+ *
+ * Skala base: 950 = latar halaman, 900 = permukaan kartu, 50 = teks paling
+ * tegas. Tema terang (bawaan) & gelap memakai nama yang sama.
  */
 @theme {
-    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-    --font-display: 'Bricolage Grotesque', 'Inter', ui-sans-serif, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'Geist Mono', ui-monospace, monospace;
 
-    --color-base-950: #05070a;
-    --color-base-900: #0a0e14;
-    --color-base-850: #10151d;
-    --color-base-800: #161c26;
-    --color-base-700: #222a37;
-    --color-base-600: #31394a;
-    --color-base-500: #4b5568;
-    --color-base-400: #717d93;
-    --color-base-300: #9aa4b6;
-    --color-base-200: #c4cbd8;
-    --color-base-100: #e4e8ef;
-    --color-base-50: #f5f7fa;
+    /* Sudut lebih lapang dari bawaan Tailwind -- kartu & tombol terasa modern */
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+    --radius-2xl: 1.375rem;
 
-    --color-accent-600: #0e7a6b;
-    --color-accent-500: #14a085;
-    --color-accent-400: #2bc4a4;
-    --color-accent-300: #6fe0c6;
+    /* Tema gelap: navy malam */
+    --color-base-950: #070c14;
+    --color-base-900: #0e1520;
+    --color-base-850: #141d2a;
+    --color-base-800: #1b2635;
+    --color-base-700: #283547;
+    --color-base-600: #3a495e;
+    --color-base-500: #5d6c82;
+    --color-base-400: #8593a8;
+    --color-base-300: #aab5c6;
+    --color-base-200: #cdd5e1;
+    --color-base-100: #e6ebf2;
+    --color-base-50: #f6f8fb;
 
-    --color-copper-600: #a85d2e;
-    --color-copper-500: #c97b3f;
-    --color-copper-400: #e3975a;
+    /* Aksen = oranye beacon */
+    --color-accent-600: #d9480f;
+    --color-accent-500: #f2621f;
+    --color-accent-400: #ff7a3d;
+    --color-accent-300: #ffa070;
 
-    --color-danger-600: #b3261e;
-    --color-danger-500: #dc3c30;
-    --color-danger-400: #f0665a;
+    /* Pendamping = biru navy terang (dulu tembaga) */
+    --color-copper-600: #2f5aa8;
+    --color-copper-500: #3d6cc4;
+    --color-copper-400: #6f97e3;
 
-    --color-warning-500: #d89b2c;
-    --color-warning-400: #f0b94a;
+    --color-danger-600: #c0281e;
+    --color-danger-500: #e5483b;
+    --color-danger-400: #ff6b5e;
+
+    --color-warning-500: #e0a12e;
+    --color-warning-400: #f5bd4f;
 
     /* Status kerja Live Kerja (lihat src/lib/workStatus.js) */
     --color-st-working: #34d399;
@@ -50,45 +63,42 @@
     --color-st-camera: #a78bfa;
     --color-st-online: #2dd4bf;
 
-    /* Bayangan kartu: nyaris tak terlihat di tema gelap, memberi kedalaman di tema terang */
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.2);
-    --shadow-raised: 0 8px 24px -12px rgb(0 0 0 / 0.6);
+    --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-raised: 0 16px 40px -20px rgb(0 0 0 / 0.7);
 }
 
 /*
- * Tema terang ("ruang kontrol siang hari"): skala base dibalik -- 950 tetap
- * berarti "latar halaman" dan 50 tetap "teks paling tegas" -- jadi semua
- * komponen yang memakai token ikut berganti tanpa diubah satu per satu.
- * Warna aksen/status digelapkan supaya kontras teks tetap >= 4.5:1 di atas
- * putih. Area video sengaja tetap hitam: monitor gelap di atas meja terang.
+ * Tema terang (bawaan): kanvas kabut, kartu putih, tinta navy. Oranye untuk
+ * TEKS digelapkan supaya kontras >= 4.5:1 di atas putih; area video tetap
+ * hitam (monitor gelap di atas meja terang).
  */
 :root[data-theme='light'] {
     color-scheme: light;
 
-    --color-base-950: #f3f5f8;
+    --color-base-950: #eef1f5;
     --color-base-900: #ffffff;
-    --color-base-850: #eef1f5;
-    --color-base-800: #e1e6ed;
-    --color-base-700: #cdd4de;
-    --color-base-600: #aeb7c4;
-    --color-base-500: #667085;
-    --color-base-400: #535d6f;
-    --color-base-300: #3a4455;
-    --color-base-200: #262f3e;
-    --color-base-100: #172030;
-    --color-base-50: #0b1220;
+    --color-base-850: #f4f6f9;
+    --color-base-800: #e5e9ef;
+    --color-base-700: #d3d9e2;
+    --color-base-600: #b2bcca;
+    --color-base-500: #66738a;
+    --color-base-400: #4f5b70;
+    --color-base-300: #37425a;
+    --color-base-200: #222c42;
+    --color-base-100: #131c2e;
+    --color-base-50: #0b1322;
 
-    --color-accent-600: #075e50;
-    --color-accent-500: #0b7a66;
-    --color-accent-400: #096b5a;
-    --color-accent-300: #075e50;
+    --color-accent-600: #a8380a;
+    --color-accent-500: #e0560f;
+    --color-accent-400: #b9450c;
+    --color-accent-300: #9a3a0b;
 
-    --color-copper-600: #8a4718;
-    --color-copper-500: #a2551f;
-    --color-copper-400: #94501f;
+    --color-copper-600: #1f417f;
+    --color-copper-500: #2c5398;
+    --color-copper-400: #284b8a;
 
     --color-danger-600: #a32019;
-    --color-danger-500: #c8342a;
+    --color-danger-500: #cc3529;
     --color-danger-400: #b42c22;
 
     --color-warning-500: #b7790b;
@@ -102,8 +112,8 @@
     --color-st-camera: #6d28d9;
     --color-st-online: #0f766e;
 
-    --shadow-card: 0 1px 2px rgb(16 24 40 / 0.05), 0 1px 3px rgb(16 24 40 / 0.04);
-    --shadow-raised: 0 12px 32px -16px rgb(16 24 40 / 0.25);
+    --shadow-card: 0 1px 2px rgb(11 19 34 / 0.04), 0 2px 8px -2px rgb(11 19 34 / 0.05);
+    --shadow-raised: 0 20px 44px -22px rgb(11 19 34 / 0.28);
 }
 
 @layer base {
@@ -114,8 +124,8 @@
     body {
         background-color: var(--color-base-950);
         color: var(--color-base-100);
-        font-feature-settings: 'cv11', 'ss01';
         -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
     }
 
     ::selection {
@@ -136,29 +146,71 @@
  * deretan class Tailwind yang sama (dan diam-diam mulai berbeda).
  */
 @layer components {
+    /* Label kecil di atas angka/judul bagian: huruf biasa, bukan KAPITAL MONO */
     .eyebrow {
-        font-family: var(--font-mono);
-        font-size: 10.5px;
-        font-weight: 500;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: var(--color-base-400);
+        font-family: var(--font-sans);
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        color: var(--color-base-500);
+    }
+
+    /*
+     * Ciri khas: beacon oranye yang berdenyut seperti sinyal BLE. Hanya untuk
+     * hal yang benar-benar "hidup" (menu aktif, siaran live, logo) -- jangan
+     * ditabur di tempat lain.
+     */
+    .beacon {
+        position: relative;
+        display: inline-block;
+        width: 0.5rem;
+        height: 0.5rem;
+        flex-shrink: 0;
+        border-radius: 9999px;
+        background-color: var(--color-accent-500);
+    }
+
+    .beacon::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background-color: inherit;
+        animation: beacon-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+
+    @keyframes beacon-ping {
+        0% {
+            transform: scale(1);
+            opacity: 0.55;
+        }
+        75%,
+        100% {
+            transform: scale(3.4);
+            opacity: 0;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .beacon::after {
+            animation: none;
+        }
     }
 
     .field-label {
         display: block;
-        margin-bottom: 0.375rem;
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: var(--color-base-300);
+        margin-bottom: 0.4rem;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--color-base-200);
     }
 
     .field-control {
         width: 100%;
-        border-radius: 0.5rem;
+        border-radius: 0.75rem;
         border: 1px solid var(--color-base-700);
-        background-color: var(--color-base-850);
-        padding: 0.625rem 0.875rem;
+        background-color: var(--color-base-900);
+        padding: 0.65rem 0.9rem;
         font-size: 0.875rem;
         color: var(--color-base-50);
         outline: none;
@@ -180,7 +232,7 @@
 
     .field-control:focus {
         border-color: var(--color-accent-500);
-        box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent-500) 18%, transparent);
+        box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-accent-500) 16%, transparent);
     }
 
     .field-control:disabled {
@@ -222,19 +274,17 @@
     }
 
     .data-table th {
-        padding: 0.625rem 1.25rem;
+        padding: 0.75rem 1.25rem;
         border-bottom: 1px solid var(--color-base-800);
-        font-family: var(--font-mono);
-        font-size: 10.5px;
-        font-weight: 500;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
+        background-color: color-mix(in oklab, var(--color-base-850) 60%, transparent);
+        font-size: 0.75rem;
+        font-weight: 600;
         color: var(--color-base-500);
         white-space: nowrap;
     }
 
     .data-table td {
-        padding: 0.875rem 1.25rem;
+        padding: 0.95rem 1.25rem;
         border-bottom: 1px solid color-mix(in oklab, var(--color-base-800) 70%, transparent);
         vertical-align: middle;
     }

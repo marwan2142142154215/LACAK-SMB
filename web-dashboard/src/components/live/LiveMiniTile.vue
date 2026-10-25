@@ -41,7 +41,7 @@ const elapsed = computed(() => (props.since ? formatElapsed(props.since, now.val
             bare
             class="!rounded-none !border-0"
         />
-        <div v-else class="flex size-full items-center justify-center bg-base-900 text-base-500">
+        <div v-else class="flex size-full items-center justify-center bg-[#0e1520] text-white/35">
             <MonitorOff class="size-5" />
         </div>
 
@@ -57,7 +57,7 @@ const elapsed = computed(() => (props.since ? formatElapsed(props.since, now.val
         <div class="absolute top-2 left-2 flex items-center gap-1">
             <span
                 v-if="meta"
-                class="inline-flex items-center gap-1 rounded bg-black/65 px-1.5 py-0.5 font-mono text-[9.5px] tracking-[0.08em] text-white/90 uppercase backdrop-blur-sm"
+                class="inline-flex items-center gap-1 rounded-full bg-black/65 px-1.5 py-0.5 text-[10.5px] text-white/90 backdrop-blur-sm font-semibold"
             >
                 <span class="led" :class="[meta.led, status === 'alert' && 'motion-safe:animate-pulse']" />
                 {{ meta.label }}
@@ -76,7 +76,7 @@ const elapsed = computed(() => (props.since ? formatElapsed(props.since, now.val
             class="absolute inset-x-0 bottom-0 flex items-baseline gap-1.5 bg-gradient-to-t from-black/85 to-transparent px-2.5 pt-6 pb-1.5"
         >
             <span class="min-w-0 truncate text-xs font-semibold text-white">{{ name }}</span>
-            <span v-if="site" class="min-w-0 truncate font-mono text-[9.5px] tracking-[0.06em] text-white/60 uppercase">{{ site }}</span>
+            <span v-if="site" class="min-w-0 truncate text-[10.5px] text-white/60 font-semibold">{{ site }}</span>
             <span v-if="elapsed" class="ml-auto shrink-0 font-mono text-[10px] text-white/75 tabular-nums">{{ elapsed }}</span>
         </div>
     </div>
