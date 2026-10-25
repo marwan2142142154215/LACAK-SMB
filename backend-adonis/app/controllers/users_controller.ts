@@ -1,7 +1,11 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
-import { accessOf, can } from '#services/access'
+import { accessOf, can, type Access } from '#services/access'
+import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/activity_log'
+import { removeBroadcaster } from '#services/livekit'
+import { hasGrantBasedAccess } from '#services/organization_scope'
+import { closeSession, openSessionOf } from '#services/work_presence'
 import { fail, success } from '#services/api_response'
 import { hashLaravelPassword } from '#services/laravel/bcrypt'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
@@ -40,7 +44,11 @@ import {
  */
 export default class UsersController {
     async index(ctx: HttpContext) {
-        if (!(await canManage(ctx))) return forbidden(ctx)
+        const access = await accessOf(ctx)
+        const manager = can(access, 'users.manage')
+        // Admin & leader: hanya staf (peran staff_viewer) di site yang
+        // dipegangnya -- cukup untuk menonaktifkan/mengaktifkan kembali.
+        if (!manager && !hasGrantBasedAccess(access)) return forbidden(ctx)
 
         const input = laravelInput(ctx)
         const perPage = perPageOf(input, 20)
@@ -50,6 +58,12 @@ export default class UsersController {
         const filtered = () => {
             const query = usersQuery()
             if (organizationId) query.where('organization_id', organizationId)
+            if (!manager) {
+                query
+                    .whereIn('organization_id', access.grantedOrganizationIds)
+                    .whereIn('id', usersWithRoles([STAFF_ROLE]))
+                    .whereNotIn('id', usersWithRolesExcept(STAFF_ROLE))
+            }
             return query
         }
 
@@ -184,12 +198,14 @@ export default class UsersController {
             return ctx.response.status(422).send(fail('Tidak bisa menghapus akun sendiri'))
         }
 
-        // Soft delete (SoftDeletes): deleted_at & updated_at diisi, token
-        // login tidak dicabut di sini -- staf terhapus otomatis tidak lolos
-        // auth karena dianggap tidak ada.
+        // Soft delete (SoftDeletes): deleted_at & updated_at diisi.
         const now = new Date()
         await db.from('users').where('id', user.id).update({ deleted_at: now, updated_at: now })
         await logUserSnapshot(ctx, 'deleted', user.id)
+        // Staf yang dihapus juga langsung keluar dari Live Kerja & socket-nya
+        // (gateway memutus socket begitu tokennya hilang).
+        await db.transaction((trx) => deleteTokens(trx, user.id))
+        await endLiveWork(ctx, user.id, 'deleted')
 
         return success('Staf berhasil dihapus')
     }
@@ -197,7 +213,7 @@ export default class UsersController {
     async suspend(ctx: HttpContext) {
         const user = await findUser(routeId(ctx.params.user))
         if (!user) return notFound(ctx)
-        if (!(await canManage(ctx))) return forbidden(ctx)
+        if (!(await canChangeStatus(await accessOf(ctx), user))) return forbidden(ctx)
 
         if (user.id === ctx.authUser!.id) {
             return ctx.response.status(422).send(fail('Tidak bisa men-suspend akun sendiri'))
@@ -214,6 +230,10 @@ export default class UsersController {
             await deleteTokens(trx, user.id)
         })
         await logUserChanges(ctx, user, { is_active: false }, user.organization_id)
+        // Langsung putus juga dari Live Kerja: sesi kerja ditutup & dikeluarkan
+        // dari room LiveKit. Socket dashboard/APK-nya diputus gateway begitu
+        // tokennya hilang (realtime-gateway, cek token berkala).
+        await endLiveWork(ctx, user.id, 'suspended')
 
         return success('Staf disuspen — semua sesi login dicabut', await freshUserResource(user.id))
     }
@@ -221,7 +241,7 @@ export default class UsersController {
     async reactivate(ctx: HttpContext) {
         const user = await findUser(routeId(ctx.params.user))
         if (!user) return notFound(ctx)
-        if (!(await canManage(ctx))) return forbidden(ctx)
+        if (!(await canChangeStatus(await accessOf(ctx), user))) return forbidden(ctx)
 
         if (user.is_active !== true) {
             await db
@@ -295,6 +315,67 @@ export default class UsersController {
 
 async function canManage(ctx: HttpContext) {
     return can(await accessOf(ctx), 'users.manage')
+}
+
+const STAFF_ROLE = 'staff_viewer'
+
+/** id user yang punya salah satu peran ini (subquery). */
+function usersWithRoles(roles: string[]) {
+    return db
+        .from('model_has_roles')
+        .join('roles', 'roles.id', 'model_has_roles.role_id')
+        .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
+        .whereIn('roles.name', roles)
+        .select('model_has_roles.model_id')
+}
+
+/** id user yang punya peran SELAIN peran ini (subquery). */
+function usersWithRolesExcept(role: string) {
+    return db
+        .from('model_has_roles')
+        .join('roles', 'roles.id', 'model_has_roles.role_id')
+        .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
+        .whereNot('roles.name', role)
+        .select('model_has_roles.model_id')
+}
+
+/**
+ * Menonaktifkan / mengaktifkan kembali: super_admin (users.manage) siapa pun;
+ * admin & leader hanya staf biasa (peran staff_viewer saja) di site yang
+ * diberikan kepadanya -- tidak bisa menyentuh admin, leader, atau root.
+ */
+async function canChangeStatus(access: Access, user: UserRow): Promise<boolean> {
+    if (can(access, 'users.manage')) return true
+    if (!hasGrantBasedAccess(access)) return false
+    if (
+        user.organization_id === null ||
+        !access.grantedOrganizationIds.includes(user.organization_id)
+    ) {
+        return false
+    }
+    const roles = await db
+        .from('model_has_roles')
+        .join('roles', 'roles.id', 'model_has_roles.role_id')
+        .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
+        .where('model_has_roles.model_id', user.id)
+        .select('roles.name')
+    return roles.length > 0 && roles.every((role) => role.name === STAFF_ROLE)
+}
+
+/** Tutup sesi Live Kerja yang masih terbuka & keluarkan dari room LiveKit. */
+async function endLiveWork(ctx: HttpContext, userId: number, reason: string) {
+    const session = await openSessionOf(userId)
+    if (!session) return
+    await closeSession(session, reason, 'work_end')
+    await logModelEvent(ctx, {
+        event: 'updated',
+        subjectType: WORK_SESSION_MORPH,
+        subjectId: session.id,
+        organizationId: session.organization_id,
+        attributes: { ended_at: laravelDate(session.ended_at), end_reason: reason },
+        old: { ended_at: null, end_reason: null },
+    })
+    await removeBroadcaster(session.organization_id, userId)
 }
 
 function forbidden(ctx: HttpContext) {

@@ -120,7 +120,14 @@ export const useChatStore = defineStore('chat', () => {
         })
         socket.on('disconnect', () => (connected.value = false))
         socket.on('connect_error', () => (error.value = 'Chat tidak bisa tersambung ke server'))
-        socket.on('session:expired', () => stop())
+        // Token dicabut (dinonaktifkan, dihapus, login di perangkat lain):
+        // gateway memutus socket -> keluar ke halaman login di mana pun.
+        socket.on('session:expired', async () => {
+            stop()
+            auth.clearSession()
+            const { default: router } = await import('@/router')
+            router.push({ name: 'login' })
+        })
 
         socket.on('chat:message', addMessage)
         socket.on('chat:presence', ({ organizationId, users }) => {
