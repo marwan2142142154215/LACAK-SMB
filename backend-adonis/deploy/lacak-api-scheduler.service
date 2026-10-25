@@ -1,0 +1,22 @@
+# Salin ke /etc/systemd/system/lacak-api-scheduler.service lalu:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now lacak-api-scheduler
+# Menjalankan hasil build (node ace build) di /var/www/lacak/backend-adonis/build.
+# User disamakan dengan pemilik folder & proses gateway (sesuaikan bila beda).
+[Unit]
+Description=Scheduler Lacak SMB (close-stale & detak)
+After=network.target postgresql.service redis-server.service
+# Jangan restart tanpa henti kalau error menetap (pelajaran dari lacak-bot).
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=smbqa
+WorkingDirectory=/var/www/lacak/backend-adonis/build
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/env node ace scheduler:run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
