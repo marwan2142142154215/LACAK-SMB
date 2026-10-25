@@ -101,10 +101,31 @@ const savedCameraSize = readPref('lacak_live_camera_size', 'small')
 const cameraSize = ref(CAMERA_SIZES.some((option) => option.value === savedCameraSize) ? savedCameraSize : 'small')
 watch(cameraSize, (value) => writePref('lacak_live_camera_size', value))
 
-// ---- Status semua staf (dari server), diperbarui berkala.
+// ---- Status semua staf: dimuat sekali dari /live/overview, lalu perubahan
+// per staf didorong gateway lewat socket (live:status). Muat ulang penuh
+// hanya sesekali sebagai pengaman (staf baru di roster, socket sempat putus).
+const STATUS_RESYNC_MS = 2 * 60_000
 const roster = ref([])
 const sessionByIdentity = ref({})
 let statusTimer = null
+let stopLiveStatus = null
+
+function applyLiveStatus(event) {
+    const sessions = { ...sessionByIdentity.value }
+    if (event.session) sessions[event.participant_identity] = event.session
+    else delete sessions[event.participant_identity]
+    sessionByIdentity.value = sessions
+
+    roster.value = roster.value.map((staff) =>
+        staff.user_id === event.user_id ? { ...staff, status: event.status, started_at: event.started_at } : staff,
+    )
+}
+
+watch(
+    () => live.watchedSiteIds,
+    (siteIds) => live.watchLiveStatus(siteIds),
+    { immediate: true },
+)
 
 async function loadStatus() {
     try {
@@ -128,7 +149,7 @@ async function loadStatus() {
 // dan /live/overview berat -- jadi hanya untuk identity yang belum pernah
 // dicari, dan paling sering sekali per OVERVIEW_MIN_GAP_MS. Peserta tanpa
 // sesi kerja (mis. sesinya baru ditutup) tidak memicu muat ulang lagi;
-// statusnya ikut diperbarui oleh loadStatus berkala.
+// statusnya ikut diperbarui lewat socket (live:status) & resync berkala.
 const OVERVIEW_MIN_GAP_MS = 5_000
 const requestedIdentities = new Set()
 let lastEarlyLoadAt = 0
@@ -389,7 +410,8 @@ async function endWork() {
 
 onMounted(async () => {
     document.addEventListener('fullscreenchange', syncFullscreen)
-    statusTimer = setInterval(loadStatus, 15_000)
+    stopLiveStatus = live.onLiveStatus(applyLiveStatus)
+    statusTimer = setInterval(loadStatus, STATUS_RESYNC_MS)
 
     try {
         await loadStatus()
@@ -424,6 +446,8 @@ onBeforeUnmount(() => {
     document.removeEventListener('fullscreenchange', syncFullscreen)
     clearInterval(statusTimer)
     clearTimeout(earlyLoadTimer)
+    stopLiveStatus?.()
+    live.watchLiveStatus([])
 })
 </script>
 
