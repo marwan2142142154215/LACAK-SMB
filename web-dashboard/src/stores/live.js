@@ -9,6 +9,9 @@ const HEARTBEAT_INTERVAL_MS = 30_000
 // mati lebih lama dari batas ini (menyalakan ulang kamera butuh ~1 detik).
 const CAMERA_CHECK_MS = 2_000
 const CAMERA_DEAD_AFTER_MS = 5_000
+// Render ulang grid paling sering sekali per selang ini untuk event yang
+// beruntun (indikator bicara, kualitas koneksi).
+const BUMP_THROTTLE_MS = 250
 // Tanpa keyboard/mouse selama ini (atau layar komputer terkunci) -> IDLE.
 const IDLE_THRESHOLD_MS = 5 * 60_000
 
@@ -122,6 +125,7 @@ let heartbeatTimer = null
 let cameraCheckTimer = null
 let cameraDeadSince = null
 let reportTimer = null
+let bumpTimer = null
 let wakeLock = null
 let idleDetector = null
 let idleAbort = null
@@ -213,7 +217,16 @@ export const useLiveStore = defineStore('live', () => {
     })
 
     function bump() {
+        clearTimeout(bumpTimer)
+        bumpTimer = null
         revision.value++
+    }
+
+    // Siapa yang sedang bicara & kualitas koneksi berubah berkali-kali per
+    // detik; tiap bump me-render ulang seluruh grid Live Kerja. Untuk event
+    // seperti itu cukup satu render per BUMP_THROTTLE_MS.
+    function bumpSoon() {
+        bumpTimer ??= setTimeout(bump, BUMP_THROTTLE_MS)
     }
 
     /** Sambung ke room satu site dan simpan di `rooms`. */
@@ -265,8 +278,8 @@ export const useLiveStore = defineStore('live', () => {
                 if (track.kind === 'audio') stopAudioTrack(track)
                 bump()
             })
-            .on(RoomEvent.ConnectionQualityChanged, bump)
-            .on(RoomEvent.ActiveSpeakersChanged, bump)
+            .on(RoomEvent.ConnectionQualityChanged, bumpSoon)
+            .on(RoomEvent.ActiveSpeakersChanged, bumpSoon)
             .on(RoomEvent.LocalTrackPublished, handleLocalTracksChanged)
             .on(RoomEvent.LocalTrackUnpublished, handleLocalTracksChanged)
             .on(RoomEvent.TrackMuted, handleLocalCameraStopped)
@@ -292,11 +305,18 @@ export const useLiveStore = defineStore('live', () => {
             if (room.state !== CONNECTED) continue
             for (const participant of room.remoteParticipants.values()) {
                 const visible = visibleIdentities.has(participant.identity)
-                participant.getTrackPublication(CAMERA_SOURCE)?.setSubscribed(visible)
-                participant.getTrackPublication(SCREEN_SOURCE)?.setSubscribed(visible)
-                participant.getTrackPublication(MICROPHONE_SOURCE)?.setSubscribed(listened.has(participant.identity))
+                setSubscribed(participant.getTrackPublication(CAMERA_SOURCE), visible)
+                setSubscribed(participant.getTrackPublication(SCREEN_SOURCE), visible)
+                setSubscribed(participant.getTrackPublication(MICROPHONE_SOURCE), listened.has(participant.identity))
             }
         }
+    }
+
+    // setSubscribed() di livekit-client SELALU mengirim pesan ke server walau
+    // nilainya sama -- dan fungsi di atas dipanggil di tiap event peserta.
+    // Tanpa cek ini, 50 staf live = ±150 pesan per event, berkali-kali per detik.
+    function setSubscribed(publication, subscribed) {
+        if (publication && publication.isDesired !== subscribed) publication.setSubscribed(subscribed)
     }
 
     /** Nyalakan/bisukan suara satu staf -- panggil dari klik (izin autoplay). */

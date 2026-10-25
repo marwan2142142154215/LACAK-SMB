@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Middleware\ExtendTokenExpiry;
 use App\Http\Middleware\RecordApiActivity;
 use Illuminate\Auth\AuthenticationException;
@@ -8,6 +9,8 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
@@ -55,6 +58,17 @@ return Application::configure(basePath: dirname(__DIR__))
         // yang tidak terautentikasi wajib dibalas JSON 401, bukan redirect.
         $exceptions->render(function (AuthenticationException $e, Request $request) {
             if ($request->is('api/*')) {
+                // Token dicabut karena akun ini login di perangkat lain (satu
+                // akun = satu sesi, lihat AuthController::endOtherSessions).
+                $tokenId = Str::before((string) $request->bearerToken(), '|');
+                if (ctype_digit($tokenId) && Cache::has(AuthController::REPLACED_TOKEN_CACHE_PREFIX.$tokenId)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Sesi Anda berakhir karena akun ini login di perangkat lain.',
+                        'errors' => ['reason' => 'session_replaced'],
+                    ], 401);
+                }
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Belum masuk atau token tidak berlaku',

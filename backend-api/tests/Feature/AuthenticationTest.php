@@ -1,8 +1,12 @@
 <?php
 
+use App\Models\Organization;
 use App\Models\User;
+use App\Models\WorkSession;
+use App\Support\TwoFactorPolicy;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\PersonalAccessToken;
 use PragmaRX\Google2FA\Google2FA;
 
@@ -233,4 +237,72 @@ test('token tanpa expires_at (akun layanan) tidak disentuh ExtendTokenExpiry', f
 
     $fresh = PersonalAccessToken::find($tokenId);
     expect($fresh->expires_at)->toBeNull();
+});
+
+/** Login password tanpa 2FA, kembalikan token Bearer-nya. */
+function loginToken(User $user, string $client = 'web_dashboard'): string
+{
+    return test()->postJson('/api/v1/auth/login', ['username' => $user->username, 'password' => 'password-benar', 'client' => $client])
+        ->assertOk()
+        ->json('data.access_token');
+}
+
+test('satu akun satu sesi: login baru mengakhiri sesi di perangkat lain', function () {
+    TwoFactorPolicy::setRequired(false);
+    $user = User::factory()->create(['password' => bcrypt('password-benar')]);
+
+    $oldToken = loginToken($user, 'web_dashboard');
+    $newToken = loginToken($user, 'master_app');
+    app('auth')->forgetGuards();
+
+    $this->withHeader('Authorization', 'Bearer '.$oldToken)
+        ->getJson('/api/v1/auth/me')
+        ->assertStatus(401)
+        ->assertJsonPath('errors.reason', 'session_replaced');
+
+    app('auth')->forgetGuards();
+    $this->withHeader('Authorization', 'Bearer '.$newToken)->getJson('/api/v1/auth/me')->assertOk();
+
+    expect($user->tokens()->count())->toBe(1);
+});
+
+test('token tidak berlaku biasa tetap dibalas 401 tanpa alasan login di perangkat lain', function () {
+    $this->withHeader('Authorization', 'Bearer 999|token-asal')
+        ->getJson('/api/v1/auth/me')
+        ->assertStatus(401)
+        ->assertJsonPath('errors', null);
+});
+
+test('login tidak mencabut token akun layanan tanpa expires_at', function () {
+    TwoFactorPolicy::setRequired(false);
+    $user = User::factory()->create(['password' => bcrypt('password-benar')]);
+    $serviceToken = $user->createToken('telegram-bot-service')->plainTextToken;
+
+    loginToken($user);
+    app('auth')->forgetGuards();
+
+    $this->withHeader('Authorization', 'Bearer '.$serviceToken)->getJson('/api/v1/auth/me')->assertOk();
+});
+
+test('login baru memutus siaran Live Kerja perangkat lama tanpa menutup sesi kerjanya', function () {
+    TwoFactorPolicy::setRequired(false);
+    config([
+        'lacaksmb.livekit.url' => 'wss://live.test',
+        'lacaksmb.livekit.api_key' => 'test-key',
+        'lacaksmb.livekit.api_secret' => str_repeat('s', 32),
+    ]);
+    Http::fake(['live.test/*' => Http::response([], 200)]);
+
+    $staff = User::factory()->create(['password' => bcrypt('password-benar'), 'organization_id' => Organization::factory()->create()->id]);
+    $staff->assignRole('staff_viewer');
+
+    $this->withHeader('Authorization', 'Bearer '.loginToken($staff))
+        ->postJson('/api/v1/live/sessions/start')
+        ->assertCreated();
+
+    loginToken($staff);
+
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/twirp/livekit.RoomService/RemoveParticipant')
+        && $request['identity'] === "user-{$staff->id}");
+    expect(WorkSession::open()->where('user_id', $staff->id)->exists())->toBeTrue();
 });
