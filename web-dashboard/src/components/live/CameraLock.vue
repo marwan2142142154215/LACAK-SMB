@@ -15,6 +15,9 @@ import { useLiveStore } from '@/stores/live'
 // makin jarang kalau terus gagal (kamera yang dipakai aplikasi lain tidak
 // perlu dibuka ulang tiap 10 detik sepanjang hari).
 const AUTO_RETRY_DELAYS_MS = [10_000, 30_000, 60_000]
+// Jeda diacak +-25% supaya puluhan staf yang terkunci bersamaan (mis. setelah
+// server LiveKit tersendat) tidak membuka ulang kamera di detik yang sama.
+const RETRY_JITTER = 0.25
 
 const live = useLiveStore()
 const toast = useToast()
@@ -26,7 +29,11 @@ let retryTimer = null
 // Saat istirahat kamera boleh mati. Kalau layar juga belum dibagikan, kunci
 // layar (ScreenShareLock) tampil lebih dulu -- satu kunci sekali waktu.
 const screenLocked = computed(() => live.screenRequired && !live.localScreenTrack)
-const locked = computed(() => live.isBroadcasting && !live.cameraLive && !live.onBreak && !screenLocked.value)
+// Saat LiveKit menyambung ulang kamera tidak dikunci -- yang putus server,
+// dan kamera/layar diterbitkan ulang otomatis begitu tersambung.
+const locked = computed(
+    () => live.isBroadcasting && !live.reconnecting && !live.cameraLive && !live.onBreak && !screenLocked.value,
+)
 
 async function restartCamera({ silent = false } = {}) {
     if (restarting.value) return
@@ -43,7 +50,8 @@ async function restartCamera({ silent = false } = {}) {
 // Selama terkunci, coba nyalakan ulang sendiri berkala -- sering kali kamera
 // sudah dilepas aplikasi lain dan bisa langsung dipakai lagi.
 function scheduleRetry(attempt) {
-    const delay = AUTO_RETRY_DELAYS_MS[Math.min(attempt, AUTO_RETRY_DELAYS_MS.length - 1)]
+    const base = AUTO_RETRY_DELAYS_MS[Math.min(attempt, AUTO_RETRY_DELAYS_MS.length - 1)]
+    const delay = base * (1 - RETRY_JITTER + Math.random() * 2 * RETRY_JITTER)
     retryTimer = setTimeout(async () => {
         await restartCamera({ silent: true })
         if (locked.value) scheduleRetry(attempt + 1)

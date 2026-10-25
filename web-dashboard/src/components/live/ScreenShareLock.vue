@@ -1,7 +1,7 @@
 <script setup>
 import { MonitorUp, Square } from '@lucide/vue'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useToast } from '@/composables/useToast'
@@ -18,9 +18,78 @@ const toast = useToast()
 const sharing = ref(false)
 const ending = ref(false)
 
+// Staf bekerja di aplikasi lain, jadi kunci di halaman ini sering tidak
+// terlihat. Selama layar tidak dibagikan: notifikasi desktop (izinnya diminta
+// saat Mulai kerja) diulang tiap ALERT_REPEAT_MS, dan judul tab berkedip.
+const ALERT_REPEAT_MS = 60_000
+const TITLE_BLINK_MS = 1_000
+const ALERT_TITLE = '⚠ Layar tidak dibagikan'
+let alertTimer = null
+let blinkTimer = null
+let notification = null
+let originalTitle = null
+
 // Saat istirahat layar boleh dimatikan; begitu "Lanjut kerja", kunci aktif lagi.
 // screenLive: track layar masih ada tapi berhenti mengirim juga dikunci.
-const locked = computed(() => live.isBroadcasting && live.screenRequired && (!live.localScreenTrack || !live.screenLive) && !live.onBreak)
+// Saat LiveKit menyambung ulang tidak dikunci: layar yang masih dibagikan
+// diterbitkan ulang otomatis begitu tersambung (live.republishMissingTracks).
+const locked = computed(
+    () =>
+        live.isBroadcasting &&
+        !live.reconnecting &&
+        live.screenRequired &&
+        (!live.localScreenTrack || !live.screenLive) &&
+        !live.onBreak,
+)
+
+function notifyScreenOff() {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+    notification?.close()
+    notification = new Notification('Layar Live Kerja tidak dibagikan', {
+        body: 'Status Anda SCREEN OFF dan waktu ini tidak dihitung sebagai jam kerja. Klik untuk membagikan layar lagi.',
+        tag: 'lacak-screen-off',
+        requireInteraction: true,
+    })
+    notification.onclick = () => {
+        window.focus()
+        notification?.close()
+    }
+}
+
+function startAlert() {
+    notifyScreenOff()
+    alertTimer = setInterval(notifyScreenOff, ALERT_REPEAT_MS)
+    originalTitle = document.title
+    blinkTimer = setInterval(() => {
+        document.title = document.title === ALERT_TITLE ? originalTitle : ALERT_TITLE
+    }, TITLE_BLINK_MS)
+}
+
+function stopAlert() {
+    clearInterval(alertTimer)
+    clearInterval(blinkTimer)
+    alertTimer = null
+    blinkTimer = null
+    notification?.close()
+    notification = null
+    if (originalTitle !== null) document.title = originalTitle
+    originalTitle = null
+}
+
+// Layar yang terlepas sesaat (diterbitkan ulang otomatis) tidak perlu
+// diperingatkan -- baru setelah ALERT_DELAY_MS masih terkunci.
+const ALERT_DELAY_MS = 10_000
+let alertDelay = null
+
+watch(locked, (isLocked) => {
+    clearTimeout(alertDelay)
+    stopAlert()
+    if (isLocked) alertDelay = setTimeout(startAlert, ALERT_DELAY_MS)
+})
+onBeforeUnmount(() => {
+    clearTimeout(alertDelay)
+    stopAlert()
+})
 
 async function shareAgain() {
     sharing.value = true
@@ -62,7 +131,8 @@ async function endWork() {
                 <DialogTitle class="mt-4 font-display text-xl font-semibold text-base-50">Layar wajib dibagikan</DialogTitle>
                 <DialogDescription class="mt-2 text-sm text-pretty text-base-400">
                     Layar Anda sedang tidak dibagikan (berbagi layar dihentikan, atau halaman baru saja dimuat ulang), jadi status Anda
-                    <strong class="text-st-screen">Screen off</strong> dan tercatat di log kerja. Tekan
+                    <strong class="text-st-screen">Screen off</strong> dan tercatat di log kerja.
+                    <strong class="text-base-100">Selama layar tidak dibagikan, waktu ini tidak dihitung sebagai jam kerja.</strong> Tekan
                     <strong class="text-base-100">Bagikan lagi</strong>, pilih tab <em>Entire screen</em> (Seluruh layar), lalu tekan Share
                     untuk melanjutkan kerja.
                 </DialogDescription>

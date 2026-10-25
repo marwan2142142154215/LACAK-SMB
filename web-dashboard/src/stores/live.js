@@ -23,6 +23,16 @@ const IDLE_THRESHOLD_MS = 5 * 60_000
 // Jalur media (UDP/TCP) dicek ulang tiap selang ini -- bisa berpindah saat
 // LiveKit menyambung ulang.
 const TRANSPORT_CHECK_MS = 30_000
+// Kamera/layar yang terlepas dari room (gagal diterbitkan ulang saat LiveKit
+// menyambung ulang) diterbitkan lagi paling sering sekali per selang ini, dan
+// sesudah tersambung ulang ditunda acak sampai REPUBLISH_JITTER_MS -- puluhan
+// staf yang pulih bersamaan tidak menyerbu server sekaligus.
+const REPUBLISH_MIN_GAP_MS = 15_000
+const REPUBLISH_JITTER_MS = 5_000
+// Room siaran putus total (LiveKit menyerah menyambung ulang): sambung lagi
+// otomatis setelah jeda acak ini, beberapa kali dengan jeda makin panjang.
+const REJOIN_DELAYS_MS = [5_000, 15_000, 30_000, 60_000, 120_000]
+const REJOIN_JITTER_MS = 10_000
 
 // Nilai Track.Source & ConnectionState.Connected di livekit-client --
 // ditulis langsung supaya store ini (dipakai AppShell di SEMUA halaman)
@@ -139,6 +149,13 @@ let screenDeadSince = null
 let reportTimer = null
 let bumpTimer = null
 let transportTimer = null
+// Track layar yang sedang saya siarkan -- disimpan supaya bisa diterbitkan
+// ulang tanpa dialog pilih layar kalau terlepas saat LiveKit menyambung ulang.
+let ownScreenTrack = null
+let republishing = false
+let lastRepublishAt = 0
+let rejoinTimer = null
+let rejoinAttempt = 0
 // Socket Live Kerja ke gateway (lihat ensureLiveSocket).
 let liveSocket = null
 let liveSocketToken = null
@@ -204,6 +221,10 @@ export const useLiveStore = defineStore('live', () => {
     const mediaOverTcp = computed(() => mediaTransport.value === 'tcp')
     // Penonton: identity staf -> 'udp' | 'tcp' (dari gateway).
     const transportByIdentity = ref({})
+    // Room siaran saya sedang menyambung ulang ke LiveKit. Selama itu status
+    // kamera/layar TIDAK dilaporkan -- yang putus server, bukan staf yang
+    // mematikan kamera (tanpa laporan, status jadi DISCONNECTED, bukan ALERT).
+    const reconnecting = ref(false)
 
     const isBroadcasting = computed(() => mode.value === 'broadcasting')
 
@@ -314,6 +335,9 @@ export const useLiveStore = defineStore('live', () => {
             .on(RoomEvent.LocalTrackUnpublished, handleLocalTracksChanged)
             .on(RoomEvent.TrackMuted, handleLocalCameraStopped)
             .on(RoomEvent.TrackUnmuted, handleLocalTracksChanged)
+            .on(RoomEvent.Reconnecting, () => handleReconnecting(room))
+            .on(RoomEvent.SignalReconnecting, () => handleReconnecting(room))
+            .on(RoomEvent.Reconnected, () => handleReconnected(room))
             .on(RoomEvent.Disconnected, () => handleRoomDisconnected(siteId, room))
 
         // autoSubscribe: false -- LiveView yang memilih peserta mana yang
@@ -366,6 +390,8 @@ export const useLiveStore = defineStore('live', () => {
 
     function resetBroadcastState() {
         mode.value = 'idle'
+        ownScreenTrack = null
+        reconnecting.value = false
         cameraProblem.value = null
         broadcastStartedAt.value = null
         onBreak.value = false
@@ -439,6 +465,7 @@ export const useLiveStore = defineStore('live', () => {
     // Diputus dari sisi server (sesi ditutup timeout, staf dikeluarkan) atau
     // koneksi gagal total setelah LiveKit menyerah reconnect.
     function handleRoomDisconnected(siteId, room) {
+        const wasBroadcasting = room === ownRoom && mode.value === 'broadcasting'
         if (rooms.get(siteId) === room) rooms.delete(siteId)
         watchedSiteIds.value = watchedSiteIds.value.filter((id) => rooms.has(id))
         if (rooms.size === 0) stopTransportCheck()
@@ -450,6 +477,85 @@ export const useLiveStore = defineStore('live', () => {
             resetBroadcastState()
         }
         bump()
+        if (wasBroadcasting) scheduleRejoin()
+    }
+
+    const ownRoomReady = () => ownRoom?.state === CONNECTED
+
+    function handleReconnecting(room) {
+        if (room !== ownRoom) return
+        reconnecting.value = true
+        bump()
+    }
+
+    function handleReconnected(room) {
+        applySubscriptions()
+        if (room !== ownRoom) return bump()
+        reconnecting.value = false
+        // Hitung ulang dari nol: selama menyambung ulang track memang tidak terkirim.
+        cameraDeadSince = null
+        cameraMutedSince = null
+        screenDeadSince = null
+        setTimeout(republishMissingTracks, Math.random() * REPUBLISH_JITTER_MS)
+        scheduleReport()
+        bump()
+    }
+
+    /**
+     * LiveKit menerbitkan ulang track sendiri setelah menyambung ulang, tapi
+     * bisa gagal saat server kewalahan (negosiasi timeout) -- kamera & layar
+     * lalu terlepas dan staf tampil CAMERA/SCREEN OFF padahal tidak mematikan
+     * apa pun. Terbitkan lagi di sini: kamera dibuka ulang, layar memakai track
+     * yang masih hidup (tanpa dialog pilih layar). Layar yang dihentikan staf
+     * sendiri ("Stop sharing") sudah 'ended', jadi tidak ikut diterbitkan.
+     */
+    async function republishMissingTracks() {
+        if (republishing || !ownRoomReady() || mode.value !== 'broadcasting') return
+        if (Date.now() - lastRepublishAt < REPUBLISH_MIN_GAP_MS) return
+        const participant = ownRoom.localParticipant
+        const missingCamera = !participant.getTrackPublication(CAMERA_SOURCE) && !onBreak.value
+        const missingScreen =
+            !participant.getTrackPublication(SCREEN_SOURCE) && ownScreenTrack?.mediaStreamTrack?.readyState === 'live'
+        if (!missingCamera && !missingScreen) return
+
+        republishing = true
+        lastRepublishAt = Date.now()
+        try {
+            if (missingCamera) await participant.setCameraEnabled(true)
+            if (missingScreen) await participant.publishTrack(ownScreenTrack)
+        } catch {
+            // Dicoba lagi pada cek kamera/layar berikutnya (paling cepat REPUBLISH_MIN_GAP_MS).
+        } finally {
+            republishing = false
+            handleLocalTracksChanged()
+        }
+    }
+
+    /**
+     * Room siaran putus total. Sesi kerja masih terbuka di server, jadi sambung
+     * lagi otomatis (seperti setelah reload) dengan jeda acak & makin panjang --
+     * staf tidak perlu menekan apa pun. Layar perlu dibagikan ulang lewat
+     * ScreenShareLock (browser mewajibkan klik untuk dialog pilih layar).
+     */
+    function scheduleRejoin() {
+        clearTimeout(rejoinTimer)
+        if (rejoinAttempt >= REJOIN_DELAYS_MS.length) return
+        const delay = REJOIN_DELAYS_MS[rejoinAttempt++] + Math.random() * REJOIN_JITTER_MS
+        rejoinTimer = setTimeout(async () => {
+            rejoinTimer = null
+            if (mode.value !== 'idle') return
+            resumeTask = null
+            const { resumed, error } = await resumeIfBroadcasting()
+            if (resumed) rejoinAttempt = 0
+            // Tanpa error = tidak ada sesi kerja lagi (ditutup/logout) -> berhenti.
+            else if (error) scheduleRejoin()
+        }, delay)
+    }
+
+    function cancelRejoin() {
+        clearTimeout(rejoinTimer)
+        rejoinTimer = null
+        rejoinAttempt = 0
     }
 
     const watchSite = (siteId) => watchSites([siteId])
@@ -524,12 +630,18 @@ export const useLiveStore = defineStore('live', () => {
             error.name = 'ComputerRequired'
             throw error
         }
+        if (!resuming) cancelRejoin()
         connecting.value = true
         cameraProblem.value = null
         let screenTrack = null
         // Melanjutkan otomatis setelah reload tidak punya klik user, dan
         // browser menolak dialog pilih layar tanpa klik -- layar dibagikan
         // lewat kunci "Layar wajib dibagikan" (ScreenShareLock) sesudahnya.
+        // Izin notifikasi desktop untuk peringatan "layar tidak dibagikan"
+        // (ScreenShareLock) -- harus diminta dari klik, jadi di sini.
+        if (!resuming && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+            Notification.requestPermission().catch(() => {})
+        }
         try {
             if (!resuming) screenTrack = await captureEntireScreen()
         } catch (err) {
@@ -557,7 +669,10 @@ export const useLiveStore = defineStore('live', () => {
                 error.name = 'CameraNotLive'
                 throw error
             }
-            if (screenTrack) await ownRoom.localParticipant.publishTrack(screenTrack)
+            if (screenTrack) {
+                await ownRoom.localParticipant.publishTrack(screenTrack)
+                ownScreenTrack = screenTrack
+            }
             // Siaran baru = mikrofon BISU (hemat server); melanjutkan setelah
             // reload = ikut pilihan bisu terakhir staf.
             if (!resuming) setMicMutedPref(true)
@@ -670,7 +785,9 @@ export const useLiveStore = defineStore('live', () => {
      * Perubahan status dilaporkan checkCamera(), bukan di sini.
      */
     async function restartCamera() {
-        if (!ownRoom || mode.value !== 'broadcasting') return
+        // Saat LiveKit menyambung ulang, membuka ulang kamera hanya menambah
+        // negosiasi ke server yang sedang kewalahan -- tunggu sampai tersambung.
+        if (!ownRoomReady() || mode.value !== 'broadcasting') return
         const track = ownRoom.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track
         if (track) {
             await track.restartTrack()
@@ -696,10 +813,12 @@ export const useLiveStore = defineStore('live', () => {
         if (enabled) {
             const track = await captureEntireScreen()
             await ownRoom.localParticipant.publishTrack(track)
+            ownScreenTrack = track
             // Layar baru langsung terkirim -- jangan tunggu checkScreen() membuka kunci.
             screenLive.value = true
             screenDeadSince = null
         } else {
+            ownScreenTrack = null
             await ownRoom.localParticipant.setScreenShareEnabled(false)
         }
         handleLocalTracksChanged()
@@ -711,6 +830,7 @@ export const useLiveStore = defineStore('live', () => {
     }
 
     async function endWork() {
+        cancelRejoin()
         connecting.value = true
         try {
             await api.post('/live/sessions/end').catch((err) => {
@@ -731,6 +851,10 @@ export const useLiveStore = defineStore('live', () => {
 
     async function sendHeartbeat() {
         if (mode.value !== 'broadcasting') return
+        // Room siaran sedang menyambung ulang: kamera/layar memang tidak
+        // terkirim, tapi bukan karena staf -- jangan laporkan "kamera mati".
+        // Tanpa laporan, server menandai DISCONNECTED setelah 75 detik.
+        if (!ownRoomReady()) return
         const state = {
             // cameraLive: kamera yang di-mute browser cukup lama juga mati.
             camera_active: cameraLive.value && cameraIsLive(),
@@ -868,6 +992,12 @@ export const useLiveStore = defineStore('live', () => {
 
     function checkCamera() {
         if (mode.value !== 'broadcasting') return
+        if (!ownRoomReady()) {
+            cameraDeadSince = null
+            cameraMutedSince = null
+            return
+        }
+        if (!ownRoom.localParticipant.getTrackPublication(CAMERA_SOURCE)) republishMissingTracks()
         const now = Date.now()
         const alive = cameraIsLive()
         const muted = alive && cameraMuted()
@@ -896,6 +1026,11 @@ export const useLiveStore = defineStore('live', () => {
     // dibisukan) -- status SCREEN OFF, jadi kunci layar juga harus tampil.
     function checkScreen() {
         if (mode.value !== 'broadcasting') return
+        if (!ownRoomReady()) {
+            screenDeadSince = null
+            return
+        }
+        if (!ownRoom.localParticipant.getTrackPublication(SCREEN_SOURCE)) republishMissingTracks()
         if (trackIsLive(SCREEN_SOURCE)) {
             screenDeadSince = null
             if (!screenLive.value) {
@@ -1016,6 +1151,7 @@ export const useLiveStore = defineStore('live', () => {
         mediaTransport,
         mediaOverTcp,
         transportByIdentity,
+        reconnecting,
         connecting,
         isBroadcasting,
         remoteParticipants,

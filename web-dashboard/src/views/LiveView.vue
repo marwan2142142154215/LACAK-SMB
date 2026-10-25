@@ -512,6 +512,18 @@ onBeforeUnmount(() => {
                 >
             </div>
 
+            <div
+                v-if="live.isBroadcasting && live.reconnecting"
+                class="flex items-start gap-3 rounded-lg border border-warning-500/30 bg-warning-500/10 px-4 py-3 text-sm text-pretty text-warning-400"
+                role="status"
+            >
+                <RefreshCw class="mt-0.5 size-4 shrink-0 motion-safe:animate-spin" />
+                <span>
+                    Koneksi ke server siaran terputus, sedang menyambung ulang otomatis. Kamera dan layar tersiar lagi
+                    tanpa perlu menekan apa pun.
+                </span>
+            </div>
+
             <!-- Video lewat TCP (biasanya VPN/firewall memblokir UDP): berat untuk
                  server & gambar patah-patah. Yang memperbaiki tim IT, bukan staf. -->
             <div
