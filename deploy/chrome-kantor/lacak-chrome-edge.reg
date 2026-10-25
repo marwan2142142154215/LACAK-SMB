@@ -1,0 +1,46 @@
+Windows Registry Editor Version 5.00
+
+; Kebijakan Chrome & Edge kantor untuk Live Kerja (https://app.salahmu.fun).
+; Panduan: docs/chrome-kantor.md. Pasang sebagai Administrator, lalu tutup
+; semua jendela Chrome/Edge dan buka lagi (cek di chrome://policy).
+
+; ---------------- Google Chrome ----------------
+
+; Dialog pilih layar boleh dibuka tanpa klik: begitu staf menekan
+; "Stop sharing", Live Kerja langsung membuka dialog bagikan layar lagi.
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ScreenCaptureWithoutGestureAllowedForOrigins]
+"1"="https://app.salahmu.fun"
+
+; Kamera, mikrofon & notifikasi diizinkan otomatis untuk Live Kerja
+; (staf tidak bisa memblokirnya dari pengaturan situs).
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\VideoCaptureAllowedUrls]
+"1"="https://app.salahmu.fun"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\AudioCaptureAllowedUrls]
+"1"="https://app.salahmu.fun"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\NotificationsAllowedForUrls]
+"1"="https://app.salahmu.fun"
+
+; Tanpa mode Incognito & DevTools: Live Kerja tidak bisa diakali dari browser.
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome]
+"IncognitoModeAvailability"=dword:00000001
+"DeveloperToolsAvailability"=dword:00000002
+
+; ---------------- Microsoft Edge ----------------
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ScreenCaptureWithoutGestureAllowedForOrigins]
+"1"="https://app.salahmu.fun"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\VideoCaptureAllowedUrls]
+"1"="https://app.salahmu.fun"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\AudioCaptureAllowedUrls]
+"1"="https://app.salahmu.fun"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\NotificationsAllowedForUrls]
+"1"="https://app.salahmu.fun"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"InPrivateModeAvailability"=dword:00000001
+"DeveloperToolsAvailability"=dword:00000002
