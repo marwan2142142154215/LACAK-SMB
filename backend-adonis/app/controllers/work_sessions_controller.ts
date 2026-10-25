@@ -85,7 +85,7 @@ export default class WorkSessionsController {
             }
         })
 
-        // Ruang leader: hanya untuk leader, admin & root (staf tidak melihatnya).
+        // Ruang leader: hanya untuk admin & root (leader & staf tidak melihatnya).
         const leaders = canWatchLeaders(access)
             ? await cachedOverview('live:overview:leaders', async () => {
                   const sessions: WorkSessionRow[] = await openSessions()
@@ -422,9 +422,9 @@ function connectionDetails(organizationId: number | null, token: string) {
     }
 }
 
-/** Ruang leader ditonton leader, admin & root -- tidak pernah staf. */
+/** Ruang leader hanya ditonton peran di atas leader: admin & root. */
 function canWatchLeaders(access: Access): boolean {
-    return ['super_admin', 'admin', 'leader'].some((role) => hasRole(access, role))
+    return ['super_admin', 'admin'].some((role) => hasRole(access, role))
 }
 
 /** Cache singkat jawaban overview (JSON polos, tanggal jadi string ISO). */
