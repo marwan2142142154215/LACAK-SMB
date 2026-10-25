@@ -11,8 +11,10 @@ import { useLiveStore } from '@/stores/live'
 // mengirim gambar (dipakai aplikasi lain, izin dicabut, kabel USB lepas,
 // ditutup lewat pengaturan), seluruh dashboard tertutup sampai kamera
 // menyala lagi atau staf selesai kerja. Status CAMERA OFF tetap tercatat di
-// log kerja selama terkunci. Kamera juga dicoba dinyalakan ulang otomatis.
-const AUTO_RETRY_MS = 10_000
+// log kerja selama terkunci. Kamera juga dicoba dinyalakan ulang otomatis,
+// makin jarang kalau terus gagal (kamera yang dipakai aplikasi lain tidak
+// perlu dibuka ulang tiap 10 detik sepanjang hari).
+const AUTO_RETRY_DELAYS_MS = [10_000, 30_000, 60_000]
 
 const live = useLiveStore()
 const toast = useToast()
@@ -40,11 +42,20 @@ async function restartCamera({ silent = false } = {}) {
 
 // Selama terkunci, coba nyalakan ulang sendiri berkala -- sering kali kamera
 // sudah dilepas aplikasi lain dan bisa langsung dipakai lagi.
+function scheduleRetry(attempt) {
+    const delay = AUTO_RETRY_DELAYS_MS[Math.min(attempt, AUTO_RETRY_DELAYS_MS.length - 1)]
+    retryTimer = setTimeout(async () => {
+        await restartCamera({ silent: true })
+        if (locked.value) scheduleRetry(attempt + 1)
+    }, delay)
+}
+
 watch(locked, (isLocked) => {
-    clearInterval(retryTimer)
-    retryTimer = isLocked ? setInterval(() => restartCamera({ silent: true }), AUTO_RETRY_MS) : null
+    clearTimeout(retryTimer)
+    retryTimer = null
+    if (isLocked) scheduleRetry(0)
 })
-onBeforeUnmount(() => clearInterval(retryTimer))
+onBeforeUnmount(() => clearTimeout(retryTimer))
 
 async function endWork() {
     ending.value = true
@@ -81,7 +92,7 @@ async function endWork() {
                 <p v-if="live.cameraProblem" class="mt-3 rounded-md bg-st-camera/10 px-3 py-2 text-xs text-pretty text-st-camera">
                     {{ live.cameraProblem }}
                 </p>
-                <p class="mt-3 text-xs text-base-500">Kamera juga dicoba dinyalakan ulang otomatis tiap 10 detik.</p>
+                <p class="mt-3 text-xs text-base-500">Kamera juga dicoba dinyalakan ulang otomatis secara berkala.</p>
                 <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                     <BaseButton variant="ghost" :loading="ending" :disabled="restarting" @click="endWork">
                         <Square class="size-4" />

@@ -9,6 +9,9 @@ const HEARTBEAT_INTERVAL_MS = 30_000
 // mati lebih lama dari batas ini (menyalakan ulang kamera butuh ~1 detik).
 const CAMERA_CHECK_MS = 2_000
 const CAMERA_DEAD_AFTER_MS = 5_000
+// Kamera yang masih menyala tapi di-mute browser (tidak ada gambar) baru
+// dianggap mati setelah selama ini -- muted sesaat itu biasa.
+const CAMERA_MUTED_AFTER_MS = 15_000
 // Render ulang grid paling sering sekali per selang ini untuk event yang
 // beruntun (indikator bicara, kualitas koneksi).
 const BUMP_THROTTLE_MS = 250
@@ -124,6 +127,7 @@ let ownRoom = null
 let heartbeatTimer = null
 let cameraCheckTimer = null
 let cameraDeadSince = null
+let cameraMutedSince = null
 let reportTimer = null
 let bumpTimer = null
 let wakeLock = null
@@ -344,6 +348,7 @@ export const useLiveStore = defineStore('live', () => {
         micProblem.value = null
         cameraLive.value = true
         cameraDeadSince = null
+        cameraMutedSince = null
     }
 
     async function disconnect() {
@@ -429,11 +434,14 @@ export const useLiveStore = defineStore('live', () => {
         return !!track && !track.isMuted && track.mediaStreamTrack?.readyState === 'live'
     }
 
+    const cameraIsLive = () => trackIsLive(CAMERA_SOURCE)
+
     // Kamera bisa tetap 'live' tapi tidak mengirim gambar sama sekali --
     // browser hanya menandainya muted (mis. direbut aplikasi lain, driver
-    // tersendat). LiveKit tidak menganggapnya mati, jadi cek sendiri.
-    const cameraIsLive = () =>
-        trackIsLive(CAMERA_SOURCE) && !ownRoom.localParticipant.getTrackPublication(CAMERA_SOURCE).track.mediaStreamTrack.muted
+    // tersendat). LiveKit tidak menganggapnya mati, jadi checkCamera() cek
+    // sendiri -- dengan tenggang lebih lama, karena muted juga sering
+    // muncul sesaat (kamera baru menyala, CPU sibuk).
+    const cameraMuted = () => !!ownRoom?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track?.mediaStreamTrack?.muted
 
     /**
      * Panggil langsung dari klik tombol: dialog pilih layar & izin deteksi
@@ -574,17 +582,28 @@ export const useLiveStore = defineStore('live', () => {
         }
     }
 
-    /** Matikan lalu nyalakan lagi kamera tanpa memutus siaran. */
+    /**
+     * Buka ulang kamera tanpa memutus siaran. restartTrack() mengganti sumber
+     * gambar di track yang sama -- tidak ada mute/unmute yang disiarkan ke
+     * semua peserta room seperti setCameraEnabled(false/true). Unmute hanya
+     * kalau LiveKit sendiri sudah membisukan track-nya (kamera sempat 'ended').
+     * Perubahan status dilaporkan checkCamera(), bukan di sini.
+     */
     async function restartCamera() {
         if (!ownRoom || mode.value !== 'broadcasting') return
-        await ownRoom.localParticipant.setCameraEnabled(false)
-        await ownRoom.localParticipant.setCameraEnabled(true)
+        const track = ownRoom.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track
+        if (track) {
+            await track.restartTrack()
+            if (track.isMuted) await track.unmute()
+        } else {
+            await ownRoom.localParticipant.setCameraEnabled(true)
+        }
         await new Promise((resolve) => setTimeout(resolve, 800))
-        cameraProblem.value = cameraIsLive()
-            ? null
-            : 'Kamera masih belum mengirim gambar. Periksa izin kamera di browser dan pastikan tidak dipakai aplikasi lain.'
+        cameraProblem.value =
+            cameraIsLive() && !cameraMuted()
+                ? null
+                : 'Kamera masih belum mengirim gambar. Periksa izin kamera di browser dan pastikan tidak dipakai aplikasi lain.'
         bump()
-        scheduleReport()
     }
 
     /**
@@ -631,7 +650,8 @@ export const useLiveStore = defineStore('live', () => {
         if (mode.value !== 'broadcasting') return
         try {
             const response = await api.post('/live/sessions/heartbeat', {
-                camera_active: cameraIsLive(),
+                // cameraLive: kamera yang di-mute browser cukup lama juga mati.
+                camera_active: cameraLive.value && cameraIsLive(),
                 screen_active: trackIsLive(SCREEN_SOURCE),
                 on_break: onBreak.value,
                 idle: isIdle.value,
@@ -667,18 +687,26 @@ export const useLiveStore = defineStore('live', () => {
 
     function checkCamera() {
         if (mode.value !== 'broadcasting') return
-        if (cameraIsLive()) {
-            cameraDeadSince = null
-            if (!cameraLive.value) {
-                cameraLive.value = true
-                cameraProblem.value = null
+        const now = Date.now()
+        const alive = cameraIsLive()
+        const muted = alive && cameraMuted()
+        cameraDeadSince = alive ? null : (cameraDeadSince ?? now)
+        cameraMutedSince = muted ? (cameraMutedSince ?? now) : null
+
+        const dead =
+            (cameraDeadSince !== null && now - cameraDeadSince >= CAMERA_DEAD_AFTER_MS) ||
+            (cameraMutedSince !== null && now - cameraMutedSince >= CAMERA_MUTED_AFTER_MS)
+
+        if (!alive || muted) {
+            if (dead && cameraLive.value) {
+                cameraLive.value = false
                 scheduleReport()
             }
             return
         }
-        cameraDeadSince ??= Date.now()
-        if (cameraLive.value && Date.now() - cameraDeadSince >= CAMERA_DEAD_AFTER_MS) {
-            cameraLive.value = false
+        if (!cameraLive.value) {
+            cameraLive.value = true
+            cameraProblem.value = null
             scheduleReport()
         }
     }
