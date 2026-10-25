@@ -43,6 +43,9 @@ class DemoAccountsSeeder extends Seeder
     /** Akun admin tim audit LC: auditlc1 - auditlc10, akses Site Uji A & B. */
     private const AUDITLC_ADMINS = [1, 10];
 
+    /** Akun leader: leader1 - leader20, menonton Site Uji A & B. */
+    private const EXTRA_LEADERS = [1, 20];
+
     /** @return array<int, array{0: string, 1: string, 2: string, 3: string|null, 4: array<int, string>}> */
     private function accounts(): array
     {
@@ -54,6 +57,10 @@ class DemoAccountsSeeder extends Seeder
 
         foreach (range(...self::AUDITLC_ADMINS) as $number) {
             $accounts[] = ["auditlc{$number}", "Audit LC {$number}", 'admin', null, ['A', 'B']];
+        }
+
+        foreach (range(...self::EXTRA_LEADERS) as $number) {
+            $accounts[] = ["leader{$number}", "Leader {$number}", 'leader', null, ['A', 'B']];
         }
 
         foreach (self::EXTRA_STAFF as $siteKey => [$from, $to]) {
