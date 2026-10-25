@@ -90,6 +90,23 @@ class WorkPresenceTest extends TestCase
         $this->assertEquals([$working->id => 'working', $offline->id => 'offline'], $roster->all());
     }
 
+    public function test_logged_in_staff_without_work_session_is_online(): void
+    {
+        $org = Organization::factory()->create();
+        $loggedIn = $this->staffIn($org);
+        $expired = $this->staffIn($org);
+        $viewer = $this->staffIn($org);
+        $loggedIn->createToken('web_dashboard-1', ['*'], now()->addHours(2));
+        $expired->createToken('web_dashboard-1', ['*'], now()->subMinute());
+
+        $roster = collect($this->actingAs($viewer, 'sanctum')->getJson('/api/v1/live/sessions')->assertOk()->json('data.roster'))
+            ->pluck('status', 'user_id');
+
+        $this->assertSame('online', $roster[$loggedIn->id]);
+        $this->assertSame('offline', $roster[$expired->id]);
+        $this->assertSame('offline', $roster[$viewer->id]);
+    }
+
     public function test_overview_covers_only_the_sites_a_viewer_may_watch(): void
     {
         $orgA = Organization::factory()->create(['is_active' => true]);

@@ -118,6 +118,22 @@ async function record(session: LiveSession, type: string, now: Date) {
     })
 }
 
+/**
+ * Masih punya token login berlaku? Staf yang Selesai kerja tapi tetap login
+ * tampil 'online' di daftar staf, bukan 'offline' (sama dengan roster
+ * /live/overview). Token login selalu punya expires_at; token akun layanan tidak.
+ */
+export async function hasActiveLogin(userId: number): Promise<boolean> {
+    const db = await getDb()
+    const row = await db
+        .from('personal_access_tokens')
+        .where('tokenable_type', 'App\\Models\\User')
+        .where('tokenable_id', userId)
+        .where('expires_at', '>', new Date())
+        .first()
+    return Boolean(row)
+}
+
 /** Bentuk yang sama dengan WorkSessionResource di backend-api. */
 export function sessionPayload(session: LiveSession, now: Date = new Date()) {
     return {
