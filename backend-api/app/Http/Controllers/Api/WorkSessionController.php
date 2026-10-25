@@ -84,10 +84,13 @@ class WorkSessionController extends Controller
                     ->orderBy('started_at')
                     ->get();
 
-                return [
+                // Disimpan sebagai JSON biasa: cache Laravel 13 TIDAK
+                // mengembalikan objek (cache.serializable_classes = false), jadi
+                // Carbon di started_at dll. akan rusak jadi __PHP_Incomplete_Class.
+                return json_decode(json_encode([
                     'items' => WorkSessionResource::collection($sessions)->resolve($request),
                     'roster' => $this->rosterFor($siteIds, $sessions)->all(),
-                ];
+                ]), true);
             },
         );
 
