@@ -213,7 +213,7 @@ onMounted(async () => {
                         <div class="min-w-0">
                             <p v-if="siteName(rule)" class="eyebrow">{{ siteName(rule) }}</p>
                             <h2
-                                class="mt-1 font-display text-lg leading-snug font-semibold"
+                                class="mt-1 font-display text-lg leading-snug font-bold tracking-[-0.015em]"
                                 :class="rule.is_active ? 'text-base-50' : 'text-base-400'"
                             >
                                 {{ rule.rule_name }}

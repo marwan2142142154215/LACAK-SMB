@@ -157,7 +157,7 @@ async function endWork() {
                 <span class="flex size-11 items-center justify-center rounded-xl bg-st-screen/10 text-st-screen">
                     <MonitorUp class="size-6" />
                 </span>
-                <DialogTitle class="mt-4 font-display text-xl font-semibold text-base-50">Layar wajib dibagikan</DialogTitle>
+                <DialogTitle class="mt-4 font-display text-xl font-bold text-base-50 tracking-[-0.015em]">Layar wajib dibagikan</DialogTitle>
                 <DialogDescription class="mt-2 text-sm text-pretty text-base-400">
                     Layar Anda sedang tidak dibagikan (berbagi layar dihentikan, atau halaman baru saja dimuat ulang), jadi status Anda
                     <strong class="text-st-screen">Screen off</strong> dan tercatat di log kerja.

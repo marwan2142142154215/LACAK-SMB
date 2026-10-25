@@ -7,7 +7,7 @@
         <!-- PWA: dashboard bisa di-install sebagai aplikasi (lihat public/sw.js) -->
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <meta name="theme-color" content="#f3f5f8" />
+        <meta name="theme-color" content="#eef1f5" />
         <!-- Tema dipasang sebelum CSS dimuat supaya tidak berkedip (lihat src/composables/useTheme.js) -->
         <script>
             ;(function () {
@@ -16,13 +16,13 @@
                     theme = localStorage.getItem('lacak_theme') === 'dark' ? 'dark' : 'light'
                 } catch (e) {}
                 document.documentElement.dataset.theme = theme
-                if (theme === 'dark') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#05070a')
+                if (theme === 'dark') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#070c14')
             })()
         </script>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
-            href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap"
             rel="stylesheet"
         />
         <title>Lacak Master — Dashboard</title>

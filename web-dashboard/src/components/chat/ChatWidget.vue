@@ -269,7 +269,7 @@ function initials(name) {
             >
                 <header class="flex items-start gap-3 border-b border-base-800 px-4 py-3">
                     <div class="min-w-0 flex-1">
-                        <h2 class="font-display text-base font-semibold text-base-50">Chat staf</h2>
+                        <h2 class="font-display text-base font-bold text-base-50 tracking-[-0.015em]">Chat staf</h2>
                         <label v-if="chat.sites.length > 1" class="relative mt-1 block w-fit">
                             <span class="sr-only">Ruang chat site</span>
                             <select
@@ -285,7 +285,7 @@ function initials(name) {
                         <p v-else class="mt-0.5 text-xs text-base-400">{{ activeSite?.name }}</p>
                     </div>
                     <p
-                        class="mt-1 flex shrink-0 items-center gap-1.5 font-mono text-[10.5px] tracking-[0.08em] text-base-400 uppercase"
+                        class="mt-1 flex shrink-0 items-center gap-1.5 text-[11px] text-base-400 font-semibold"
                         :title="chat.activePresence.map((u) => u.name).join(', ')"
                     >
                         <span class="led" :class="chat.connected ? 'text-st-working' : 'text-base-500 led-off'" />
@@ -327,7 +327,7 @@ function initials(name) {
                     <template v-for="row in rows" :key="row.key">
                         <p
                             v-if="row.type === 'day'"
-                            class="my-3 text-center font-mono text-[10.5px] tracking-[0.12em] text-base-500 uppercase"
+                            class="my-3 text-center text-[11px] text-base-500 font-semibold"
                         >
                             {{ row.label }}
                         </p>

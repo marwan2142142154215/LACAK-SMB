@@ -66,11 +66,11 @@ const gridClass = computed(() => {
         <div class="flex items-center gap-2.5 px-3 py-2" :class="[large && 'px-4 py-3', actionInset && 'pr-12']">
             <span class="flex min-w-0 flex-1 items-baseline gap-2">
                 <span class="truncate text-sm font-semibold text-base-50" :class="large && 'font-display text-lg'">{{ name }}</span>
-                <span v-if="site" class="truncate font-mono text-[10.5px] tracking-[0.08em] text-base-500 uppercase">{{ site }}</span>
+                <span v-if="site" class="truncate text-[11px] text-base-500 font-semibold">{{ site }}</span>
             </span>
             <span
                 v-if="meta"
-                class="inline-flex shrink-0 items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] uppercase"
+                class="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold"
                 :class="meta.chip"
             >
                 <span class="led" :class="[meta.led, status === 'alert' && 'motion-safe:animate-pulse']" />
@@ -98,9 +98,9 @@ const gridClass = computed(() => {
                 :mirrored="!screenTrack && mirrorCamera"
                 class="!rounded-none !border-0"
             />
-            <div v-else class="flex aspect-video flex-col items-center justify-center gap-2 bg-base-900 text-base-500">
+            <div v-else class="flex aspect-video flex-col items-center justify-center gap-2 bg-[#0e1520] text-white/40">
                 <MonitorOff class="size-6" />
-                <span class="font-mono text-[10.5px] tracking-[0.14em] uppercase">Layar & kamera mati</span>
+                <span class="text-[11px] font-semibold">Layar & kamera mati</span>
             </div>
             <LiveVideoTile
                 v-if="screenTrack && cameraTrack"
@@ -114,7 +114,7 @@ const gridClass = computed(() => {
             />
             <span
                 v-if="!screenTrack && cameraTrack"
-                class="absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 rounded bg-black/65 px-1.5 py-1 font-mono text-[10px] tracking-[0.1em] text-white/85 uppercase backdrop-blur-sm"
+                class="absolute top-2.5 left-2.5 inline-flex items-center gap-1.5 rounded-full bg-black/65 px-1.5 py-1 text-[11px] text-white/85 backdrop-blur-sm font-semibold"
             >
                 <MonitorOff class="size-3" />
                 Layar tidak dibagikan
@@ -132,10 +132,10 @@ const gridClass = computed(() => {
                     :mirrored="side.key === 'camera' && mirrorCamera"
                     class="w-full !rounded-none !border-0"
                 />
-                <div v-else class="flex aspect-video w-full flex-col items-center justify-center gap-2 bg-base-900 text-base-500">
+                <div v-else class="flex aspect-video w-full flex-col items-center justify-center gap-2 bg-[#0e1520] text-white/40">
                     <MonitorOff v-if="side.key === 'screen'" class="size-6" />
                     <Camera v-else class="size-6" />
-                    <span class="px-2 text-center font-mono text-[10.5px] tracking-[0.14em] uppercase">
+                    <span class="px-2 text-center text-[11px] font-semibold">
                         {{ side.key === 'screen' ? 'Layar tidak dibagikan' : 'Kamera mati' }}
                     </span>
                 </div>
