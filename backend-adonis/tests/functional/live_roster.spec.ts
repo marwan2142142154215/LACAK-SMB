@@ -136,3 +136,78 @@ test.group('Ringkasan dashboard: staf online', (group) => {
         response.assertBodyContains({ data: { staff_count: 4, staff_online_count: 2 } })
     })
 })
+
+test.group('Live Kerja: ruang leader', (group) => {
+    group.each.setup(() => testUtils.db().withGlobalTransaction())
+
+    async function userWithRole(role: string) {
+        const suffix = randomBytes(4).toString('hex')
+        const [user] = await db
+            .table('users')
+            .insert({
+                username: `uji.${role}.${suffix}`,
+                name: `Uji ${role} ${suffix}`,
+                email: `uji.${role}.${suffix}@example.test`,
+                password: '$2y$10$Y18XUtkwVNaSkDxG0mGKX.51ec8i1y3rdvE4Cc.QSg9izFzIo/CiO',
+                is_active: true,
+                created_at: new Date(),
+                updated_at: new Date(),
+            })
+            .returning(['id'])
+        const roleRow = await db
+            .from('roles')
+            .where({ name: role, guard_name: 'web' })
+            .firstOrFail()
+        await db.table('model_has_roles').insert({
+            role_id: roleRow.id,
+            model_type: LARAVEL_USER_MORPH,
+            model_id: user.id,
+        })
+        return {
+            id: user.id as number,
+            bearer: await loginToken(user.id, DateTime.now().plus({ hours: 2 })),
+        }
+    }
+
+    test('leader Mulai kerja masuk ruang leader, tanpa site', async ({ client, assert }) => {
+        const leader = await userWithRole('leader')
+
+        const response = await client
+            .post('/api/v1/live/sessions/start')
+            .json({ device: 'computer' })
+            .bearerToken(leader.bearer)
+
+        response.assertStatus(201)
+        assert.equal(response.body().data.room, 'leaders')
+        assert.isNull(response.body().data.session.organization_id)
+    })
+
+    test('ruang leader bisa ditonton admin, tidak bisa oleh staf', async ({ client }) => {
+        const admin = await userWithRole('admin')
+        const allowed = await client
+            .post('/api/v1/live/watch-token')
+            .json({ room: 'leaders' })
+            .bearerToken(admin.bearer)
+        allowed.assertStatus(200)
+        allowed.assertBodyContains({ data: { room: 'leaders' } })
+
+        const [org] = await db
+            .table('organizations')
+            .insert({
+                name: 'Site Leader',
+                type: 'company_asset',
+                unique_site_code: `UJI-${randomBytes(4).toString('hex').toUpperCase()}`,
+                is_active: true,
+                created_at: new Date(),
+                updated_at: new Date(),
+            })
+            .returning(['id'])
+        const staff = await staffIn(org.id)
+        const staffBearer = await loginToken(staff, DateTime.now().plus({ hours: 2 }))
+        const denied = await client
+            .post('/api/v1/live/watch-token')
+            .json({ room: 'leaders' })
+            .bearerToken(staffBearer)
+        denied.assertStatus(403)
+    })
+})

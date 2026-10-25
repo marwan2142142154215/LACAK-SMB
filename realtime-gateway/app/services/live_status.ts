@@ -34,7 +34,8 @@ export type StateColumn = keyof typeof STATE_EVENTS
 export type WorkSessionRow = {
     id: number
     user_id: number
-    organization_id: number
+    // NULL = sesi leader (ruang leader global).
+    organization_id: number | null
     started_at: Date
     last_heartbeat_at: Date
     ended_at: Date | null
