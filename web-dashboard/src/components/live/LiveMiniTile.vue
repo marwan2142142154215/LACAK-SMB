@@ -3,6 +3,7 @@ import { MonitorOff } from '@lucide/vue'
 import { computed } from 'vue'
 
 import LiveVideoTile from '@/components/live/LiveVideoTile.vue'
+import TransportBadge from '@/components/live/TransportBadge.vue'
 import { formatElapsed, useNow } from '@/composables/useNow'
 import { workStatus } from '@/lib/workStatus'
 
@@ -18,6 +19,7 @@ const props = defineProps({
     status: { type: String, default: null },
     since: { type: [Date, String, Number], default: null },
     speaking: { type: Boolean, default: false },
+    transport: { type: String, default: null }, // 'udp' | 'tcp'
 })
 
 const now = useNow()
@@ -60,6 +62,7 @@ const elapsed = computed(() => (props.since ? formatElapsed(props.since, now.val
                 <span class="led" :class="[meta.led, status === 'alert' && 'motion-safe:animate-pulse']" />
                 {{ meta.label }}
             </span>
+            <TransportBadge :transport="transport" overlay />
             <span
                 v-if="!screenTrack && cameraTrack"
                 class="rounded bg-black/65 p-1 text-orange-300 backdrop-blur-sm"

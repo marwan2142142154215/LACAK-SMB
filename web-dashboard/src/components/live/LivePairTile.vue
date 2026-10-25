@@ -3,6 +3,7 @@ import { Camera, MonitorOff, Signal, SignalLow, SignalMedium } from '@lucide/vue
 import { computed } from 'vue'
 
 import LiveVideoTile from '@/components/live/LiveVideoTile.vue'
+import TransportBadge from '@/components/live/TransportBadge.vue'
 import { formatElapsed, useNow } from '@/composables/useNow'
 import { workStatus } from '@/lib/workStatus'
 
@@ -17,6 +18,7 @@ const props = defineProps({
     since: { type: [Date, String, Number], default: null },
     // excellent | good | poor | lost | unknown (ConnectionQuality LiveKit)
     quality: { type: String, default: null },
+    transport: { type: String, default: null }, // 'udp' | 'tcp'
     swapped: { type: Boolean, default: false },
     mirrorCamera: { type: Boolean, default: false },
     large: { type: Boolean, default: false },
@@ -74,6 +76,7 @@ const gridClass = computed(() => {
                 <span class="led" :class="[meta.led, status === 'alert' && 'motion-safe:animate-pulse']" />
                 {{ meta.label }}
             </span>
+            <TransportBadge :transport="transport" />
             <component
                 :is="qualityMeta.icon"
                 v-if="qualityMeta"
