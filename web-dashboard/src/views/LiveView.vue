@@ -17,6 +17,7 @@ import {
     Smartphone,
     Square,
     Video,
+    Users,
     VolumeX,
     X,
 } from '@lucide/vue'
@@ -222,12 +223,28 @@ function rosterRank(status) {
     return status === 'offline' ? 2 : 1
 }
 
+// Staf (yang bisa siaran) TIDAK otomatis menonton rekan se-site: tiap staf
+// yang menonton semua rekannya membuat LiveKit meneruskan N x (N-1) video --
+// 20 staf = 380 kamera + 380 layar. Rekan baru dimuat lewat tombol "Lihat
+// rekan"; leader/admin/super_admin tetap langsung melihat semua.
+const showColleagues = ref(false)
+const colleaguesHidden = computed(() => canBroadcast.value && !showColleagues.value)
+
+async function showColleaguesNow() {
+    showColleagues.value = true
+    if (live.mode !== 'idle') return
+    const ownSite = sites.value.find((site) => site.id === auth.user?.organization_id) ?? sites.value[0]
+    if (ownSite) await selectSite(ownSite.id)
+}
+
 const wallParticipants = computed(() =>
-    live.remoteParticipants.filter(
-        (participant) =>
-            (!statusFilter.value || statusOf(participant) === statusFilter.value) &&
-            matchesSearch(participant.name || participant.identity),
-    ),
+    colleaguesHidden.value
+        ? []
+        : live.remoteParticipants.filter(
+              (participant) =>
+                  (!statusFilter.value || statusOf(participant) === statusFilter.value) &&
+                  matchesSearch(participant.name || participant.identity),
+          ),
 )
 
 // Hanya peserta di halaman yang tampil yang di-subscribe (lihat
@@ -432,6 +449,10 @@ onMounted(async () => {
         selectedSiteId.value = live.watchedSiteIds.length > 1 ? ALL_SITES : live.organizationId
         return
     }
+
+    // Staf tidak otomatis menonton rekan (lihat showColleagues) -- siaran
+    // rekan baru dibuka lewat tombol "Lihat rekan".
+    if (canBroadcast.value) return
 
     // Penonton multi-site langsung melihat semua staf yang live.
     if (sites.value.length > 1) {
@@ -747,6 +768,9 @@ onBeforeUnmount(() => {
                             >
                         </h2>
                         <div class="flex items-center gap-2">
+                            <BaseButton v-if="canBroadcast && showColleagues" variant="ghost" size="sm" @click="showColleagues = false">
+                                Sembunyikan rekan
+                            </BaseButton>
                             <button
                                 v-if="statusFilter"
                                 type="button"
@@ -766,7 +790,27 @@ onBeforeUnmount(() => {
                     </div>
 
                     <div
-                        v-if="live.mode === 'idle' || !wallParticipants.length"
+                        v-if="colleaguesHidden"
+                        class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-base-700 bg-base-900/60 px-6 py-14 text-center"
+                    >
+                        <span class="flex size-12 items-center justify-center rounded-xl bg-base-850 text-base-400">
+                            <Users class="size-6" />
+                        </span>
+                        <div>
+                            <p class="font-medium text-base-100">Siaran rekan tidak ditampilkan</p>
+                            <p class="mx-auto mt-1 max-w-md text-sm text-pretty text-base-500">
+                                Supaya server tidak berat, video rekan se-site hanya dimuat kalau Anda memintanya. Siaran Anda tetap
+                                terpantau atasan.
+                            </p>
+                        </div>
+                        <BaseButton variant="outline" size="sm" :loading="live.connecting" @click="showColleaguesNow">
+                            <Users class="size-4" />
+                            Lihat rekan
+                        </BaseButton>
+                    </div>
+
+                    <div
+                        v-else-if="live.mode === 'idle' || !wallParticipants.length"
                         class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-base-700 bg-base-900/60 px-6 py-14 text-center"
                     >
                         <span class="flex size-12 items-center justify-center rounded-xl bg-base-850 text-base-400">
