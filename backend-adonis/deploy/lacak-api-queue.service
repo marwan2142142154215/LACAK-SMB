@@ -17,6 +17,8 @@ Environment=NODE_ENV=production
 ExecStart=/usr/bin/env node ace queue:work
 Restart=on-failure
 RestartSec=5
+# Worker menunggu job yang sedang jalan selesai (build APK bisa sampai ~5 menit).
+TimeoutStopSec=330
 
 [Install]
 WantedBy=multi-user.target
