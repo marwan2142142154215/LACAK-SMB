@@ -13,12 +13,7 @@ import { clearAppRedisKeys, seedRolesAndPermissions } from '#tests/helpers/setup
 export const plugins: Config['plugins'] = [assert(), pluginAdonisJS(app), apiClient()]
 
 export const runnerHooks: Required<Pick<Config, 'setup' | 'teardown'>> = {
-    // Tanpa rollback setelah tes: skema dasar tidak bisa dibongkar.
-    setup: [
-        async () => {
-            await testUtils.db().migrate()
-        },
-    ],
+    setup: [],
     teardown: [],
 }
 
@@ -26,6 +21,10 @@ export const configureSuite: Config['configureSuite'] = (suite) => {
     if (suite.name === 'functional') {
         // Peran & izin dibuat sekali; kunci Redis aplikasi dikosongkan sebelum
         // TIAP tes (rate limit, token 2FA) -- lihat tests/helpers/setup.ts.
+        // Migrasi tanpa rollback setelah tes: skema dasar tidak bisa dibongkar.
+        suite.setup(async () => {
+            await testUtils.db().migrate()
+        })
         suite.setup(() => seedRolesAndPermissions())
         suite.onGroup((group) => group.each.setup(() => clearAppRedisKeys()))
         suite.onTest((test) => test.setup(() => clearAppRedisKeys()))

@@ -24,6 +24,7 @@ test.group('Live Kerja: token LiveKit', () => {
             3,
             42,
             'Staf Ünïcode / A1',
+            {},
             {
                 url: 'wss://live.test',
                 apiKey: 'kunci-uji',

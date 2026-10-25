@@ -45,3 +45,14 @@ async function load(ctx: HttpContext): Promise<Access> {
 
 export const can = (access: Access, permission: string) => access.permissions.includes(permission)
 export const hasRole = (access: Access, role: string) => access.roles.includes(role)
+
+/** Peran pengawas: melihat staf lain di site yang boleh diakses. */
+const SUPERVISOR_ROLES = ['super_admin', 'admin', 'leader', 'site_admin']
+
+/**
+ * Staf biasa (peran staff_viewer saja): di Live Kerja, log kerja, dan rekaman
+ * hanya melihat dirinya sendiri -- siaran & status rekan se-site tertutup.
+ */
+export const seesOnlySelf = (access: Access) =>
+    access.roles.includes('staff_viewer') &&
+    !access.roles.some((role) => SUPERVISOR_ROLES.includes(role))

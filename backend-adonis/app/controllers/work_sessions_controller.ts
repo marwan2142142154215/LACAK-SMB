@@ -2,7 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import redis from '@adonisjs/redis/services/main'
 import vine from '@vinejs/vine'
-import { accessOf, can, hasRole, type Access } from '#services/access'
+import { accessOf, can, hasRole, seesOnlySelf, type Access } from '#services/access'
 import { fail, success } from '#services/api_response'
 import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/activity_log'
 import { laravelUrlSigner, LARAVEL_USER_MORPH } from '#services/laravel/index'
@@ -98,7 +98,11 @@ export default class WorkSessionsController {
               })
             : null
 
-        return success('Semua staf yang sedang live', { sites, ...live, leaders })
+        return success('Semua staf yang sedang live', {
+            sites,
+            ...onlySelfIfStaff(access, live),
+            leaders,
+        })
     }
 
     /** Staf live di satu site, status semua staf site itu, dan sesi milik user ini. */
@@ -128,8 +132,10 @@ export default class WorkSessionsController {
 
         return success('Staf yang sedang live', {
             organization_id: organizationId,
-            items: sessions.map((session) => sessionResource(session)),
-            roster: await rosterFor([organizationId], sessions),
+            ...onlySelfIfStaff(access, {
+                items: sessions.map((session) => sessionResource(session)),
+                roster: await rosterFor([organizationId], sessions),
+            }),
             my_session: mine ? sessionResource(withoutUserName(mine)) : null,
         })
     }
@@ -170,7 +176,9 @@ export default class WorkSessionsController {
                 session: sessionResource(withoutUserName(session)),
                 ...connectionDetails(
                     session.organization_id,
-                    broadcasterToken(session.organization_id, user.id, user.name)
+                    broadcasterToken(session.organization_id, user.id, user.name, {
+                        canSubscribe: session.organization_id !== null && !seesOnlySelf(access),
+                    })
                 ),
             })
         )
@@ -279,6 +287,8 @@ export default class WorkSessionsController {
             return ctx.response.status(422).send(fail('Rentang log maksimal 31 hari'))
         }
 
+        // Staf biasa hanya melihat log kerjanya sendiri.
+        const ownOnly = seesOnlySelf(access) ? access.userId : null
         const eventColumns = [
             'work_session_events.id',
             'work_session_events.organization_id',
@@ -293,6 +303,9 @@ export default class WorkSessionsController {
                   .from('work_session_events')
                   .leftJoin('users', 'users.id', 'work_session_events.user_id')
                   .whereIn('work_session_events.organization_id', siteIds)
+                  .if(ownOnly !== null, (query) =>
+                      query.where('work_session_events.user_id', ownOnly!)
+                  )
                   .whereBetween('work_session_events.occurred_at', [from, to])
                   .orderBy('work_session_events.occurred_at')
                   .orderBy('work_session_events.id')
@@ -309,6 +322,7 @@ export default class WorkSessionsController {
                       db
                           .from('work_session_events')
                           .whereIn('organization_id', siteIds)
+                          .if(ownOnly !== null, (query) => query.where('user_id', ownOnly!))
                           .where('occurred_at', '<', from)
                           .groupBy('user_id')
                           .max('id')
@@ -331,6 +345,9 @@ export default class WorkSessionsController {
     async watchToken(ctx: HttpContext) {
         const access = await accessOf(ctx)
         if (!can(access, 'live.watch')) return forbidden(ctx)
+        if (seesOnlySelf(access)) {
+            return ctx.response.status(403).send(fail('Staf hanya bisa melihat siarannya sendiri'))
+        }
 
         if (ctx.request.input('room') === LEADERS_ROOM) {
             if (!canWatchLeaders(access)) {
@@ -423,6 +440,18 @@ function connectionDetails(organizationId: number | null, token: string) {
 }
 
 /** Ruang leader hanya ditonton peran di atas leader: admin & root. */
+/** Staf biasa: daftar siaran & status hanya berisi dirinya sendiri. */
+function onlySelfIfStaff<T extends { user_id: number }, R extends { user_id: number }>(
+    access: Access,
+    live: { items: T[]; roster: R[] }
+): { items: T[]; roster: R[] } {
+    if (!seesOnlySelf(access)) return live
+    return {
+        items: live.items.filter((item) => item.user_id === access.userId),
+        roster: live.roster.filter((member) => member.user_id === access.userId),
+    }
+}
+
 function canWatchLeaders(access: Access): boolean {
     return ['super_admin', 'admin'].some((role) => hasRole(access, role))
 }

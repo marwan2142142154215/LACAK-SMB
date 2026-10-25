@@ -42,6 +42,8 @@ export function broadcasterToken(
     organizationId: number | null,
     userId: number,
     displayName: string,
+    // Staf biasa & leader hanya menyiarkan, tidak menonton peserta lain di room.
+    { canSubscribe = organizationId !== null }: { canSubscribe?: boolean } = {},
     config: LiveKitConfig = liveKitConfig(),
     now: number = Math.floor(Date.now() / 1000)
 ): string {
@@ -53,9 +55,7 @@ export function broadcasterToken(
             roomJoin: true,
             canPublish: true,
             canPublishSources: ['camera', 'microphone', 'screen_share'],
-            // Ruang leader hanya ditonton peran di atasnya: leader yang siaran
-            // tidak bisa melihat leader lain di ruang itu.
-            canSubscribe: organizationId !== null,
+            canSubscribe,
             canPublishData: false,
             canUpdateOwnMetadata: false,
         },

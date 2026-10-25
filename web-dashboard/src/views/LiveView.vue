@@ -368,8 +368,8 @@ async function loadMySession() {
 /** Tonton satu site, atau ALL_SITES = semua site sekaligus (satu koneksi per site). */
 async function selectSite(siteId) {
     // Staf yang siaran terkunci ke site sendiri; leader yang siaran tetap bisa
-    // memantau site-site yang dipegangnya.
-    if (live.isBroadcasting && !isLeader.value) return
+    // memantau site-site yang dipegangnya. Staf biasa tidak menonton siapa pun.
+    if (auth.seesOnlySelf || (live.isBroadcasting && !isLeader.value)) return
     selectedSiteId.value = siteId
     page.value = 0
     try {
@@ -450,7 +450,7 @@ async function startWork() {
         }
         toast.success(
             'Mulai kerja',
-            canShareScreen ? 'Layar & kamera Anda sedang disiarkan.' : 'Kamera Anda sedang disiarkan ke rekan se-site',
+            canShareScreen ? 'Layar & kamera Anda sedang disiarkan.' : 'Kamera Anda sedang disiarkan ke atasan Anda',
         )
     } catch (err) {
         const cameraMessages = {
@@ -460,7 +460,7 @@ async function startWork() {
         }
         toast.error('Gagal memulai siaran', cameraMessages[err.name] ?? err.response?.data?.message ?? err.message)
         // startWork() memutus koneksi tonton yang lama -- sambung lagi supaya
-        // staf tetap melihat rekan-rekannya walau siarannya sendiri gagal.
+        // penonton tetap melihat siaran site walau siarannya sendiri gagal.
         // (Batal/salah pilih layar terjadi sebelum koneksi tonton diputus.)
         if (err.name !== 'ScreenShareFailed' && selectedSiteId.value) await selectSite(selectedSiteId.value)
     } finally {
@@ -532,7 +532,13 @@ onBeforeUnmount(() => {
              Judul tetap ada untuk pembaca layar. -->
         <h1 class="sr-only">Live Kerja</h1>
         <div class="px-4 pt-5 sm:px-8 sm:pt-7">
-            <LiveStatusBar :segments="statusCounts" :live="liveNow" :total="siteRoster.length" :active="statusFilter" @select="statusFilter = $event">
+            <LiveStatusBar
+                :segments="statusCounts"
+                :live="liveNow"
+                :total="siteRoster.length"
+                :active="statusFilter"
+                @select="statusFilter = $event"
+            >
                 <template #actions>
                     <span
                         v-if="live.isBroadcasting"
@@ -572,8 +578,8 @@ onBeforeUnmount(() => {
             >
                 <RefreshCw class="mt-0.5 size-4 shrink-0 motion-safe:animate-spin" />
                 <span>
-                    Koneksi ke server siaran terputus, sedang menyambung ulang otomatis. Kamera dan layar tersiar lagi
-                    tanpa perlu menekan apa pun.
+                    Koneksi ke server siaran terputus, sedang menyambung ulang otomatis. Kamera dan layar tersiar lagi tanpa perlu menekan
+                    apa pun.
                 </span>
             </div>
 
@@ -586,9 +592,9 @@ onBeforeUnmount(() => {
             >
                 <Network class="mt-0.5 size-4 shrink-0" />
                 <span>
-                    Video Live Kerja di perangkat ini lewat <strong>TCP</strong>, bukan UDP, biasanya karena VPN atau
-                    firewall memblokir UDP. Gambar bisa patah-patah dan server jauh lebih berat. Minta tim IT
-                    mengizinkan <strong>UDP port 7882-7889</strong> ke server Live.
+                    Video Live Kerja di perangkat ini lewat <strong>TCP</strong>, bukan UDP, biasanya karena VPN atau firewall memblokir
+                    UDP. Gambar bisa patah-patah dan server jauh lebih berat. Minta tim IT mengizinkan
+                    <strong>UDP port 7882-7889</strong> ke server Live.
                 </span>
             </div>
 
@@ -834,12 +840,25 @@ onBeforeUnmount(() => {
                 </div>
             </div>
 
-            <div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
-                <!-- Dinding video -->
-                <section ref="wallEl" aria-labelledby="live-wall-title" :class="isFullscreen && 'overflow-auto bg-base-950 p-4'">
+            <div class="grid items-start gap-5" :class="!auth.seesOnlySelf && 'xl:grid-cols-[minmax(0,1fr)_20rem]'">
+                <!-- Dinding video (tidak ada untuk staf biasa: hanya melihat dirinya sendiri) -->
+                <section
+                    v-if="!auth.seesOnlySelf"
+                    ref="wallEl"
+                    aria-labelledby="live-wall-title"
+                    :class="isFullscreen && 'overflow-auto bg-base-950 p-4'"
+                >
                     <!-- Ruang leader: terpisah dari dinding staf, hanya untuk admin & root. -->
-                    <div v-if="canWatchLeaders && leaderParticipants.length" class="mb-6" aria-labelledby="live-leaders-title" role="region">
-                        <h2 id="live-leaders-title" class="mb-3 flex items-center gap-2 font-display text-lg font-bold text-base-50 tracking-[-0.015em]">
+                    <div
+                        v-if="canWatchLeaders && leaderParticipants.length"
+                        class="mb-6"
+                        aria-labelledby="live-leaders-title"
+                        role="region"
+                    >
+                        <h2
+                            id="live-leaders-title"
+                            class="mb-3 flex items-center gap-2 font-display text-lg font-bold text-base-50 tracking-[-0.015em]"
+                        >
                             Leader
                             <span class="font-mono text-sm font-medium text-base-500 tabular-nums">{{ leaderParticipants.length }}</span>
                             <span class="text-xs font-normal text-base-500">· hanya terlihat oleh admin & root</span>
@@ -876,7 +895,10 @@ onBeforeUnmount(() => {
                     </div>
 
                     <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                        <h2 id="live-wall-title" class="flex items-center gap-2 font-display text-lg font-bold text-base-50 tracking-[-0.015em]">
+                        <h2
+                            id="live-wall-title"
+                            class="flex items-center gap-2 font-display text-lg font-bold text-base-50 tracking-[-0.015em]"
+                        >
                             Sedang live
                             <span class="font-mono text-sm font-medium text-base-500 tabular-nums">{{ wallParticipants.length }}</span>
                             <span v-if="isFullscreen && !isAllSites" class="text-sm font-normal text-base-500"
@@ -1258,8 +1280,8 @@ onBeforeUnmount(() => {
             :title="canShareScreen ? 'Mulai kerja & bagikan seluruh layar?' : 'Mulai kerja & nyalakan kamera?'"
             :description="
                 canShareScreen
-                    ? 'Setelah menekan Mulai kerja, pilih tab Entire screen (Seluruh layar) lalu tekan Share. Layar, kamera, dan suara mikrofon Anda disiarkan ke rekan di site Anda sampai Anda menekan Selesai kerja. Mikrofon bisa Anda bisukan kapan saja. Tidak direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja.'
-                    : 'Kamera dan suara mikrofon Anda disiarkan ke rekan di site Anda sampai Anda menekan Selesai kerja. Mikrofon bisa Anda bisukan kapan saja. Tidak direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja.'
+                    ? 'Setelah menekan Mulai kerja, pilih tab Entire screen (Seluruh layar) lalu tekan Share. Layar, kamera, dan suara mikrofon Anda disiarkan ke atasan Anda (leader, admin, dan admin site) sampai Anda menekan Selesai kerja. Mikrofon bisa Anda bisukan kapan saja. Tidak direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja.'
+                    : 'Kamera dan suara mikrofon Anda disiarkan ke atasan Anda (leader, admin, dan admin site) sampai Anda menekan Selesai kerja. Mikrofon bisa Anda bisukan kapan saja. Tidak direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja.'
             "
             confirm-label="Mulai kerja"
             confirm-variant="primary"
