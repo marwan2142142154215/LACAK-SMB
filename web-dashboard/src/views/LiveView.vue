@@ -123,10 +123,34 @@ async function loadStatus() {
     }
 }
 
+// Staf baru masuk room sebelum status berkalanya termuat -> muat ulang lebih
+// awal. Watcher ini terpicu di SETIAP event LiveKit (indikator bicara dst),
+// dan /live/overview berat -- jadi hanya untuk identity yang belum pernah
+// dicari, dan paling sering sekali per OVERVIEW_MIN_GAP_MS. Peserta tanpa
+// sesi kerja (mis. sesinya baru ditutup) tidak memicu muat ulang lagi;
+// statusnya ikut diperbarui oleh loadStatus berkala.
+const OVERVIEW_MIN_GAP_MS = 5_000
+const requestedIdentities = new Set()
+let lastEarlyLoadAt = 0
+let earlyLoadTimer = null
+
+function loadStatusSoon() {
+    if (earlyLoadTimer) return
+    const wait = Math.max(0, lastEarlyLoadAt + OVERVIEW_MIN_GAP_MS - Date.now())
+    earlyLoadTimer = setTimeout(() => {
+        earlyLoadTimer = null
+        lastEarlyLoadAt = Date.now()
+        loadStatus()
+    }, wait)
+}
+
 watch(
     () => live.remoteParticipants.map((p) => p.identity),
     (identities) => {
-        if (identities.some((id) => !(id in sessionByIdentity.value))) loadStatus()
+        const unknown = identities.filter((id) => !(id in sessionByIdentity.value) && !requestedIdentities.has(id))
+        if (!unknown.length) return
+        unknown.forEach((id) => requestedIdentities.add(id))
+        loadStatusSoon()
     },
 )
 
@@ -424,6 +448,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
     document.removeEventListener('fullscreenchange', syncFullscreen)
     clearInterval(statusTimer)
+    clearTimeout(earlyLoadTimer)
 })
 </script>
 
