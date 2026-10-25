@@ -35,7 +35,7 @@ class DemoAccountsSeeder extends Seeder
     ];
 
     /** Staf tambahan per site, untuk menguji dinding Live Kerja & log kerja dengan banyak orang. */
-    private const EXTRA_STAFF = ['A' => [3, 62], 'B' => [2, 11]];
+    private const EXTRA_STAFF = ['A' => [3, 262], 'B' => [2, 11]];
 
     /** Root tambahan (super_admin) selain `root`: root2, root3. */
     private const EXTRA_ROOTS = [2, 3];
@@ -83,6 +83,10 @@ class DemoAccountsSeeder extends Seeder
         ];
 
         $password = env('DEMO_ACCOUNTS_PASSWORD') ?: 'Uji-'.Str::random(10);
+        // Satu hash untuk semua akun (passwordnya sama): bcrypt ratusan kali
+        // makan beberapa menit di server. Cast 'hashed' di model User tidak
+        // meng-hash ulang nilai yang sudah berupa hash.
+        $passwordHash = Hash::make($password);
 
         foreach ($this->accounts() as [$username, $name, $role, $siteKey, $access]) {
             // withTrashed: akun dummy yang pernah dihapus dihidupkan lagi,
@@ -90,7 +94,7 @@ class DemoAccountsSeeder extends Seeder
             $user = User::withTrashed()->updateOrCreate(['username' => $username], [
                 'name' => $name,
                 'email' => "{$username}@uji.salahmu.fun",
-                'password' => Hash::make($password),
+                'password' => $passwordHash,
                 'organization_id' => $siteKey ? $sites[$siteKey]->id : null,
                 'is_active' => true,
             ]);
