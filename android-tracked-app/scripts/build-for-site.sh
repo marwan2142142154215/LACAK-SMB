@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build APK pelacak yang KODE SITE-nya sudah ditanam saat build (bukan
-# diketik staf saat pakai), lalu daftarkan ke backend-api supaya muncul di
+# diketik staf saat pakai), lalu daftarkan ke backend-adonis supaya muncul di
 # dashboard untuk didownload admin (menu APK Builds -> checksum dihitung
 # server, dipakai gateway untuk menolak APK bajakan/duplikat).
 #
@@ -50,7 +50,7 @@ fi
 CHECKSUM=$(sha256sum "$APK_PATH" | cut -d' ' -f1)
 echo "=== Checksum lokal (hanya untuk referensi; server menghitung ulang): $CHECKSUM ==="
 
-echo "=== Mengunggah ke backend-api (organization_id=$ORGANIZATION_ID) ==="
+echo "=== Mengunggah ke backend-adonis (organization_id=$ORGANIZATION_ID) ==="
 curl -sS -X POST "$BACKEND_API_URL/apk-builds" \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     -F "organization_id=$ORGANIZATION_ID" \

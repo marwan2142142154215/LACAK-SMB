@@ -11,10 +11,13 @@
 .DS_Store
 Thumbs.db
 
-# Catatan: tiap sub-proyek (backend-api, realtime-gateway, web-dashboard,
+# Catatan: tiap sub-proyek (backend-adonis, realtime-gateway, web-dashboard,
 # android-tracked-app, telegram-bot) punya .gitignore sendiri untuk
 # .env, node_modules, vendor, build, dsb. File ini hanya menutup celah
 # di level root monorepo.
+
+# File lokal aplikasi di server (STORAGE_PATH backend-adonis)
+/storage/
 
 # server-gui build artefacts
 server-gui/build/

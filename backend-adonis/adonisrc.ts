@@ -42,5 +42,6 @@ export default defineConfig({
         forceExit: true,
     },
 
-    metaFiles: [],
+    // Skema dasar database dibaca migrasi 0000_baseline_schema dari folder build.
+    metaFiles: [{ pattern: 'database/schema/**/*.sql', reloadServer: false }],
 })

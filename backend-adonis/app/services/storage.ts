@@ -13,10 +13,10 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import env from '#start/env'
 
 /**
- * Disk penyimpanan file yang SAMA dengan backend-api (config/filesystems.php):
+ * Disk penyimpanan file (struktur sama dengan backend-api Laravel dulu):
  *
- * - "local"  = storage/app/private milik backend-api (LARAVEL_STORAGE_PATH),
- *              jadi file lama tetap terbaca dan file baru terbaca Laravel.
+ * - "local"  = folder STORAGE_PATH (dulu storage/app/private backend-api,
+ *              LARAVEL_STORAGE_PATH), jadi file lama tetap terbaca.
  * - "spaces" = DigitalOcean Spaces (S3), kredensial DO_SPACES_*.
  *
  * Path selalu relatif terhadap akar disk, sama dengan kolom file_path di DB.
@@ -166,7 +166,8 @@ export function disk(name: DiskName): Disk {
             name === 'spaces'
                 ? new SpacesDisk()
                 : new LocalDisk(
-                      env.get('LARAVEL_STORAGE_PATH') ??
+                      env.get('STORAGE_PATH') ??
+                          env.get('LARAVEL_STORAGE_PATH') ??
                           join(process.cwd(), 'storage', 'app', 'private')
                   )
         disks.set(name, instance)

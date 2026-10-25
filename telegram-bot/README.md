@@ -2,7 +2,7 @@
 
 Jembatan Telegram untuk kontrol device: operator kirim `/lock`, `/unlock`,
 `/locate`, `/devices`, `/status` lewat chat, bot meneruskan ke
-[backend-api](../backend-api) (tercatat sebagai `issued_via: telegram_bot`
+[backend-adonis](../backend-adonis) (tercatat sebagai `issued_via: telegram_bot`
 di audit trail). Alert pelanggaran geofence **tidak** lewat bot ini — itu
 dikirim langsung oleh [realtime-gateway](../realtime-gateway), yang
 memegang token bot asli di `.env`-nya sendiri.
@@ -10,17 +10,17 @@ memegang token bot asli di `.env`-nya sendiri.
 ## Teknologi
 - Node.js 24 + AdonisJS 7 (tanpa HTTP server; bot dijalankan lewat perintah Ace `bot:run`)
 - node-telegram-bot-api v2 (`Bot`, middleware `command()`/`hears()`)
-- axios (ke backend-api)
+- axios (ke backend-adonis)
 
 ## Library utama
 - `node-telegram-bot-api` : klien Bot API Telegram
-- `axios`                 : permintaan HTTP ke backend-api
+- `axios`                 : permintaan HTTP ke backend-adonis
 - `@adonisjs/core`        : kerangka aplikasi (env, logger, perintah ace)
 
 ## Arsitektur singkat
 
 ```
-Operator (Telegram) --/lock 5--> Bot --POST /devices/5/commands--> backend-api --> (DB) --> gateway --> device
+Operator (Telegram) --/lock 5--> Bot --POST /devices/5/commands--> backend-adonis --> (DB) --> gateway --> device
                                    |
                                    +-- GET /telegram-bindings-lookup?chat_id=X
                                        (cocokkan chat ini milik site mana)
@@ -33,17 +33,17 @@ dashboard (menu **Bot Telegram** → Tambah Binding). Bot menolak perintah
 dari chat yang belum ditautkan dengan pesan yang jelas, bukan diam saja.
 
 ## Akun layanan & token
-Bot login ke backend-api memakai **akun layanan** `telegram-bot`
+Bot login ke backend-adonis memakai **akun layanan** `telegram-bot`
 (`is_active=false`, tidak bisa login manusiawi lewat 2FA) dan role
 `telegram_bot_service` — permission terbatas hanya
 `devices.view/lock/unlock/locate/monitor`, **tidak** bisa kelola site/consent
 /geofence/APK/binding. Token diterbitkan sekali lewat:
 
 ```bash
-php artisan bot:issue-telegram-token
+node ace bot:issue-telegram-token
 ```
 
-(dijalankan dari folder `backend-api`). Salin hasilnya ke `telegram-bot/.env`
+(dijalankan dari folder `backend-adonis`; di server: `cd backend-adonis/build && node ace bot:issue-telegram-token`). Salin hasilnya ke `telegram-bot/.env`
 sebagai `BACKEND_API_TOKEN` — token tidak ditampilkan lagi setelah itu.
 
 ## Cara menjalankan di local
@@ -52,7 +52,7 @@ sebagai `BACKEND_API_TOKEN` — token tidak ditampilkan lagi setelah itu.
    [@BotFather](https://t.me/BotFather)), `BACKEND_API_URL`, dan
    `BACKEND_API_TOKEN` (lihat di atas), lalu buat `APP_KEY` dengan
    `node ace generate:key`
-3. Pastikan backend-api sudah jalan dan ada minimal satu
+3. Pastikan backend-adonis sudah jalan dan ada minimal satu
    `telegram_bindings` row yang mengarah ke chat Anda
 4. `npm start` (sama dengan `node ace bot:run`)
 
@@ -76,7 +76,7 @@ Untuk production: `npm run build`, lalu dari folder `build/` jalankan
 
 ## Catatan pengujian
 Diuji dengan token bot & chat ID nyata (bukan dummy): `getMe` berhasil
-mengonfirmasi identitas bot `@lacak_smb_bot`, endpoint lookup backend-api
+mengonfirmasi identitas bot `@lacak_smb_bot`, endpoint lookup backend-adonis
 berhasil mencocokkan chat nyata ke site, dan bot berhasil polling tanpa
 error. Pengiriman pesan nyata dari **gateway** ke Telegram sempat diuji dan
 kode terbukti benar lewat pemanggilan `sendMessage` manual (curl/PowerShell)
@@ -92,5 +92,5 @@ sungguhan.
 - Divisi pengguna: Pemilik sistem
 
 ## Tautan terkait
-- Backend API (Laravel)      : [../backend-api](../backend-api)
+- Backend API (AdonisJS)     : [../backend-adonis](../backend-adonis)
 - Realtime gateway (AdonisJS): [../realtime-gateway](../realtime-gateway)

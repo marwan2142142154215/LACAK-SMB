@@ -53,7 +53,7 @@ export default class IssueTelegramBotToken extends BaseCommand {
             .first()
 
         if (!bot) {
-            this.logger.error('Akun telegram-bot belum ada. Jalankan "php artisan db:seed" dulu.')
+            this.logger.error('Akun telegram-bot belum ada. Jalankan "node ace db:seed" dulu.')
             this.exitCode = 1
             return
         }

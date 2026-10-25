@@ -29,7 +29,7 @@ from tkinter import ttk
 
 
 def _find_repo_root() -> Path:
-    """Cari akar repo (folder yang berisi backend-api + realtime-gateway)."""
+    """Cari akar repo (folder yang berisi backend-adonis + realtime-gateway)."""
     if getattr(sys, "frozen", False):
         seed = Path(sys.executable).resolve().parent
     else:
@@ -38,7 +38,7 @@ def _find_repo_root() -> Path:
     for start in (seed, cwd):
         cur = start
         while True:
-            if (cur / "backend-api").is_dir() and (cur / "realtime-gateway").is_dir():
+            if (cur / "backend-adonis").is_dir() and (cur / "realtime-gateway").is_dir():
                 return cur
             if cur.parent == cur:
                 break
@@ -49,7 +49,7 @@ def _find_repo_root() -> Path:
 REPO_ROOT = _find_repo_root()
 
 CREATE_NEW_PROCESS_GROUP = 0x00000200
-# TANPA ini, setiap child process (php/npm.cmd/cloudflared) membuka jendela
+# TANPA ini, setiap child process (node/npm.cmd/cloudflared) membuka jendela
 # cmd sendiri-sendiri -- CREATE_NEW_PROCESS_GROUP saja cuma bikin grup proses
 # baru (buat kirim CTRL_BREAK), TIDAK menyembunyikan window. CREATE_NO_WINDOW
 # yang benar-benar mencegah window konsol muncul sama sekali; stdout/stderr
@@ -76,10 +76,14 @@ SERVICES = [
     # Port 8000/8080 WAJIB sama persis dengan yang ditunggu Cloudflare Tunnel
     # (lihat config remote tunnel LACAKSMB: api.->* :8000, app.->*:8080) --
     # jangan diubah sendiri-sendiri tanpa mengubah tunnel-nya juga.
-    ("backend", "Backend API (Laravel :8000)", "backend-api",
-     ["php", "artisan", "serve", "--host=127.0.0.1", "--port=8000"], 8000),
-    ("queue", "Antrean Build APK (queue:work)", "backend-api",
-     ["php", "artisan", "queue:work", "--tries=1", "--timeout=310"], None),
+    # backend-adonis membaca PORT dari .env-nya (8020); di sini dipaksa 8000
+    # lewat variabel lingkungan supaya cocok dengan tunnel.
+    ("backend", "Backend API (Adonis :8000)", "backend-adonis",
+     ["cmd.exe", "/c", "set PORT=8000&& npm.cmd run dev"], 8000),
+    ("queue", "Antrean Build APK (queue:work)", "backend-adonis",
+     ["node", "ace", "queue:work"], None),
+    ("scheduler", "Jadwal (scheduler:run)", "backend-adonis",
+     ["node", "ace", "scheduler:run"], None),
     # "npm start" -> node bin/server.js yang TIDAK ADA (proyek ini TypeScript
     # murni, belum pernah di-build) -- "npm run dev" yang menjalankan
     # bin/server.ts via AdonisJS ace serve, sama seperti dipakai sepanjang
@@ -113,7 +117,7 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 # gagal konek DB, queue:work crash exit 1 "connection refused"). Menunggu di
 # sini sekali di awal jauh lebih murah/jelas daripada menambal tiap layanan.
 POSTGRES_PORT = 5432
-DB_DEPENDENT_SERVICES = {"backend", "queue", "gateway"}
+DB_DEPENDENT_SERVICES = {"backend", "queue", "scheduler", "gateway"}
 
 # Berapa kali boleh auto-restart sendiri sebelum menyerah (anggap error
 # menetap, bukan sekadar koneksi WSL2 yang sempat putus sesaat -- pernah
@@ -218,6 +222,7 @@ class ServerController(tk.Tk):
         self.log.tag_config("wsl-keepalive", foreground="#94a3b8")
         self.log.tag_config("backend", foreground="#60a5fa")
         self.log.tag_config("queue", foreground="#38bdf8")
+        self.log.tag_config("scheduler", foreground="#38bdf8")
         self.log.tag_config("gateway", foreground="#a78bfa")
         self.log.tag_config("dashboard", foreground="#34d399")
         self.log.tag_config("telegram-bot", foreground="#fbbf24")
@@ -233,7 +238,7 @@ class ServerController(tk.Tk):
         lines = ANSI.sub("", text).splitlines() or [""]
         self.log.config(state="normal")
         for line in lines:
-            self.log.insert("end", f"[{sid:>7}] " + line + "\n", sid if sid in ("wsl-keepalive", "backend", "queue", "gateway", "dashboard", "telegram-bot", "tunnel") else "sys")
+            self.log.insert("end", f"[{sid:>7}] " + line + "\n", sid if sid in ("wsl-keepalive", "backend", "queue", "scheduler", "gateway", "dashboard", "telegram-bot", "tunnel") else "sys")
         self.log.see("end")
         self.log.config(state="disabled")
 
