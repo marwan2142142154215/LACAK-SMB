@@ -37,10 +37,24 @@ class DemoAccountsSeeder extends Seeder
     /** Staf tambahan per site, untuk menguji dinding Live Kerja & log kerja dengan banyak orang. */
     private const EXTRA_STAFF = ['A' => [3, 62], 'B' => [2, 11]];
 
+    /** Root tambahan (super_admin) selain `root`: root2, root3. */
+    private const EXTRA_ROOTS = [2, 3];
+
+    /** Akun admin tim audit LC: auditlc1 - auditlc10, akses Site Uji A & B. */
+    private const AUDITLC_ADMINS = [1, 10];
+
     /** @return array<int, array{0: string, 1: string, 2: string, 3: string|null, 4: array<int, string>}> */
     private function accounts(): array
     {
         $accounts = self::ACCOUNTS;
+
+        foreach (self::EXTRA_ROOTS as $number) {
+            $accounts[] = ["root{$number}", "Root {$number} (uji)", 'super_admin', null, []];
+        }
+
+        foreach (range(...self::AUDITLC_ADMINS) as $number) {
+            $accounts[] = ["auditlc{$number}", "Audit LC {$number}", 'admin', null, ['A', 'B']];
+        }
 
         foreach (self::EXTRA_STAFF as $siteKey => [$from, $to]) {
             foreach (range($from, $to) as $number) {
