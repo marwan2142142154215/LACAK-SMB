@@ -47,9 +47,21 @@ export function canBroadcast(user: AuthenticatedUser): boolean {
     return user.permissions.includes('live.broadcast') || user.roles.includes('leader')
 }
 
-/** Sama dengan aturan watchableSites() di WorkSessionController backend-api. */
+/**
+ * Staf biasa (peran staff_viewer saja) hanya melihat dirinya sendiri: tidak
+ * ikut room status site (status sendiri datang dari balasan `live:state`).
+ * Sama dengan seesOnlySelf() di backend-adonis.
+ */
+export function seesOnlySelf(user: AuthenticatedUser): boolean {
+    return (
+        user.roles.includes('staff_viewer') &&
+        !['super_admin', 'admin', 'leader', 'site_admin'].some((role) => user.roles.includes(role))
+    )
+}
+
+/** Sama dengan aturan watchableSites() di WorkSessionsController backend-adonis. */
 export function canWatchSite(user: AuthenticatedUser, organizationId: number): boolean {
-    if (!user.permissions.includes('live.watch')) return false
+    if (!user.permissions.includes('live.watch') || seesOnlySelf(user)) return false
     if (user.roles.includes('super_admin')) return true
     if (user.roles.includes('admin') || user.roles.includes('leader')) {
         return user.accessibleOrganizationIds.includes(organizationId)

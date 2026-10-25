@@ -6,7 +6,7 @@ import testUtils from '@adonisjs/core/services/test_utils'
 import PersonalAccessToken from '#models/personal_access_token'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
 
-async function staffIn(organizationId: number) {
+async function staffIn(organizationId: number, roleName = 'staff_viewer') {
     const suffix = randomBytes(4).toString('hex')
     const [user] = await db
         .table('users')
@@ -21,10 +21,7 @@ async function staffIn(organizationId: number) {
             updated_at: new Date(),
         })
         .returning(['id'])
-    const role = await db
-        .from('roles')
-        .where({ name: 'staff_viewer', guard_name: 'web' })
-        .firstOrFail()
+    const role = await db.from('roles').where({ name: roleName, guard_name: 'web' }).firstOrFail()
     await db.table('model_has_roles').insert({
         role_id: role.id,
         model_type: LARAVEL_USER_MORPH,
@@ -74,7 +71,8 @@ test.group('Live Kerja: status Online di daftar staf', (group) => {
         const oldToken = await staffIn(org.id)
         const expired = await staffIn(org.id)
         const notLoggedIn = await staffIn(org.id)
-        const viewer = await staffIn(org.id)
+        // Pengawas site: staf biasa hanya melihat dirinya sendiri (tes di bawah).
+        const viewer = await staffIn(org.id, 'site_admin')
 
         await loginToken(loggedIn, DateTime.now().plus({ hours: 2 }))
         // Token lama sebelum kolom device_type: tetap dihitung login.
@@ -209,5 +207,53 @@ test.group('Live Kerja: ruang leader', (group) => {
             .json({ room: 'leaders' })
             .bearerToken(staffBearer)
         denied.assertStatus(403)
+    })
+
+    test('staf biasa hanya melihat dirinya sendiri di daftar & tidak bisa menonton', async ({
+        client,
+        assert,
+    }) => {
+        const [org] = await db
+            .table('organizations')
+            .insert({
+                name: 'Site Sendiri',
+                type: 'company_asset',
+                unique_site_code: `UJI-${randomBytes(4).toString('hex').toUpperCase()}`,
+                is_active: true,
+                created_at: new Date(),
+                updated_at: new Date(),
+            })
+            .returning(['id'])
+
+        const me = await staffIn(org.id)
+        const colleague = await staffIn(org.id)
+        await loginToken(colleague, DateTime.now().plus({ hours: 2 }))
+        const bearer = await loginToken(me, DateTime.now().plus({ hours: 2 }))
+
+        const sessions = await client.get('/api/v1/live/sessions').bearerToken(bearer)
+        sessions.assertStatus(200)
+        assert.deepEqual(
+            sessions.body().data.roster.map((staff: { user_id: number }) => staff.user_id),
+            [me]
+        )
+
+        const overview = await client.get('/api/v1/live/overview').bearerToken(bearer)
+        overview.assertStatus(200)
+        assert.deepEqual(
+            overview.body().data.roster.map((staff: { user_id: number }) => staff.user_id),
+            [me]
+        )
+
+        const watch = await client
+            .post('/api/v1/live/watch-token')
+            .json({ organization_id: org.id })
+            .bearerToken(bearer)
+        watch.assertStatus(403)
+
+        const recordings = await client
+            .get('/api/v1/live/recordings')
+            .qs({ user_id: colleague })
+            .bearerToken(bearer)
+        recordings.assertStatus(403)
     })
 })
