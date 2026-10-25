@@ -17,6 +17,8 @@ Environment=NODE_ENV=production
 ExecStart=/usr/bin/env node bin/server.js
 Restart=on-failure
 RestartSec=5
+# Aplikasi keluar paksa sendiri setelah 8 detik (bin/server.ts); batas systemd sedikit di atasnya.
+TimeoutStopSec=15
 
 [Install]
 WantedBy=multi-user.target

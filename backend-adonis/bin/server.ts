@@ -31,8 +31,18 @@ new Ignitor(APP_ROOT, { importer: IMPORTER })
         app.booting(async () => {
             await import('#start/env')
         })
-        app.listen('SIGTERM', () => app.terminate())
-        app.listenIf(app.managedByPm2, 'SIGINT', () => app.terminate())
+        // Shutdown dibatasi: di produksi app.terminate() pernah tidak selesai
+        // (koneksi keepalive nginx/Redis menahan proses) sampai systemd
+        // membunuhnya setelah 90 detik -- selama itu API tidak bisa diakses.
+        // Beri waktu SHUTDOWN_GRACE_MS untuk menyelesaikan request yang
+        // berjalan, lalu keluar paksa.
+        const SHUTDOWN_GRACE_MS = 8_000
+        const shutdown = () => {
+            setTimeout(() => process.exit(0), SHUTDOWN_GRACE_MS).unref()
+            return app.terminate()
+        }
+        app.listen('SIGTERM', shutdown)
+        app.listenIf(app.managedByPm2, 'SIGINT', shutdown)
     })
     .httpServer()
     .start()
