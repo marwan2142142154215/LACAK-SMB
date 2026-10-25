@@ -1,6 +1,7 @@
 import app from '@adonisjs/core/services/app'
 import { type HttpContext, ExceptionHandler } from '@adonisjs/core/http'
 import { errors as vineErrors } from '@vinejs/vine'
+import redis from '@adonisjs/redis/services/main'
 
 /**
  * Pesan per kode status, sama dengan backend-api (bootstrap/app.php) supaya
@@ -38,6 +39,16 @@ export default class HttpExceptionHandler extends ExceptionHandler {
                 .send({ success: false, message: SERVER_ERROR, errors: null })
         }
 
+        // Token dicabut karena akun ini login di perangkat lain (satu akun =
+        // satu sesi, lihat endOtherSessions di auth_controller.ts).
+        if (status === 401 && (await wasReplaced(ctx))) {
+            return ctx.response.status(401).send({
+                success: false,
+                message: 'Sesi Anda berakhir karena akun ini login di perangkat lain.',
+                errors: { reason: 'session_replaced' },
+            })
+        }
+
         return ctx.response.status(status).send({
             success: false,
             message:
@@ -49,6 +60,21 @@ export default class HttpExceptionHandler extends ExceptionHandler {
 
     async report(error: unknown, ctx: HttpContext) {
         return super.report(error, ctx)
+    }
+}
+
+/** Penanda auth:replaced_token:<id> (TTL 2 jam) untuk id token Bearer yang dipakai. */
+async function wasReplaced(ctx: HttpContext): Promise<boolean> {
+    const bearer = ctx.request.header('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1] ?? ''
+    const tokenId = bearer.trim().split('|')[0]
+    if (!/^\d+$/.test(tokenId)) {
+        return false
+    }
+    try {
+        return (await redis.exists(`auth:replaced_token:${tokenId}`)) === 1
+    } catch {
+        // Redis bermasalah: tetap balas 401 biasa, jangan jadi 500.
+        return false
     }
 }
 

@@ -15,7 +15,16 @@ server.use([
     () => import('@adonisjs/cors/cors_middleware'),
 ])
 
-router.use([() => import('@adonisjs/core/bodyparser_middleware')])
+/**
+ * Log aktivitas API (RecordApiActivity di backend-api) dipasang untuk SEMUA
+ * route yang cocok, termasuk route auth publik, setelah bodyparser (butuh
+ * isi permintaan). Ia berjalan sebelum middleware bernama (auth, throttle)
+ * tapi membaca ctx.authUser setelah next(), jadi pelaku tetap terlihat.
+ */
+router.use([
+    () => import('@adonisjs/core/bodyparser_middleware'),
+    () => import('#middleware/record_api_activity_middleware'),
+])
 
 export const middleware = router.named({
     auth: () => import('#middleware/auth_middleware'),
