@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { io } from 'socket.io-client'
 import { computed, ref } from 'vue'
 
 import api from '@/lib/api'
@@ -15,6 +16,8 @@ const CAMERA_MUTED_AFTER_MS = 15_000
 // Render ulang grid paling sering sekali per selang ini untuk event yang
 // beruntun (indikator bicara, kualitas koneksi).
 const BUMP_THROTTLE_MS = 250
+// Jawaban gateway untuk live:state; lebih lama dari ini -> cadangan HTTP.
+const SOCKET_REPORT_TIMEOUT_MS = 8_000
 // Tanpa keyboard/mouse selama ini (atau layar komputer terkunci) -> IDLE.
 const IDLE_THRESHOLD_MS = 5 * 60_000
 
@@ -131,6 +134,11 @@ let cameraMutedSince = null
 let screenDeadSince = null
 let reportTimer = null
 let bumpTimer = null
+// Socket Live Kerja ke gateway (lihat ensureLiveSocket).
+let liveSocket = null
+let liveSocketToken = null
+let liveWatchIds = []
+const liveStatusListeners = new Set()
 let wakeLock = null
 let idleDetector = null
 let idleAbort = null
@@ -370,6 +378,7 @@ export const useLiveStore = defineStore('live', () => {
         // removeAllListeners: disconnect() yang kita minta sendiri bukan "putus".
         await Promise.all(current.map((room) => room.removeAllListeners().disconnect()))
         resetBroadcastState()
+        releaseLiveSocketIfUnused()
         bump()
     }
 
@@ -503,6 +512,9 @@ export const useLiveStore = defineStore('live', () => {
             broadcastStartedAt.value = session.started_at ?? new Date().toISOString()
             onBreak.value = !!session.on_break
             startHeartbeat()
+            // Heartbeat berikutnya lewat socket; yang pertama ini masih HTTP
+            // kalau socket belum tersambung (lihat sendHeartbeat).
+            ensureLiveSocket()
             acquireWakeLock()
             startIdleWatch(await idlePermission)
             await sendHeartbeat()
@@ -664,20 +676,96 @@ export const useLiveStore = defineStore('live', () => {
 
     async function sendHeartbeat() {
         if (mode.value !== 'broadcasting') return
+        const state = {
+            // cameraLive: kamera yang di-mute browser cukup lama juga mati.
+            camera_active: cameraLive.value && cameraIsLive(),
+            screen_active: trackIsLive(SCREEN_SOURCE),
+            on_break: onBreak.value,
+            idle: isIdle.value,
+        }
+
+        // Lewat socket gateway: tanpa request HTTP, tanpa PHP. HTTP hanya
+        // cadangan kalau socket sedang tidak tersambung.
+        const reply = await reportOverSocket(state)
+        if (reply?.closed) return disconnect()
+        if (reply?.ok) {
+            myStatus.value = reply.status ?? null
+            return
+        }
+
         try {
-            const response = await api.post('/live/sessions/heartbeat', {
-                // cameraLive: kamera yang di-mute browser cukup lama juga mati.
-                camera_active: cameraLive.value && cameraIsLive(),
-                screen_active: trackIsLive(SCREEN_SOURCE),
-                on_break: onBreak.value,
-                idle: isIdle.value,
-            })
+            const response = await api.post('/live/sessions/heartbeat', state)
             myStatus.value = response.data.data?.status ?? null
         } catch (err) {
             // 404 = server sudah menutup sesi (mis. jaringan sempat putus
             // lebih lama dari batas timeout) -- berhenti menyiarkan.
             if (err.response?.status === 404) await disconnect()
         }
+    }
+
+    // ---- Socket Live Kerja (realtime-gateway, namespace /ops)
+    // Staf yang siaran mengirim status lewat `live:state`; penonton menerima
+    // perubahan status staf lewat `live:status` -- pengganti heartbeat HTTP &
+    // polling /live/overview (lihat realtime-gateway/app/services/live_hub.ts).
+
+    function ensureLiveSocket() {
+        if (liveSocket && liveSocketToken === auth.token) return liveSocket
+        closeLiveSocket()
+        if (!auth.token) return null
+
+        liveSocketToken = auth.token
+        liveSocket = io(`${import.meta.env.VITE_GATEWAY_WS_URL}/ops`, {
+            transports: ['websocket'],
+            auth: { token: auth.token },
+        })
+        liveSocket.on('connect', () => {
+            if (liveWatchIds.length) liveSocket.emit('live:watch', { organizationIds: liveWatchIds })
+            if (mode.value === 'broadcasting') scheduleReport()
+        })
+        liveSocket.on('live:status', (event) => liveStatusListeners.forEach((listener) => listener(event)))
+        liveSocket.on('session:expired', async () => {
+            auth.clearSession()
+            await disconnect()
+            const { default: router } = await import('@/router')
+            router.push({ name: 'login' })
+        })
+        return liveSocket
+    }
+
+    function closeLiveSocket() {
+        liveSocket?.disconnect()
+        liveSocket = null
+        liveSocketToken = null
+    }
+
+    /** Tutup socket kalau tidak sedang siaran maupun menonton. */
+    function releaseLiveSocketIfUnused() {
+        if (mode.value !== 'broadcasting' && !liveWatchIds.length) closeLiveSocket()
+    }
+
+    function reportOverSocket(state) {
+        const socket = ensureLiveSocket()
+        if (!socket?.connected) return Promise.resolve(null)
+        return new Promise((resolve) => {
+            socket.timeout(SOCKET_REPORT_TIMEOUT_MS).emit('live:state', state, (err, reply) => resolve(err ? null : reply))
+        })
+    }
+
+    /** Terima perubahan status staf di site-site ini (kosong = berhenti menonton). */
+    function watchLiveStatus(organizationIds) {
+        liveWatchIds = [...organizationIds]
+        if (liveWatchIds.length) {
+            ensureLiveSocket()?.emit('live:watch', { organizationIds: liveWatchIds })
+        } else {
+            liveSocket?.emit('live:watch', { organizationIds: [] })
+            releaseLiveSocketIfUnused()
+        }
+    }
+
+    /** @returns {() => void} berhenti mendengarkan */
+    function onLiveStatus(listener) {
+        liveStatusListeners.add(listener)
+        return () => liveStatusListeners.delete(listener)
     }
 
     // Beberapa event bisa datang beruntun (unpublish + mute) -- satu laporan saja.
@@ -858,6 +946,8 @@ export const useLiveStore = defineStore('live', () => {
         watchedSiteIds,
         localCameraTrack,
         localScreenTrack,
+        watchLiveStatus,
+        onLiveStatus,
         watchSite,
         watchSites,
         startWork,
