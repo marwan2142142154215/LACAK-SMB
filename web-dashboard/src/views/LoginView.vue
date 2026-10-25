@@ -186,7 +186,7 @@ async function copyText(text, message) {
         <section
             class="relative isolate flex flex-col overflow-hidden border-b border-base-800 bg-base-900 px-6 pt-6 pb-8 sm:px-10 lg:border-r lg:border-b-0 lg:py-10"
         >
-            <div class="flex items-center justify-between font-mono text-[11px] tracking-[0.18em] text-base-400 uppercase">
+            <div class="flex items-center justify-between text-[12px] text-base-400 font-semibold">
                 <span><span class="text-base-50">Lacak</span> SMB</span>
                 <span class="hidden sm:inline">BLE 2.4 GHz · GPS</span>
             </div>
@@ -199,14 +199,14 @@ async function copyText(text, message) {
 
             <div class="mt-16 max-w-md lg:mt-0">
                 <h1
-                    class="font-display text-[2rem] leading-[1.05] font-semibold tracking-[-0.02em] text-balance text-base-50 sm:text-4xl xl:text-5xl"
+                    class="font-display text-[2rem] leading-[1.05] font-extrabold text-balance text-base-50 sm:text-4xl xl:text-5xl tracking-[-0.03em]"
                 >
                     Semua perangkat kantor, dalam satu jangkauan.
                 </h1>
                 <p class="mt-3 max-w-sm text-sm text-pretty text-base-400">
                     Lokasi, status, dan Live Kerja tiap site — hanya untuk staf yang terdaftar.
                 </p>
-                <p class="mt-6 flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] uppercase" role="status">
+                <p class="mt-6 flex items-center gap-2 text-[12px] font-semibold" role="status">
                     <span
                         class="size-1.5 rounded-full"
                         :class="granted ? 'bg-accent-300' : stepIndex === 1 ? 'bg-copper-400' : 'bg-base-400'"
@@ -226,7 +226,7 @@ async function copyText(text, message) {
                             :class="i < stepIndex ? 'bg-accent-500/60' : i === stepIndex ? 'bg-accent-400' : 'bg-base-800'"
                         />
                         <span
-                            class="mt-2 block font-mono text-[10px] tracking-[0.14em] uppercase transition-colors"
+                            class="mt-2 block text-[11px] transition-colors font-semibold"
                             :class="i === stepIndex ? 'text-base-100' : 'text-base-500'"
                         >
                             {{ item.label }}
@@ -237,7 +237,7 @@ async function copyText(text, message) {
                 <!-- Tahap 1: akun -->
                 <form v-if="step === 'credentials'" class="space-y-5" @submit.prevent="handleCredentialsSubmit">
                     <header>
-                        <h2 class="font-display text-2xl font-semibold tracking-[-0.01em] text-base-50">Masuk</h2>
+                        <h2 class="font-display text-2xl font-extrabold text-base-50 tracking-[-0.03em]">Masuk</h2>
                         <p class="mt-1.5 text-sm text-base-400">Pakai email Account Center perusahaan, atau username untuk akun layanan.</p>
                     </header>
                     <BaseInput
@@ -262,7 +262,7 @@ async function copyText(text, message) {
                 <!-- Tahap 2a: pasang authenticator (login pertama) -->
                 <form v-else-if="step === 'setup_2fa'" class="space-y-5" @submit.prevent="handleSetupConfirm">
                     <header>
-                        <h2 class="font-display text-2xl font-semibold tracking-[-0.01em] text-base-50">Pasang authenticator</h2>
+                        <h2 class="font-display text-2xl font-extrabold text-base-50 tracking-[-0.03em]">Pasang authenticator</h2>
                         <p class="mt-1.5 text-sm text-base-400">
                             Pindai QR dengan Google Authenticator atau Authy, lalu masukkan 6 digit yang muncul.
                         </p>
@@ -301,7 +301,7 @@ async function copyText(text, message) {
                 <!-- Tahap 2a-lanjutan: kode pemulihan, ditampilkan sekali -->
                 <div v-else-if="step === 'recovery_codes'" class="space-y-5">
                     <header>
-                        <h2 class="font-display text-2xl font-semibold tracking-[-0.01em] text-base-50">Simpan kode pemulihan</h2>
+                        <h2 class="font-display text-2xl font-extrabold text-base-50 tracking-[-0.03em]">Simpan kode pemulihan</h2>
                         <p class="mt-1.5 text-sm text-base-400">
                             Dipakai untuk masuk kalau HP authenticator hilang. Tiap kode berlaku sekali, dan daftar ini tidak akan
                             ditampilkan lagi.
@@ -321,7 +321,7 @@ async function copyText(text, message) {
                 <!-- Tahap 2b: kode authenticator (login berikutnya) -->
                 <form v-else-if="step === 'verify_2fa'" class="space-y-5" @submit.prevent="handleVerifyConfirm">
                     <header>
-                        <h2 class="font-display text-2xl font-semibold tracking-[-0.01em] text-base-50">
+                        <h2 class="font-display text-2xl font-extrabold text-base-50 tracking-[-0.03em]">
                             {{ useRecoveryCode ? 'Kode pemulihan' : 'Kode authenticator' }}
                         </h2>
                         <p class="mt-1.5 text-sm text-base-400">

@@ -4,7 +4,7 @@ import { ref } from 'vue'
 // kali dipasang oleh skrip kecil di index.html SEBELUM CSS dimuat, supaya
 // halaman tidak berkedip gelap -> terang saat dibuka.
 const STORAGE_KEY = 'lacak_theme'
-const THEME_COLORS = { light: '#f3f5f8', dark: '#05070a' }
+const THEME_COLORS = { light: '#eef1f5', dark: '#070c14' }
 
 const theme = ref(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
 

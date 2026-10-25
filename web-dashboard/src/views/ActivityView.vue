@@ -264,7 +264,7 @@ const dayLog = computed(() => {
                 <Readout label="Istirahat" :value="formatDuration(dayTotals.break / 1000)" />
                 <Readout label="Gangguan" :value="attentionCount" :led="attentionCount ? 'warning' : 'muted'" />
             </div>
-            <p class="font-mono text-[11px] tracking-[0.1em] text-base-500 uppercase">
+            <p class="text-[12px] text-base-500 font-semibold">
                 {{ workedCount }} dari {{ people.length }} staf bekerja
             </p>
         </div>
@@ -328,7 +328,7 @@ const dayLog = computed(() => {
             >
                 <header class="flex flex-wrap items-center justify-between gap-3 border-b border-base-800 px-5 py-3.5">
                     <div>
-                        <h2 id="ribbon-title" class="font-display text-base font-semibold text-base-50">Pita shift</h2>
+                        <h2 id="ribbon-title" class="font-display text-base font-bold text-base-50 tracking-[-0.015em]">Pita shift</h2>
                         <p class="mt-0.5 text-xs text-base-500">
                             Status tiap staf sepanjang hari, jam 00–24. Arahkan ke blok untuk melihat rinciannya.
                         </p>
@@ -382,7 +382,7 @@ const dayLog = computed(() => {
                                 {{ String(hour).padStart(2, '0') }}
                             </span>
                         </div>
-                        <span class="text-right font-mono text-[10px] tracking-[0.1em] text-base-500 uppercase max-sm:hidden">Kerja</span>
+                        <span class="text-right text-[11px] text-base-500 max-sm:hidden font-semibold">Kerja</span>
                     </div>
 
                     <button
@@ -459,7 +459,7 @@ const dayLog = computed(() => {
             <div class="grid gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
                 <!-- Grafik 7 hari -->
                 <section class="rounded-xl border border-base-800 bg-base-900 p-5 shadow-(--shadow-card)" aria-labelledby="week-title">
-                    <h2 id="week-title" class="font-display text-base font-semibold text-base-50">Jam kerja 7 hari</h2>
+                    <h2 id="week-title" class="font-display text-base font-bold text-base-50 tracking-[-0.015em]">Jam kerja 7 hari</h2>
                     <p class="mt-0.5 text-xs text-base-500">Total semua staf yang tampil, per hari. Klik batang untuk membuka hari itu.</p>
 
                     <div class="mt-5 flex gap-3">
@@ -516,7 +516,7 @@ const dayLog = computed(() => {
 
                 <!-- Komposisi waktu hari terpilih -->
                 <section class="rounded-xl border border-base-800 bg-base-900 p-5 shadow-(--shadow-card)" aria-labelledby="mix-title">
-                    <h2 id="mix-title" class="font-display text-base font-semibold text-base-50">
+                    <h2 id="mix-title" class="font-display text-base font-bold text-base-50 tracking-[-0.015em]">
                         Komposisi waktu · {{ dayLabel.toLowerCase() }}
                     </h2>
                     <p class="mt-0.5 text-xs text-base-500">Ke mana jam staf yang sedang live terpakai. Offline tidak dihitung.</p>
@@ -549,7 +549,7 @@ const dayLog = computed(() => {
                     @click="logOpen = !logOpen"
                 >
                     <span>
-                        <span class="font-display text-base font-semibold text-base-50">Log kejadian</span>
+                        <span class="font-display text-base font-bold text-base-50 tracking-[-0.015em]">Log kejadian</span>
                         <span class="ml-2 font-mono text-xs text-base-500 tabular-nums">{{ dayLog.length }}</span>
                         <span class="mt-0.5 block text-xs text-base-500"
                             >Login, mulai kerja, layar & kamera, istirahat, terputus, logout — terbaru di atas.</span
@@ -575,7 +575,7 @@ const dayLog = computed(() => {
                                 <td class="text-base-100">{{ WORK_EVENT_LABELS[event.type] ?? event.type }}</td>
                                 <td>
                                     <span
-                                        class="inline-flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.1em] text-base-300 uppercase"
+                                        class="inline-flex items-center gap-1.5 text-[11px] text-base-300 font-semibold"
                                     >
                                         {{ workStatus(event.status).emoji }} {{ workStatus(event.status).label }}
                                     </span>
@@ -597,14 +597,14 @@ const dayLog = computed(() => {
                     <template v-if="selected">
                         <header class="flex items-start gap-3 border-b border-base-800 px-5 py-4">
                             <div class="min-w-0 flex-1">
-                                <DialogTitle class="truncate font-display text-xl font-semibold text-base-50">{{
+                                <DialogTitle class="truncate font-display text-xl font-bold text-base-50 tracking-[-0.015em]">{{
                                     selected.name
                                 }}</DialogTitle>
                                 <DialogDescription class="mt-1 flex flex-wrap items-center gap-2 text-xs text-base-400">
                                     <span>{{ siteNames[selected.siteId] ?? 'Site' }}</span>
                                     <span
                                         v-if="selected.status"
-                                        class="inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.08em] uppercase"
+                                        class="inline-flex items-center gap-1.5 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold"
                                         :class="workStatus(selected.status).chip"
                                     >
                                         <span class="led" :class="workStatus(selected.status).led" />{{ workStatus(selected.status).label }}

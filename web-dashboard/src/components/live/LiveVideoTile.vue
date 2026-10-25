@@ -75,7 +75,7 @@ const elapsed = computed(() => (props.since ? formatElapsed(props.since, now.val
         />
         <div v-if="!track" class="flex size-full flex-col items-center justify-center gap-2 bg-base-900 text-base-600">
             <VideoOff class="size-6" />
-            <span class="font-mono text-[10.5px] tracking-[0.14em] uppercase">Menunggu gambar</span>
+            <span class="text-[11px] font-semibold">Menunggu gambar</span>
         </div>
 
         <!-- Sudut jendela bidik: penanda "monitor" untuk tampilan besar -->

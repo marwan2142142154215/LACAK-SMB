@@ -21,7 +21,7 @@ const widths = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-xl' }
         <DialogPortal>
             <DialogOverlay class="dialog-overlay fixed inset-0 z-50 bg-base-950/80 backdrop-blur-sm" />
             <DialogContent
-                class="dialog-content fixed top-1/2 left-1/2 z-50 flex max-h-[88dvh] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-base-700/80 bg-base-900 shadow-2xl shadow-black/60 focus:outline-none"
+                class="dialog-content fixed top-1/2 left-1/2 z-50 flex max-h-[88dvh] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-base-700/80 bg-base-900 shadow-(--shadow-raised) focus:outline-none"
                 :class="widths[size]"
             >
                 <header
@@ -29,7 +29,7 @@ const widths = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-xl' }
                     :class="($slots.default || $slots.footer) && 'border-b border-base-800'"
                 >
                     <div class="min-w-0">
-                        <DialogTitle class="font-display text-lg leading-snug font-semibold text-base-50">{{ title }}</DialogTitle>
+                        <DialogTitle class="font-display text-lg leading-snug font-bold tracking-[-0.015em] text-base-50">{{ title }}</DialogTitle>
                         <DialogDescription :class="description ? 'mt-1 text-sm text-pretty text-base-400' : 'sr-only'">
                             {{ description || title }}
                         </DialogDescription>

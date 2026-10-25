@@ -198,7 +198,7 @@ onBeforeUnmount(() => clearInterval(timer))
             >
                 <span class="led size-3" :class="[meta(overall.status).led, overall.status === 'down' && 'motion-safe:animate-pulse']" />
                 <div class="min-w-0 flex-1">
-                    <p class="font-display text-lg font-semibold">{{ overall.title }}</p>
+                    <p class="font-display text-lg font-bold tracking-[-0.015em]">{{ overall.title }}</p>
                     <p v-if="overall.text" class="mt-0.5 text-sm text-pretty opacity-90">{{ overall.text }}</p>
                 </div>
                 <!-- Riwayat pemeriksaan selama halaman terbuka -->
@@ -212,7 +212,7 @@ onBeforeUnmount(() => clearInterval(timer))
                             :title="`${dayjs(entry.at).format('HH:mm:ss')} · ${meta(entry.status).label}`"
                         />
                     </div>
-                    <p class="font-mono text-[10px] tracking-[0.1em] uppercase opacity-75">Riwayat sesi ini</p>
+                    <p class="text-[11px] opacity-75 font-semibold">Riwayat sesi ini</p>
                 </div>
             </section>
 
@@ -237,7 +237,7 @@ onBeforeUnmount(() => clearInterval(timer))
                         <div class="min-w-0 flex-1">
                             <h3 class="text-sm leading-snug font-semibold text-base-50">{{ service.name }}</h3>
                             <span
-                                class="mt-1.5 inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] uppercase"
+                                class="mt-1.5 inline-flex items-center gap-1.5 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold"
                                 :class="meta(service.status).chip"
                             >
                                 <span class="led" :class="meta(service.status).led" />
@@ -274,7 +274,7 @@ onBeforeUnmount(() => clearInterval(timer))
                             <span class="led" :class="meta(unit.status).led" />
                             <span class="min-w-0 flex-1 truncate font-mono text-sm text-base-100">{{ unit.name }}</span>
                             <span
-                                class="rounded border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] uppercase"
+                                class="rounded-full border px-1.5 py-0.5 text-[11px] font-semibold"
                                 :class="meta(unit.status).chip"
                             >
                                 {{ unit.state }}
