@@ -19,7 +19,8 @@ const sharing = ref(false)
 const ending = ref(false)
 
 // Saat istirahat layar boleh dimatikan; begitu "Lanjut kerja", kunci aktif lagi.
-const locked = computed(() => live.isBroadcasting && live.screenRequired && !live.localScreenTrack && !live.onBreak)
+// screenLive: track layar masih ada tapi berhenti mengirim juga dikunci.
+const locked = computed(() => live.isBroadcasting && live.screenRequired && (!live.localScreenTrack || !live.screenLive) && !live.onBreak)
 
 async function shareAgain() {
     sharing.value = true

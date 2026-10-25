@@ -67,6 +67,11 @@ class AuthController extends Controller
     /** Penanda token yang dicabut karena akunnya login di perangkat lain. */
     public const REPLACED_TOKEN_CACHE_PREFIX = 'auth:replaced_token:';
 
+    /** Nilai personal_access_tokens.device_type (perangkat tempat login). */
+    public const DEVICE_COMPUTER = 'computer';
+
+    public const DEVICE_PHONE = 'phone';
+
     public function login(Request $request)
     {
         $credentials = $request->validate([
@@ -351,7 +356,9 @@ class AuthController extends Controller
     {
         $this->endOtherSessions($user);
 
-        $token = $user->createToken($this->tokenNameFor($request), ['*'], now()->addHours(self::TOKEN_IDLE_HOURS))->plainTextToken;
+        $newToken = $user->createToken($this->tokenNameFor($request), ['*'], now()->addHours(self::TOKEN_IDLE_HOURS));
+        $newToken->accessToken->forceFill(['device_type' => $this->loginDeviceOf($request)])->save();
+        $token = $newToken->plainTextToken;
 
         if ($user->can('live.broadcast')) {
             app(WorkPresence::class)->record($user, 'login', WorkSession::open()->where('user_id', $user->id)->first());
@@ -388,6 +395,23 @@ class AuthController extends Controller
         if ($session = WorkSession::open()->where('user_id', $user->id)->first()) {
             app(LiveKitTokenIssuer::class)->removeBroadcaster($session->organization_id, $session->user_id);
         }
+    }
+
+    /**
+     * 'computer' atau 'phone' untuk ikon laptop/HP di daftar staf. APK
+     * (master_app, juga dipakai APK Live) selalu HP; dashboard dari User-Agent
+     * browser-nya. Login yang 2FA-nya diverifikasi di request terpisah tetap
+     * dari browser yang sama, jadi User-Agent-nya sama.
+     */
+    private function loginDeviceOf(Request $request): string
+    {
+        if ($request->input('client') === 'master_app') {
+            return self::DEVICE_PHONE;
+        }
+
+        return preg_match('/Mobile|Android|iPhone|iPad|iPod/i', (string) $request->userAgent())
+            ? self::DEVICE_PHONE
+            : self::DEVICE_COMPUTER;
     }
 
     private function tokenNameFor(Request $request): string

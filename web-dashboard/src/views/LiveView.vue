@@ -4,7 +4,6 @@ import {
     ChevronLeft,
     ChevronRight,
     Coffee,
-    Download,
     LayoutGrid,
     Maximize,
     Mic,
@@ -27,6 +26,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import LiveAudioButton from '@/components/live/LiveAudioButton.vue'
 import LiveMiniTile from '@/components/live/LiveMiniTile.vue'
 import LivePairTile from '@/components/live/LivePairTile.vue'
+import LoginDeviceIcon from '@/components/live/LoginDeviceIcon.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Readout from '@/components/ui/Readout.vue'
@@ -280,30 +280,6 @@ async function loadMySession() {
     mySession.value = response.data.data.my_session
 }
 
-// APK Live: browser HP menghentikan kamera begitu staf pindah aplikasi atau
-// layar mati, APK-nya tidak (foreground service kamera, lihat android-live-app).
-const liveApp = ref(null)
-const downloadingApp = ref(false)
-
-async function loadLiveApp() {
-    const response = await api.get('/live/app')
-    liveApp.value = response.data.data
-}
-
-// Tautan unduh bertanda tangan & cuma berlaku 30 menit -- minta yang baru
-// tepat saat tombol ditekan, bukan memakai yang dimuat saat halaman dibuka.
-async function downloadLiveApp() {
-    downloadingApp.value = true
-    try {
-        await loadLiveApp()
-        if (liveApp.value?.download_url) window.location.href = liveApp.value.download_url
-    } catch (err) {
-        toast.error('Gagal mengunduh APK Live', err.response?.data?.message)
-    } finally {
-        downloadingApp.value = false
-    }
-}
-
 /** Tonton satu site, atau ALL_SITES = semua site sekaligus (satu koneksi per site). */
 async function selectSite(siteId) {
     if (live.isBroadcasting) return // siaran terkunci ke site sendiri
@@ -418,7 +394,6 @@ onMounted(async () => {
     try {
         await loadStatus()
         if (canBroadcast.value) await loadMySession()
-        if (canBroadcast.value) loadLiveApp().catch(() => {})
     } catch (err) {
         toast.error('Gagal memuat data Live Kerja', err.response?.data?.message)
         return
@@ -474,7 +449,7 @@ onBeforeUnmount(() => {
                 <Readout v-if="live.isBroadcasting" label="Siaran Anda" :value="myStatusMeta?.label ?? 'Aktif'" led="danger" />
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                <template v-if="canBroadcast">
+                <template v-if="canBroadcast && canShareScreen">
                     <BaseButton v-if="!live.isBroadcasting" :loading="live.connecting" @click="confirmStartOpen = true">
                         <Play class="size-4" />
                         {{ mySession ? 'Lanjutkan siaran' : 'Mulai kerja' }}
@@ -495,21 +470,18 @@ onBeforeUnmount(() => {
                 >
             </div>
 
+            <!-- Layar & kamera wajib: browser HP tidak bisa membagikan layar,
+                 jadi kerja (siaran) hanya bisa dimulai dari komputer. -->
             <div
-                v-if="canBroadcast && liveApp && !canShareScreen"
-                class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-base-800 bg-base-900 px-4 py-3 text-sm shadow-(--shadow-card)"
+                v-if="canBroadcast && !canShareScreen"
+                class="flex items-start gap-3 rounded-lg border border-warning-500/30 bg-warning-500/10 px-4 py-3 text-sm text-pretty text-warning-400"
+                role="note"
             >
-                <span class="flex items-start gap-3 text-pretty text-base-300">
-                    <Smartphone class="mt-0.5 size-4 shrink-0 text-accent-400" />
-                    <span>
-                        Kerja dari HP? Pasang <strong class="text-base-50">APK Live</strong> supaya siaran tetap jalan saat Anda pindah
-                        aplikasi atau layar mati. Di browser, kamera berhenti setiap kali halaman ini ditinggalkan.
-                    </span>
+                <Smartphone class="mt-0.5 size-4 shrink-0" />
+                <span>
+                    Live Kerja wajib membagikan <strong>seluruh layar dan kamera</strong>, dan itu hanya bisa dari
+                    <strong>komputer</strong> (Chrome atau Edge). Buka dashboard ini di komputer untuk Mulai kerja.
                 </span>
-                <BaseButton size="sm" variant="outline" :loading="downloadingApp" @click="downloadLiveApp">
-                    <Download class="size-4" />
-                    Unduh APK Live v{{ liveApp.version }}
-                </BaseButton>
             </div>
 
             <div
@@ -932,7 +904,10 @@ onBeforeUnmount(() => {
                                     :class="[workStatus(staff.status).led, staff.status === 'alert' && 'motion-safe:animate-pulse']"
                                 />
                                 <span class="min-w-0 flex-1">
-                                    <span class="block truncate text-sm font-medium text-base-100">{{ staff.name }}</span>
+                                    <span class="flex items-center gap-1.5">
+                                        <span class="truncate text-sm font-medium text-base-100">{{ staff.name }}</span>
+                                        <LoginDeviceIcon :device="staff.login_device" />
+                                    </span>
                                     <span class="block truncate text-xs text-base-500">
                                         <template v-if="isAllSites"
                                             >{{ siteNames[staff.organization_id]

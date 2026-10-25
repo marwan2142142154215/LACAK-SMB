@@ -70,7 +70,7 @@ class WorkSessionLiveTest extends TestCase
         $staff = $this->staffInOrganization($org);
 
         $response = $this->actingAs($staff, 'sanctum')
-            ->postJson('/api/v1/live/sessions/start')
+            ->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])
             ->assertCreated()
             ->assertJsonPath('data.room', "site-{$org->id}");
 
@@ -87,10 +87,21 @@ class WorkSessionLiveTest extends TestCase
     {
         $staff = $this->staffInOrganization(Organization::factory()->create());
 
-        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
-        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
+        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
 
         $this->assertSame(1, WorkSession::where('user_id', $staff->id)->count());
+    }
+
+    /** Layar & kamera wajib: APK Live dan browser HP tidak bisa membagikan layar. */
+    public function test_starting_work_outside_a_computer_is_rejected(): void
+    {
+        $staff = $this->staffInOrganization(Organization::factory()->create());
+
+        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertUnprocessable();
+        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'phone'])->assertUnprocessable();
+
+        $this->assertSame(0, WorkSession::where('user_id', $staff->id)->count());
     }
 
     public function test_staff_cannot_watch_or_list_another_site(): void
@@ -115,7 +126,7 @@ class WorkSessionLiveTest extends TestCase
         $staffB = $this->staffInOrganization(Organization::factory()->create());
 
         foreach ([$colleagueA, $staffB] as $user) {
-            $this->actingAs($user, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+            $this->actingAs($user, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
         }
 
         $this->actingAs($staffA, 'sanctum')
@@ -145,7 +156,7 @@ class WorkSessionLiveTest extends TestCase
             ->assertForbidden();
 
         // leader view-only -- tidak boleh menyiarkan.
-        $this->actingAs($leader, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertForbidden();
+        $this->actingAs($leader, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertForbidden();
     }
 
     public function test_ending_work_closes_session_and_removes_participant(): void
@@ -153,7 +164,7 @@ class WorkSessionLiveTest extends TestCase
         $org = Organization::factory()->create();
         $staff = $this->staffInOrganization($org);
 
-        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
         $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/end')->assertOk();
 
         $this->assertSame('manual', WorkSession::where('user_id', $staff->id)->first()->end_reason);
@@ -167,7 +178,7 @@ class WorkSessionLiveTest extends TestCase
     public function test_stale_sessions_are_closed_by_scheduled_command(): void
     {
         $staff = $this->staffInOrganization(Organization::factory()->create());
-        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start')->assertCreated();
+        $this->actingAs($staff, 'sanctum')->postJson('/api/v1/live/sessions/start', ['device' => 'computer'])->assertCreated();
 
         $this->travel(3)->minutes();
         $this->artisan('work-sessions:close-stale')->assertSuccessful();

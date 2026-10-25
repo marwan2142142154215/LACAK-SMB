@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\URL;
+use Laravel\Sanctum\PersonalAccessToken;
 
 /**
  * Live Kerja: staf menekan "Mulai Kerja" -> menyiarkan kamera ke semua rekan
@@ -119,19 +120,43 @@ class WorkSessionController extends Controller
     {
         $sessionsByUser = $openSessions->keyBy('user_id');
 
-        return User::permission('live.broadcast')
+        $staff = User::permission('live.broadcast')
             ->whereIn('organization_id', $organizationIds)
             ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'name', 'organization_id'])
-            ->map(fn (User $staff) => [
-                'user_id' => $staff->id,
-                'name' => $staff->name,
-                'organization_id' => $staff->organization_id,
-                'participant_identity' => "user-{$staff->id}",
-                'status' => $this->presence->statusOf($sessionsByUser->get($staff->id)),
-                'started_at' => $sessionsByUser->get($staff->id)?->started_at,
-            ]);
+            ->get(['id', 'name', 'organization_id']);
+
+        $loginDevices = $this->loginDevicesOf($staff->pluck('id')->all());
+
+        return $staff->map(fn (User $member) => [
+            'user_id' => $member->id,
+            'name' => $member->name,
+            'organization_id' => $member->organization_id,
+            'participant_identity' => "user-{$member->id}",
+            'status' => $this->presence->statusOf($sessionsByUser->get($member->id)),
+            'started_at' => $sessionsByUser->get($member->id)?->started_at,
+            // 'computer' | 'phone' | null (tidak sedang login) -- ikon laptop/HP.
+            'login_device' => $loginDevices[$member->id] ?? null,
+        ]);
+    }
+
+    /**
+     * Perangkat login yang masih berlaku per user (satu akun = satu sesi,
+     * jadi paling banyak satu token login aktif).
+     *
+     * @param  list<int>  $userIds
+     * @return array<int, string>
+     */
+    private function loginDevicesOf(array $userIds): array
+    {
+        return PersonalAccessToken::query()
+            ->where('tokenable_type', (new User)->getMorphClass())
+            ->whereIn('tokenable_id', $userIds)
+            ->whereNotNull('device_type')
+            ->where('expires_at', '>', now())
+            ->orderBy('id')
+            ->pluck('device_type', 'tokenable_id')
+            ->all();
     }
 
     /**
@@ -176,6 +201,12 @@ class WorkSessionController extends Controller
         // endpoint ini sama sekali, jadi tidak bisa diarahkan ke site lain.
         if ($user->organization_id === null) {
             return $this->fail('Akun Anda tidak terikat ke site mana pun, tidak bisa memulai siaran', null, 422);
+        }
+
+        // Layar & kamera wajib disiarkan -- hanya dashboard di komputer yang
+        // bisa membagikan seluruh layar. APK Live & browser HP ditolak.
+        if ($request->input('device') !== 'computer') {
+            return $this->fail('Live Kerja hanya bisa dimulai dari komputer (Chrome atau Edge): layar & kamera wajib dibagikan.', null, 422);
         }
 
         $session = WorkSession::open()->where('user_id', $user->id)->first();
