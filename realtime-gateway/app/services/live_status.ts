@@ -33,6 +33,12 @@ export const STATE_EVENTS = {
 
 export type StateColumn = keyof typeof STATE_EVENTS
 
+/**
+ * Wajah hilang baru dicatat di log kalau berlangsung minimal selama ini
+ * (dihitung dari face_lost). Sama dengan backend-adonis work_presence.ts.
+ */
+export const FACE_LOG_MIN_SECONDS = 5 * 60
+
 export type WorkSessionRow = {
     id: number
     user_id: number

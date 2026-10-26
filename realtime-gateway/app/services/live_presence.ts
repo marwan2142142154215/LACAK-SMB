@@ -1,4 +1,5 @@
 import {
+    FACE_LOG_MIN_SECONDS,
     STATE_EVENTS,
     statusOf,
     type StateColumn,
@@ -106,10 +107,37 @@ export async function applyReportedState(
             .where('id', session.id)
             .update({ [column]: value, updated_at: now })
         session[column] = value
+        if (column === 'face_missing' && !value && (await dropShortFaceGap(session, now))) continue
         await record(session, STATE_EVENTS[column][value ? 0 : 1], now)
     }
 
     return session
+}
+
+/**
+ * Wajah kembali sebelum FACE_LOG_MIN_SECONDS: hapus face_lost-nya (tidak masuk
+ * log) dan jangan catat face_back. true = dihapus. Sama dengan backend-adonis.
+ */
+async function dropShortFaceGap(session: LiveSession, now: Date) {
+    const db = await getDb()
+    const lost = await db
+        .from('work_session_events')
+        .where('work_session_id', session.id)
+        .where('type', 'face_lost')
+        .orderBy('id', 'desc')
+        .first()
+    if (!lost) return false
+    const closed = await db
+        .from('work_session_events')
+        .where('work_session_id', session.id)
+        .where('type', 'face_back')
+        .where('id', '>', lost.id)
+        .first()
+    if (closed) return false
+    if (now.getTime() - new Date(lost.occurred_at).getTime() >= FACE_LOG_MIN_SECONDS * 1000)
+        return false
+    await db.from('work_session_events').where('id', lost.id).delete()
+    return true
 }
 
 async function record(session: LiveSession, type: string, now: Date) {
