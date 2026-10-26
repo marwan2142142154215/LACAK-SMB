@@ -18,6 +18,10 @@ latar belakang.
   diserahkan ke service; LiveKit menjalankan foreground service
   `mediaProjection`-nya sendiri. Ditolak atau dihentikan dari sistem = status
   Screen off (tidak dihitung kerja) dan tombol *Bagikan layar* muncul.
+- Cek wajah (`FaceWatch`, ML Kit di HP): satu frame kamera per detik; tidak
+  ada wajah >= 30 detik = `face_missing` (log "Wajah hilang"/"Wajah kembali").
+  Hanya dicatat, jam kerja tetap dihitung. APK hanya untuk HP ARM
+  (`arm64-v8a`, `armeabi-v7a`).
 - Memakai API backend yang sudah ada tanpa mengubah kontraknya:
   `POST /live/sessions/start` (→ `livekit_url`, `token`, `room`),
   `POST /live/sessions/heartbeat` tiap 30 detik + saat layar/kamera berubah,

@@ -3,6 +3,7 @@ import { io } from 'socket.io-client'
 import { computed, ref } from 'vue'
 
 import api from '@/lib/api'
+import { createFaceWatch } from '@/lib/faceWatch'
 import { useAuthStore } from '@/stores/auth'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
@@ -206,6 +207,13 @@ export const useLiveStore = defineStore('live', () => {
     const broadcastStartedAt = ref(null)
     const onBreak = ref(false)
     const isIdle = ref(false)
+    // Tidak ada wajah di kamera >= 30 detik (lihat lib/faceWatch.js). Hanya
+    // dicatat di log & ditampilkan -- jam kerja tetap dihitung.
+    const faceMissing = ref(false)
+    const faceWatch = createFaceWatch((missing) => {
+        faceMissing.value = missing
+        scheduleReport()
+    })
     // Status kerja saya menurut server (working, screen_off, break, ...).
     const myStatus = ref(null)
     // Siaran ini dimulai dengan layar (komputer) -> layar WAJIB tetap dibagikan.
@@ -407,6 +415,7 @@ export const useLiveStore = defineStore('live', () => {
         broadcastStartedAt.value = null
         onBreak.value = false
         isIdle.value = false
+        faceMissing.value = false
         myStatus.value = null
         screenRequired.value = false
         micProblem.value = null
@@ -458,6 +467,7 @@ export const useLiveStore = defineStore('live', () => {
         stopTransportCheck()
         stopHeartbeat()
         stopIdleWatch()
+        faceWatch.stop()
         releaseWakeLock()
         const current = [...rooms.values()]
         rooms.clear()
@@ -484,6 +494,7 @@ export const useLiveStore = defineStore('live', () => {
             ownRoom = null
             stopHeartbeat()
             stopIdleWatch()
+            faceWatch.stop()
             releaseWakeLock()
             resetBroadcastState()
         }
@@ -715,6 +726,7 @@ export const useLiveStore = defineStore('live', () => {
             ensureLiveSocket()
             acquireWakeLock()
             startIdleWatch(await idlePermission)
+            faceWatch.start(() => ownRoom?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track?.mediaStreamTrack ?? null)
             await sendHeartbeat()
         } catch (err) {
             // Kamera ditolak / koneksi gagal -- jangan biarkan sesi kerja
@@ -893,6 +905,7 @@ export const useLiveStore = defineStore('live', () => {
             screen_active: trackIsLive(SCREEN_SOURCE),
             on_break: onBreak.value,
             idle: isIdle.value,
+            face_missing: faceMissing.value,
         }
 
         // Lewat socket gateway: tanpa request HTTP, tanpa PHP. HTTP hanya
@@ -1174,6 +1187,7 @@ export const useLiveStore = defineStore('live', () => {
         broadcastStartedAt,
         onBreak,
         isIdle,
+        faceMissing,
         myStatus,
         screenRequired,
         micMuted,

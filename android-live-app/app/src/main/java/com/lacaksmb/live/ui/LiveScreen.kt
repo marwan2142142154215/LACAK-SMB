@@ -88,6 +88,7 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
     val liveSince by LiveBroadcastState.liveSince.collectAsStateWithLifecycle()
     val micState by LiveBroadcastState.micState.collectAsStateWithLifecycle()
     val screenSharing by LiveBroadcastState.screenSharing.collectAsStateWithLifecycle()
+    val faceMissing by LiveBroadcastState.faceMissing.collectAsStateWithLifecycle()
     var permissionError by remember { mutableStateOf<String?>(null) }
 
     val canBroadcast = user?.can("live.broadcast") == true
@@ -215,6 +216,15 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
                     Text(
                         "Akun ini tidak punya izin menyiarkan Live Kerja. Hubungi admin site.",
                         color = Warning400,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
+
+                if (status is BroadcastStatus.Live && faceMissing) {
+                    Text(
+                        "Wajah Anda tidak terlihat di kamera. Tercatat sebagai Wajah hilang di log kerja sampai wajah terlihat lagi.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Danger400,
                         modifier = Modifier.padding(top = 12.dp),
                     )
                 }

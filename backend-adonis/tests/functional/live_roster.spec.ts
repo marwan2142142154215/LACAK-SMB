@@ -180,6 +180,23 @@ test.group('Live Kerja: ruang leader', (group) => {
         assert.isNull(response.body().data.session.organization_id)
     })
 
+    test('Mulai kerja: komputer & APK Live Kerja boleh, browser HP / APK lama ditolak', async ({
+        client,
+    }) => {
+        for (const [device, expected] of [
+            [undefined, 422],
+            ['phone', 422],
+            ['android_app', 201],
+        ] as const) {
+            const leader = await userWithRole('leader')
+            const response = await client
+                .post('/api/v1/live/sessions/start')
+                .json(device ? { device } : {})
+                .bearerToken(leader.bearer)
+            response.assertStatus(expected)
+        }
+    })
+
     test('ruang leader bisa ditonton admin, tidak bisa oleh staf', async ({ client }) => {
         const admin = await userWithRole('admin')
         const allowed = await client

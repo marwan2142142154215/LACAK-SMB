@@ -16,6 +16,10 @@ android {
         versionCode = (project.findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 1
         versionName = (project.findProperty("appVersionName") as String?) ?: "1.0.0"
 
+        // Hanya HP ARM (semua HP Android staf); x86 hanya emulator. Library
+        // native WebRTC + ML Kit untuk 4 ABI membuat APK >100 MB.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+
         // URL backend-api ditanam saat build (pola sama dengan APK Master).
         // Alamat LiveKit TIDAK ditanam -- datang dari respons
         // /live/sessions/start (livekit_url), jadi ikut konfigurasi server.
@@ -75,4 +79,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.security.crypto)
     implementation(libs.livekit.android)
+    implementation(libs.mlkit.face.detection)
 }

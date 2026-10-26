@@ -186,6 +186,9 @@ watch(
     },
 )
 
+// Cek wajah: kamera menyala tapi tidak ada wajah >= 30 detik (hanya catatan).
+const faceMissingOf = (identity) => !!sessionByIdentity.value[identity]?.face_missing
+
 function statusOf(participant) {
     return sessionByIdentity.value[participant.identity]?.status ?? null
 }
@@ -741,6 +744,14 @@ onBeforeUnmount(() => {
                         </div>
                     </dl>
                     <p v-if="live.micProblem" class="-mt-3 text-xs text-pretty text-warning-400">{{ live.micProblem }}</p>
+                    <p
+                        v-if="live.faceMissing"
+                        class="-mt-2 rounded-lg bg-danger-500/10 px-3 py-2 text-xs text-pretty text-danger-400"
+                        role="status"
+                    >
+                        Wajah Anda tidak terlihat di kamera. Tercatat sebagai <strong>Wajah hilang</strong> di log kerja sampai wajah
+                        terlihat lagi.
+                    </p>
 
                     <div class="grid gap-2">
                         <BaseButton
@@ -1148,6 +1159,11 @@ onBeforeUnmount(() => {
                                 :speaking="participant.isSpeaking"
                                 @toggle="live.toggleListen(participant.identity)"
                             />
+                            <span
+                                v-if="faceMissingOf(participant.identity)"
+                                class="pointer-events-none !absolute top-1.5 left-1.5 rounded-full bg-danger-500 px-2 py-0.5 text-[11px] font-bold text-white shadow"
+                                >Wajah hilang</span
+                            >
                         </div>
                     </TransitionGroup>
                     <TransitionGroup v-else tag="div" name="tile" class="grid gap-4" :class="wallGridClass">
@@ -1186,6 +1202,11 @@ onBeforeUnmount(() => {
                                 :speaking="participant.isSpeaking"
                                 @toggle="live.toggleListen(participant.identity)"
                             />
+                            <span
+                                v-if="faceMissingOf(participant.identity)"
+                                class="pointer-events-none !absolute top-1.5 left-1.5 rounded-full bg-danger-500 px-2 py-0.5 text-[11px] font-bold text-white shadow"
+                                >Wajah hilang</span
+                            >
                         </div>
                     </TransitionGroup>
 
@@ -1307,6 +1328,11 @@ onBeforeUnmount(() => {
                                         <template v-else-if="!isAllSites">belum mulai kerja</template>
                                     </span>
                                 </span>
+                                <span
+                                    v-if="faceMissingOf(staff.participant_identity)"
+                                    class="shrink-0 rounded-full bg-danger-500/12 px-1.5 py-0.5 text-[11px] font-semibold text-danger-400"
+                                    >Wajah hilang</span
+                                >
                                 <span
                                     class="shrink-0 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold"
                                     :class="workStatus(staff.status).chip"

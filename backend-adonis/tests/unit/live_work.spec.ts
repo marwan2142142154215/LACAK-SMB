@@ -55,6 +55,7 @@ function session(overrides: Partial<WorkSessionRow> = {}): WorkSessionRow {
         screen_active: true,
         on_break: false,
         idle: false,
+        face_missing: false,
         ...overrides,
     }
 }
@@ -119,6 +120,36 @@ test.group('Live Kerja: ringkasan jam kerja (padanan WorkPresence::summarize)', 
         assert.equal(summary.break_seconds, 30 * 60)
         assert.equal(summary.status, 'offline')
         assert.equal(summary.organization_id, 3)
+    })
+
+    test('wajah hilang dicatat tanpa mengurangi jam kerja', ({ assert }) => {
+        const from = new Date('2026-10-25T01:00:00Z')
+        const at = (minutes: number) => new Date(from.getTime() + minutes * 60_000)
+        let id = 0
+        const event = (minutes: number, type: string): PresenceEvent => ({
+            id: ++id,
+            user_id: 7,
+            user_name: 'Staf A1',
+            organization_id: 3,
+            type,
+            status: type === 'work_end' ? 'offline' : 'working',
+            occurred_at: at(minutes),
+        })
+
+        const events = [
+            event(0, 'work_start'),
+            event(10, 'face_lost'),
+            event(15, 'face_back'),
+            event(40, 'face_lost'),
+            // Selesai kerja saat wajah masih hilang: dihitung sampai selesai.
+            event(60, 'work_end'),
+        ]
+
+        const [summary] = summarize(events, new Map(), from, at(24 * 60), at(120))
+
+        assert.equal(summary.work_seconds, 60 * 60)
+        assert.equal(summary.face_missing_seconds, 25 * 60)
+        assert.equal(summary.face_lost_count, 2)
     })
 
     test('status sebelum rentang dipakai sebagai awal hitungan', ({ assert }) => {
