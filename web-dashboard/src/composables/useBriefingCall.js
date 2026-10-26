@@ -8,7 +8,9 @@ const SCREEN = 'screen_share'
  * Satu panggilan briefing (room LiveKit briefing-{id}). Dipakai BriefingView;
  * terputus otomatis saat halaman ditinggalkan. Peserta biasa masuk dengan
  * kamera mati & mikrofon bisu -- briefing ramai (sampai ratusan staf) tetap
- * ringan; pemimpin masuk dengan kamera & mikrofon menyala.
+ * ringan; pemimpin masuk dengan kamera & mikrofon menyala. Briefing dengan
+ * peserta pilihan (rapat kecil): semua masuk dengan kamera menyala supaya
+ * saling melihat.
  */
 export function useBriefingCall() {
     const room = shallowRef(null)
@@ -57,7 +59,7 @@ export function useBriefingCall() {
         return !!publication && !publication.isMuted
     }
 
-    async function join({ livekit_url: url, token }, { asHost }) {
+    async function join({ livekit_url: url, token }, { asHost, cameraOn = asHost }) {
         connecting.value = true
         endedByHost.value = false
         try {
@@ -96,6 +98,8 @@ export function useBriefingCall() {
             room.value = instance
             if (asHost) {
                 await instance.localParticipant.enableCameraAndMicrophone().catch(() => {})
+            } else if (cameraOn) {
+                await instance.localParticipant.setCameraEnabled(true).catch(() => {})
             }
             bump()
         } finally {

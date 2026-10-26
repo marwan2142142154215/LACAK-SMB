@@ -23,14 +23,17 @@ const AUDIENCE_KEYS = Object.keys(BRIEFING_AUDIENCE_ROLES) as Array<
 const startValidator = vine.compile(
     vine.object({
         title: vine.string().trim().minLength(1).maxLength(120),
-        roles: vine.array(vine.enum(AUDIENCE_KEYS)).minLength(1),
+        roles: vine.array(vine.enum(AUDIENCE_KEYS)).optional(),
         organization_ids: vine.array(vine.number().withoutDecimals().positive()).optional(),
+        // Peserta pilihan: kalau diisi, hanya user ini (plus pemimpin) yang bisa bergabung.
+        user_ids: vine.array(vine.number().withoutDecimals().positive()).maxLength(100).optional(),
     })
 )
 
 /**
  * Briefing: rapat video Live dalam satu ruang. Pemimpin (leader, admin, root)
- * memilih peran & site yang boleh bergabung -- lihat app/services/briefing.ts.
+ * memilih peran & site yang boleh bergabung, atau langsung memilih orangnya
+ * -- lihat app/services/briefing.ts.
  */
 export default class BriefingsController {
     /** Briefing yang sedang berlangsung & boleh diikuti user ini, plus pilihan untuk memulai. */
@@ -44,7 +47,12 @@ export default class BriefingsController {
 
         const canHost = canHostBriefing(access)
         const hostSites = canHost ? await sitesFor(access) : []
-        const names = await userNames(joinable.map((briefing) => briefing.host_user_id))
+        // Daftar calon peserta hanya untuk halaman Briefing (banner di semua halaman tidak perlu).
+        const people =
+            canHost && ctx.request.input('with_people') ? await inviteCandidates(access) : []
+        const names = await userNames(
+            joinable.flatMap((briefing) => [briefing.host_user_id, ...invitedOf(briefing)])
+        )
         const siteNames = await organizationNames(
             joinable.flatMap((b) => b.allowed_organization_ids)
         )
@@ -53,6 +61,7 @@ export default class BriefingsController {
             can_host: canHost,
             roles: AUDIENCE_KEYS.map((value) => ({ value, label: BRIEFING_AUDIENCE_ROLES[value] })),
             sites: hostSites,
+            people,
             items: joinable.map((briefing) => ({
                 id: briefing.id,
                 title: briefing.title,
@@ -62,6 +71,7 @@ export default class BriefingsController {
                 sites: briefing.allowed_organization_ids.map(
                     (id) => siteNames.get(id) ?? `Site ${id}`
                 ),
+                invited: invitedOf(briefing).map((id) => names.get(id) ?? `User ${id}`),
                 started_at: briefing.started_at,
             })),
         })
@@ -76,12 +86,29 @@ export default class BriefingsController {
                 .send(fail('Hanya leader, admin, atau root yang bisa memulai briefing'))
         }
         const input = await ctx.request.validateUsing(startValidator)
+        const roles = [...new Set(input.roles ?? [])]
+        const invitedIds = [...new Set(input.user_ids ?? [])].filter((id) => id !== access.userId)
+
+        if (invitedIds.length) {
+            // Hanya orang di site yang dipegang pemimpin (root: semua).
+            const candidates = await inviteCandidates(access)
+            const allowed = new Set(candidates.map((person) => person.id))
+            if (invitedIds.some((id) => !allowed.has(id))) {
+                return ctx.response
+                    .status(403)
+                    .send(fail('Ada peserta yang tidak berada di site yang Anda pegang'))
+            }
+        } else if (!roles.length) {
+            return ctx.response
+                .status(422)
+                .send(fail('Pilih minimal satu peran atau satu peserta untuk diundang'))
+        }
 
         // Site yang diundang harus site yang dipegang pemimpin; kosong = semua
         // site miliknya (root: benar-benar semua site).
         const own = sitesOf(access)
-        let siteIds = [...new Set(input.organization_ids ?? [])]
-        if (own !== 'all') {
+        let siteIds = invitedIds.length ? [] : [...new Set(input.organization_ids ?? [])]
+        if (own !== 'all' && !invitedIds.length) {
             if (siteIds.some((id) => !own.includes(id))) {
                 return ctx.response.status(403).send(fail('Ada site yang tidak Anda pegang'))
             }
@@ -101,8 +128,9 @@ export default class BriefingsController {
             .insert({
                 title: input.title,
                 host_user_id: access.userId,
-                allowed_roles: JSON.stringify([...new Set(input.roles)]),
+                allowed_roles: JSON.stringify(invitedIds.length ? [] : roles),
                 allowed_organization_ids: JSON.stringify(siteIds),
+                invited_user_ids: JSON.stringify(invitedIds),
                 started_at: now,
                 created_at: now,
                 updated_at: now,
@@ -119,6 +147,7 @@ export default class BriefingsController {
             properties: {
                 roles: briefing.allowed_roles,
                 organization_ids: briefing.allowed_organization_ids,
+                user_ids: invitedOf(briefing),
             },
             organizationId: siteIds.length === 1 ? siteIds[0] : null,
         })
@@ -186,12 +215,66 @@ function connection(briefing: BriefingRow, ctx: HttpContext, isHost: boolean) {
             id: briefing.id,
             title: briefing.title,
             is_host: isHost,
+            // Peserta pilihan = rapat kecil: semua masuk dengan kamera menyala
+            // supaya saling melihat.
+            camera_on_join: isHost || invitedOf(briefing).length > 0,
             started_at: briefing.started_at,
         },
         livekit_url: liveKitConfig().url,
         room: roomForBriefing(briefing.id),
         token: briefingToken(briefing, { id: user.id, name: user.name }, isHost),
     }
+}
+
+const invitedOf = (briefing: BriefingRow) => briefing.invited_user_ids ?? []
+
+/** Orang yang bisa diundang langsung: user aktif di site yang dipegang pemimpin. */
+async function inviteCandidates(access: Parameters<typeof sitesOf>[0]) {
+    const own = sitesOf(access)
+    const query = db
+        .from('users')
+        .leftJoin('organizations', 'organizations.id', 'users.organization_id')
+        .whereNull('users.deleted_at')
+        .where('users.is_active', true)
+        .whereNot('users.id', access.userId)
+        .orderBy('users.name')
+        .select(
+            'users.id',
+            'users.name',
+            'users.organization_id',
+            'organizations.name as site_name'
+        )
+    if (own !== 'all') {
+        // Staf & admin site di site itu, plus leader/admin yang diberi akses ke site itu.
+        query.where((scope) => {
+            scope
+                .whereIn('users.organization_id', own)
+                .orWhereIn(
+                    'users.id',
+                    db.from('user_site_access').whereIn('organization_id', own).select('user_id')
+                )
+        })
+    }
+    const rows = await query
+    const roles = await db
+        .from('model_has_roles')
+        .join('roles', 'roles.id', 'model_has_roles.role_id')
+        .whereIn(
+            'model_has_roles.model_id',
+            rows.map((row) => row.id)
+        )
+        .select('model_has_roles.model_id', 'roles.name')
+    const roleOf = new Map<number, string>()
+    for (const row of roles) {
+        const label = BRIEFING_AUDIENCE_ROLES[row.name as keyof typeof BRIEFING_AUDIENCE_ROLES]
+        if (label && !roleOf.has(Number(row.model_id))) roleOf.set(Number(row.model_id), label)
+    }
+    return rows.map((row) => ({
+        id: Number(row.id),
+        name: row.name as string,
+        role: roleOf.get(Number(row.id)) ?? null,
+        site: (row.site_name as string | null) ?? null,
+    }))
 }
 
 async function findBriefing(id: unknown): Promise<BriefingRow | null> {
