@@ -197,6 +197,50 @@ test.group('Live Kerja: ruang leader', (group) => {
         }
     })
 
+    test('wajah hilang < 5 menit tidak dicatat, >= 5 menit tetap dicatat', async ({
+        client,
+        assert,
+    }) => {
+        const leader = await userWithRole('leader')
+        const started = await client
+            .post('/api/v1/live/sessions/start')
+            .json({ device: 'computer' })
+            .bearerToken(leader.bearer)
+        started.assertStatus(201)
+        const sessionId = started.body().data.session.id
+        const heartbeat = async (faceMissing: boolean) => {
+            const response = await client
+                .post('/api/v1/live/sessions/heartbeat')
+                .json({ camera_active: true, screen_active: true, face_missing: faceMissing })
+                .bearerToken(leader.bearer)
+            response.assertStatus(200)
+        }
+        const faceEvents = async () => {
+            const rows = await db
+                .from('work_session_events')
+                .where('work_session_id', sessionId)
+                .whereIn('type', ['face_lost', 'face_back'])
+                .orderBy('id')
+            return rows.map((row) => row.type)
+        }
+
+        // Kembali sebentar kemudian: catatan face_lost dihapus, face_back tidak dicatat.
+        await heartbeat(true)
+        assert.deepEqual(await faceEvents(), ['face_lost'])
+        await heartbeat(false)
+        assert.deepEqual(await faceEvents(), [])
+
+        // Hilang 6 menit: tetap tercatat lengkap.
+        await heartbeat(true)
+        await db
+            .from('work_session_events')
+            .where('work_session_id', sessionId)
+            .where('type', 'face_lost')
+            .update({ occurred_at: new Date(Date.now() - 6 * 60_000) })
+        await heartbeat(false)
+        assert.deepEqual(await faceEvents(), ['face_lost', 'face_back'])
+    })
+
     test('ruang leader bisa ditonton admin, tidak bisa oleh staf', async ({ client }) => {
         const admin = await userWithRole('admin')
         const allowed = await client

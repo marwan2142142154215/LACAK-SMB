@@ -15,6 +15,8 @@ const ALL_SITES = 'all'
 const DAYS_IN_CHART = 7
 const HOUR_TICKS = [0, 3, 6, 9, 12, 15, 18, 21, 24]
 const ATTENTION_EVENTS = ['disconnected', 'timeout', 'screen_stop', 'camera_stop']
+// Wajah hilang baru masuk log setelah 5 menit (FACE_LOG_MIN_SECONDS di server).
+const FACE_LOG_MIN_MS = 5 * 60_000
 
 const toast = useToast()
 
@@ -118,7 +120,7 @@ const rows = computed(() => {
                 segments,
                 totals,
                 faceGaps: gaps,
-                faceLostCount: dayEvents.filter((e) => e.type === 'face_lost').length,
+                faceLostCount: gaps.length,
                 faceMissingMs: gaps.reduce((total, gap) => total + (gap.end - gap.start), 0),
                 firstLogin: dayEvents.find((e) => e.type === 'login' || e.type === 'work_start')?.occurred_at ?? null,
                 lastEvent: dayEvents.at(-1) ?? null,
@@ -131,8 +133,15 @@ const rows = computed(() => {
  * Selang "wajah hilang" di hari itu: face_lost -> face_back, atau sampai
  * sesi selesai. `back` = cara berakhirnya: 'face' (wajah terlihat lagi),
  * 'ended' (selesai kerja / logout), null (masih hilang sekarang).
+ * Hanya selang minimal FACE_LOG_MIN_MS yang ditampilkan (sama dengan server,
+ * yang menghapus catatan lebih singkat); yang masih berlangsung muncul begitu
+ * mencapai batas itu.
  */
 function faceGaps(dayEvents, endMs) {
+    return allFaceGaps(dayEvents, endMs).filter((gap) => gap.end - gap.start >= FACE_LOG_MIN_MS)
+}
+
+function allFaceGaps(dayEvents, endMs) {
     const gaps = []
     let lostAt = null
     for (const event of dayEvents) {
@@ -260,7 +269,7 @@ const selectedWeekScale = computed(() => niceCeil(Math.max(1, ...selectedWeek.va
 const selectedEvents = computed(() =>
     selected.value
         ? events.value
-              .filter((e) => e.user_id === selected.value.id && inDay(e))
+              .filter((e) => e.user_id === selected.value.id && inDay(e) && !shortFaceEventIds.value.has(e.id))
               .slice()
               .reverse()
         : [],
@@ -297,11 +306,34 @@ function downloadFaceLog() {
     URL.revokeObjectURL(url)
 }
 
+// Kejadian face_lost/face_back dari wajah hilang < 5 menit (catatan lama
+// sebelum aturan 5 menit, atau yang masih berlangsung): tidak ditampilkan.
+const shortFaceEventIds = computed(() => {
+    const hidden = new Set()
+    const open = new Map() // user_id -> kejadian face_lost yang belum ditutup
+    const close = (lost, endMs, back) => {
+        if (endMs - new Date(lost.occurred_at).getTime() >= FACE_LOG_MIN_MS) return
+        hidden.add(lost.id)
+        if (back) hidden.add(back.id)
+    }
+    for (const event of events.value) {
+        const lost = open.get(event.user_id)
+        if (event.type === 'face_lost') {
+            if (!lost) open.set(event.user_id, event)
+        } else if (lost && (event.type === 'face_back' || event.status === 'offline')) {
+            close(lost, new Date(event.occurred_at).getTime(), event.type === 'face_back' ? event : null)
+            open.delete(event.user_id)
+        }
+    }
+    for (const lost of open.values()) close(lost, now.value, null)
+    return hidden
+})
+
 const logOpen = ref(false)
 const dayLog = computed(() => {
     const ids = new Set(rows.value.map((row) => row.id))
     return events.value
-        .filter((e) => ids.has(e.user_id) && inDay(e))
+        .filter((e) => ids.has(e.user_id) && inDay(e) && !shortFaceEventIds.value.has(e.id))
         .slice()
         .reverse()
 })
@@ -619,7 +651,8 @@ const dayLog = computed(() => {
                             <span class="font-mono text-xs font-normal text-base-500 tabular-nums">{{ faceLog.length }}</span>
                         </h2>
                         <p class="mt-0.5 text-xs text-base-500">
-                            Kamera menyala tapi wajah tidak terlihat 30 detik atau lebih. Hanya catatan — jam kerja tetap dihitung.
+                            Kamera menyala tapi wajah tidak terlihat 5 menit atau lebih (yang lebih singkat tidak dicatat). Hanya catatan —
+                            jam kerja tetap dihitung.
                         </p>
                     </div>
                     <BaseButton v-if="faceLog.length" variant="outline" size="sm" @click="downloadFaceLog">

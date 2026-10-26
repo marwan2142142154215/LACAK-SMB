@@ -32,6 +32,14 @@ export const STATE_EVENTS = {
 
 export type StateColumn = keyof typeof STATE_EVENTS
 
+/**
+ * Wajah hilang baru dicatat di log kalau berlangsung minimal selama ini
+ * (dihitung dari kejadian face_lost). Lebih singkat = face_lost-nya dihapus
+ * begitu wajah kembali / sesi selesai, dan face_back tidak dicatat. Sama
+ * dengan realtime-gateway/app/services/live_status.ts.
+ */
+export const FACE_LOG_MIN_SECONDS = 5 * 60
+
 export type WorkSessionRow = {
     id: number
     user_id: number
@@ -140,10 +148,36 @@ export async function applyState(
             .where('id', session.id)
             .update({ [column]: value, updated_at: now })
         session[column] = value
+        if (column === 'face_missing' && !value && (await dropShortFaceGap(session, now))) continue
         await record(session.user_id, STATE_EVENTS[column][value ? 0 : 1], session)
     }
 
     return session
+}
+
+/**
+ * Wajah kembali / sesi selesai: kalau wajah hilang belum sampai
+ * FACE_LOG_MIN_SECONDS, hapus face_lost-nya (tidak masuk log). true = dihapus.
+ */
+export async function dropShortFaceGap(session: WorkSessionRow, now: Date, client: Client = db) {
+    const lost = await client
+        .from('work_session_events')
+        .where('work_session_id', session.id)
+        .where('type', 'face_lost')
+        .orderBy('id', 'desc')
+        .first()
+    if (!lost) return false
+    const closed = await client
+        .from('work_session_events')
+        .where('work_session_id', session.id)
+        .where('type', 'face_back')
+        .where('id', '>', lost.id)
+        .first()
+    if (closed) return false
+    if (now.getTime() - new Date(lost.occurred_at).getTime() >= FACE_LOG_MIN_SECONDS * 1000)
+        return false
+    await client.from('work_session_events').where('id', lost.id).delete()
+    return true
 }
 
 /** Tutup sesi: catat layar/kamera berhenti, lalu kejadian penutupnya. */
@@ -153,6 +187,17 @@ export async function closeSession(
     eventType: string
 ): Promise<WorkSessionRow> {
     const now = new Date()
+
+    // Wajah masih hilang saat sesi ditutup: selangnya berakhir di sini (log
+    // menutupnya lewat kejadian offline), jadi singkat = tidak dicatat.
+    if (session.face_missing) {
+        await db
+            .from('work_sessions')
+            .where('id', session.id)
+            .update({ face_missing: false, updated_at: now })
+        session.face_missing = false
+        await dropShortFaceGap(session, now)
+    }
 
     for (const [column, type] of [
         ['screen_active', 'screen_stop'],
@@ -239,13 +284,19 @@ export function summarize(
         let status: string = before.get(userId)?.status ?? 'offline'
         let cursor = from.getTime()
         const totals: Record<string, number> = { working: 0, break: 0 }
-        // Wajah hilang: dihitung dari face_lost sampai face_back / sesi selesai.
+        // Wajah hilang: dihitung dari face_lost sampai face_back / sesi selesai;
+        // hanya selang minimal FACE_LOG_MIN_SECONDS (yang lebih singkat & masih
+        // berlangsung belum dihitung -- sama dengan log di dashboard).
         let faceLostAt: number | null = before.get(userId)?.type === 'face_lost' ? cursor : null
         let faceMissingSeconds = 0
         let faceLostCount = 0
         const closeFace = (at: number) => {
             if (faceLostAt === null) return
-            faceMissingSeconds += Math.floor(Math.max(0, at - faceLostAt) / 1000)
+            const seconds = Math.floor(Math.max(0, at - faceLostAt) / 1000)
+            if (seconds >= FACE_LOG_MIN_SECONDS) {
+                faceMissingSeconds += seconds
+                faceLostCount++
+            }
             faceLostAt = null
         }
 
@@ -255,7 +306,6 @@ export function summarize(
             status = event.status
             cursor = at
             if (event.type === 'face_lost') {
-                faceLostCount++
                 faceLostAt ??= at
             } else if (event.type === 'face_back' || event.status === 'offline') {
                 closeFace(at)
