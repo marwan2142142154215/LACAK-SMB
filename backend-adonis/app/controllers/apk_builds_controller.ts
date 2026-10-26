@@ -201,6 +201,30 @@ export default class ApkBuildsController {
         const organization = await findOrganization(organizationId)
         if (!organization) return notFound(ctx)
 
+        // SMB Live Kerja satu untuk semua site: selama sudah ada yang berhasil
+        // (atau sedang dibuild), staf cukup mengunduh yang itu. Build ulang
+        // (versi baru) = hapus arsip lama dulu.
+        if (input.apk_type === 'live') {
+            const existing = await db
+                .from('apk_builds')
+                .where('apk_type', 'live')
+                .whereIn('status', ['pending', 'success'])
+                .orderBy('id', 'desc')
+                .select('version', 'status')
+                .first()
+            if (existing) {
+                return ctx.response
+                    .status(422)
+                    .send(
+                        fail(
+                            existing.status === 'pending'
+                                ? `SMB Live Kerja v${existing.version} sedang dibuild, tunggu sampai selesai`
+                                : `SMB Live Kerja v${existing.version} sudah ada, cukup unduh yang itu. Hapus arsipnya dulu bila ingin build versi baru.`
+                        )
+                    )
+            }
+        }
+
         // Zero-touch provisioning: untuk APK tracker, baris device dibuat di
         // sini -- sebelum build Gradle dipicu -- dengan device_uuid & rahasia
         // device digenerate server, lalu keduanya ditanam ke APK. Begitu
