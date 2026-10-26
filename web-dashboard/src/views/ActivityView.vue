@@ -112,16 +112,36 @@ const rows = computed(() => {
             const segments = clipSegments(segmentsByUser.value.get(person.id), dayStart.value, dayEnd.value)
             const totals = groupTotals(segments)
             const dayEvents = events.value.filter((e) => e.user_id === person.id && inDay(e))
+            const gaps = faceGaps(dayEvents, Math.min(dayEnd.value, now.value))
             return {
                 ...person,
                 segments,
                 totals,
+                faceGaps: gaps,
+                faceLostCount: dayEvents.filter((e) => e.type === 'face_lost').length,
+                faceMissingMs: gaps.reduce((total, gap) => total + (gap.end - gap.start), 0),
                 firstLogin: dayEvents.find((e) => e.type === 'login' || e.type === 'work_start')?.occurred_at ?? null,
                 lastEvent: dayEvents.at(-1) ?? null,
             }
         })
         .sort((a, b) => b.totals.working - a.totals.working || a.name.localeCompare(b.name))
 })
+
+/** Selang "wajah hilang" (face_lost -> face_back / selesai kerja) di hari itu. */
+function faceGaps(dayEvents, endMs) {
+    const gaps = []
+    let lostAt = null
+    for (const event of dayEvents) {
+        const at = new Date(event.occurred_at).getTime()
+        if (event.type === 'face_lost') lostAt ??= at
+        else if (lostAt !== null && (event.type === 'face_back' || event.status === 'offline')) {
+            gaps.push({ start: lostAt, end: at })
+            lostAt = null
+        }
+    }
+    if (lostAt !== null) gaps.push({ start: lostAt, end: Math.max(lostAt, endMs) })
+    return gaps
+}
 
 function inDay(event) {
     const at = new Date(event.occurred_at).getTime()
@@ -144,6 +164,8 @@ const dayTotals = computed(() =>
         { working: 0, idle: 0, break: 0, issue: 0 },
     ),
 )
+
+const faceLostToday = computed(() => rows.value.reduce((total, row) => total + row.faceLostCount, 0))
 
 const workedCount = computed(() => rows.value.filter((row) => row.totals.working > 0).length)
 const workingNow = computed(() => (isToday.value ? people.value.filter((p) => p.status === 'working').length : null))
@@ -263,10 +285,9 @@ const dayLog = computed(() => {
                 <Readout v-if="workingNow !== null" label="Working sekarang" :value="workingNow" :led="workingNow ? 'accent' : 'muted'" />
                 <Readout label="Istirahat" :value="formatDuration(dayTotals.break / 1000)" />
                 <Readout label="Gangguan" :value="attentionCount" :led="attentionCount ? 'warning' : 'muted'" />
+                <Readout label="Wajah hilang" :value="faceLostToday" :led="faceLostToday ? 'warning' : 'muted'" />
             </div>
-            <p class="text-[12px] text-base-500 font-semibold">
-                {{ workedCount }} dari {{ people.length }} staf bekerja
-            </p>
+            <p class="text-[12px] text-base-500 font-semibold">{{ workedCount }} dari {{ people.length }} staf bekerja</p>
         </div>
 
         <div class="space-y-5 p-4 sm:p-8">
@@ -419,6 +440,14 @@ const dayLog = computed(() => {
                                 :title="describeSegment(row, segment)"
                                 @mouseenter="hovered = describeSegment(row, segment)"
                                 @mouseleave="hovered = null"
+                            />
+                            <!-- Wajah hilang: garis merah di bawah pita (jam kerja tetap dihitung) -->
+                            <span
+                                v-for="gap in row.faceGaps"
+                                :key="`face-${gap.start}`"
+                                class="absolute bottom-0 h-1 rounded-full bg-danger-500"
+                                :style="{ left: `${leftPercent(gap.start)}%`, width: `${widthPercent(gap)}%` }"
+                                :title="`${row.name} · Wajah hilang ${dayjs(gap.start).format('HH:mm')}–${dayjs(gap.end).format('HH:mm')} (${formatDuration((gap.end - gap.start) / 1000)})`"
                             />
                             <span
                                 v-if="nowPercent !== null"
@@ -574,9 +603,7 @@ const dayLog = computed(() => {
                                 <td class="text-base-100">{{ event.user_name }}</td>
                                 <td class="text-base-100">{{ WORK_EVENT_LABELS[event.type] ?? event.type }}</td>
                                 <td>
-                                    <span
-                                        class="inline-flex items-center gap-1.5 text-[11px] text-base-300 font-semibold"
-                                    >
+                                    <span class="inline-flex items-center gap-1.5 text-[11px] text-base-300 font-semibold">
                                         {{ workStatus(event.status).emoji }} {{ workStatus(event.status).label }}
                                     </span>
                                 </td>
@@ -628,6 +655,21 @@ const dayLog = computed(() => {
                                     <dt class="eyebrow">Istirahat</dt>
                                     <dd class="mt-1 font-mono text-lg text-base-50 tabular-nums">
                                         {{ formatDuration(selected.totals.break / 1000) }}
+                                    </dd>
+                                </div>
+                                <div class="bg-base-900 px-3 py-2.5">
+                                    <dt class="eyebrow">Wajah hilang</dt>
+                                    <dd
+                                        class="mt-1 font-mono text-lg tabular-nums"
+                                        :class="selected.faceLostCount ? 'text-danger-400' : 'text-base-50'"
+                                    >
+                                        {{ selected.faceLostCount }}×
+                                    </dd>
+                                </div>
+                                <div class="bg-base-900 px-3 py-2.5">
+                                    <dt class="eyebrow">Lama wajah hilang</dt>
+                                    <dd class="mt-1 font-mono text-lg text-base-50 tabular-nums">
+                                        {{ formatDuration(selected.faceMissingMs / 1000) }}
                                     </dd>
                                 </div>
                                 <div class="bg-base-900 px-3 py-2.5">

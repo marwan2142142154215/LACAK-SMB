@@ -27,6 +27,8 @@ export const STATE_EVENTS = {
     screen_active: ['screen_start', 'screen_stop'],
     on_break: ['break_start', 'break_end'],
     idle: ['idle_start', 'idle_end'],
+    // Cek wajah: hanya kejadian log, tidak mengubah status kerja.
+    face_missing: ['face_lost', 'face_back'],
 } as const
 
 export type StateColumn = keyof typeof STATE_EVENTS
@@ -44,6 +46,7 @@ export type WorkSessionRow = {
     screen_active: boolean
     on_break: boolean
     idle: boolean
+    face_missing: boolean
 }
 
 export function statusOf(session: WorkSessionRow | null, now: Date = new Date()): WorkStatus {

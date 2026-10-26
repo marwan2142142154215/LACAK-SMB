@@ -35,12 +35,16 @@ import {
 /** Umur cache GET /live/overview per kumpulan site, sama dengan backend-api. */
 const OVERVIEW_CACHE_SECONDS = 5
 
+/** Perangkat yang bisa membagikan layar + kamera saat Mulai kerja. */
+const LIVE_START_DEVICES = ['computer', 'android_app']
+
 const heartbeatValidator = vine.compile(
     vine.object({
         camera_active: vine.boolean().optional(),
         screen_active: vine.boolean().optional(),
         on_break: vine.boolean().optional(),
         idle: vine.boolean().optional(),
+        face_missing: vine.boolean().optional(),
     })
 )
 
@@ -154,9 +158,9 @@ export default class WorkSessionsController {
                 .send(fail('Akun Anda tidak terikat ke site mana pun, tidak bisa memulai siaran'))
         }
 
-        // Layar & kamera wajib -- hanya dashboard di komputer yang bisa
-        // membagikan seluruh layar. APK Live & browser HP ditolak.
-        if (ctx.request.input('device') !== 'computer') {
+        // Layar & kamera wajib: dashboard di komputer, atau APK Live Kerja
+        // versi berbagi layar ('android_app'). Browser HP & APK lama ditolak.
+        if (!LIVE_START_DEVICES.includes(ctx.request.input('device'))) {
             return ctx.response
                 .status(422)
                 .send(
@@ -600,6 +604,7 @@ async function rosterFor(organizationIds: number[], openSessionRows: WorkSession
             // tampilan roster -- log & jam kerja tetap memakai statusOf().
             status: status === 'offline' && logins.has(member.id) ? 'online' : status,
             started_at: session?.started_at ?? null,
+            face_missing: session?.face_missing ?? false,
             login_device: logins.get(member.id) ?? null,
         }
     })

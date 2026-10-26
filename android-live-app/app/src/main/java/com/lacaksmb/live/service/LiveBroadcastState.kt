@@ -37,6 +37,10 @@ object LiveBroadcastState {
     /** Layar HP sedang dibagikan (MediaProjection aktif & track layar terbit). */
     val screenSharing: StateFlow<Boolean> = _screenSharing.asStateFlow()
 
+    private val _faceMissing = MutableStateFlow(false)
+    /** Tidak ada wajah di kamera >= 30 detik (hanya dicatat, jam kerja tetap dihitung). */
+    val faceMissing: StateFlow<Boolean> = _faceMissing.asStateFlow()
+
     private val _liveSince = MutableStateFlow<Long?>(null)
     val liveSince: StateFlow<Long?> = _liveSince.asStateFlow()
 
@@ -51,7 +55,12 @@ object LiveBroadcastState {
         if (room == null) {
             _micState.value = MicState.None
             _screenSharing.value = false
+            _faceMissing.value = false
         }
+    }
+
+    internal fun setFaceMissing(missing: Boolean) {
+        _faceMissing.value = missing
     }
 
     internal fun setScreenSharing(sharing: Boolean) {

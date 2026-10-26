@@ -86,6 +86,8 @@ export const WORK_EVENT_LABELS = {
     disconnected: 'Terputus',
     reconnected: 'Tersambung lagi',
     timeout: 'Sesi ditutup (tanpa sinyal)',
+    face_lost: 'Wajah hilang',
+    face_back: 'Wajah kembali',
 }
 
 /** 4500 -> "1j 15m" */
