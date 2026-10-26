@@ -1,8 +1,9 @@
 <script setup>
-import { Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Presentation, Search, Square, Users, Video, VideoOff } from '@lucide/vue'
+import { Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Presentation, Search, Square, Users, Video, VideoOff, Wallpaper } from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import BackgroundPicker from '@/components/live/BackgroundPicker.vue'
 import LiveVideoTile from '@/components/live/LiveVideoTile.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -10,7 +11,7 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
-import { useBriefingCall } from '@/composables/useBriefingCall'
+import { backgroundSupported, useBriefingCall } from '@/composables/useBriefingCall'
 import { formatElapsed, useNow } from '@/composables/useNow'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
@@ -172,7 +173,27 @@ const gridClass = computed(() => {
     return 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-4'
 })
 
+// Ganti background kamera (blur / gambar) -- hanya di briefing.
+const canChangeBackground = ref(false)
+const backgroundOpen = ref(false)
+const applyingBackground = ref(false)
+
+async function chooseBackground(value) {
+    applyingBackground.value = true
+    try {
+        await call.setBackground(value)
+        if (value.mode !== 'none' && !call.local.value.cameraOn) {
+            toast.info('Background tersimpan', 'Dipakai begitu kamera dinyalakan.')
+        }
+    } catch (err) {
+        toast.error('Background belum bisa dipasang', err.message)
+    } finally {
+        applyingBackground.value = false
+    }
+}
+
 onMounted(async () => {
+    backgroundSupported().then((supported) => (canChangeBackground.value = supported))
     await load()
     // Tautan "Gabung" dari banner: /briefing?join=ID
     const joinId = Number(route.query.join)
@@ -296,6 +317,10 @@ onBeforeUnmount(() => clearInterval(refreshTimer))
                 >
                     <component :is="call.local.value.cameraOn ? VideoOff : Video" class="size-4" />
                     {{ call.local.value.cameraOn ? 'Matikan kamera' : 'Nyalakan kamera' }}
+                </BaseButton>
+                <BaseButton v-if="canChangeBackground" variant="outline" @click="backgroundOpen = true">
+                    <Wallpaper class="size-4" />
+                    Background
                 </BaseButton>
                 <BaseButton
                     v-if="isHost"
@@ -498,6 +523,14 @@ onBeforeUnmount(() => clearInterval(refreshTimer))
                 </BaseButton>
             </template>
         </BaseDialog>
+
+        <BackgroundPicker
+            :open="backgroundOpen"
+            :value="call.background.value"
+            :applying="applyingBackground"
+            @update:open="(v) => (backgroundOpen = v)"
+            @select="chooseBackground"
+        />
 
         <ConfirmDialog
             :open="confirmEndOpen"
