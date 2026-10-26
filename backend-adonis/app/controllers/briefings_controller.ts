@@ -86,6 +86,13 @@ export default class BriefingsController {
                 return ctx.response.status(403).send(fail('Ada site yang tidak Anda pegang'))
             }
             if (!siteIds.length) siteIds = own
+            // Daftar kosong berarti "semua site" (lihat canJoinBriefing) --
+            // pemimpin tanpa site tidak boleh jatuh ke sana.
+            if (!siteIds.length) {
+                return ctx.response
+                    .status(403)
+                    .send(fail('Anda belum memegang site mana pun untuk diundang briefing'))
+            }
         }
 
         const now = new Date()
