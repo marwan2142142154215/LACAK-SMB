@@ -81,6 +81,50 @@ test.group('Briefing: site yang diundang', (group) => {
         const count = await db.from('briefings').count('* as total').first()
         assert.equal(Number(count.total), 0)
     })
+
+    test('leader memilih peserta: hanya di site-nya, hanya yang diundang bisa gabung', async ({
+        client,
+        assert,
+    }) => {
+        const mine = await site('Site Briefing Milik')
+        const other = await site('Site Briefing Lain')
+        const leader = await userWithRole('leader', null, [mine])
+        const invited = await userWithRole('staff_viewer', mine)
+        const notInvited = await userWithRole('staff_viewer', mine)
+        const outsider = await userWithRole('staff_viewer', other)
+        const idOf = async (bearer: string) => {
+            const me = await client.get('/api/v1/auth/me').bearerToken(bearer)
+            return me.body().data.id as number
+        }
+
+        const list = await client
+            .get('/api/v1/briefings')
+            .qs({ with_people: 1 })
+            .bearerToken(leader)
+        const people = list.body().data.people.map((person: { id: number }) => person.id)
+        assert.include(people, await idOf(invited))
+        assert.notInclude(people, await idOf(outsider))
+
+        const foreign = await client
+            .post('/api/v1/briefings')
+            .json({ title: 'Rapat kecil', user_ids: [await idOf(outsider)] })
+            .bearerToken(leader)
+        foreign.assertStatus(403)
+
+        const started = await client
+            .post('/api/v1/briefings')
+            .json({ title: 'Rapat kecil', user_ids: [await idOf(invited)] })
+            .bearerToken(leader)
+        started.assertStatus(201)
+        assert.isTrue(started.body().data.briefing.camera_on_join)
+        const id = started.body().data.briefing.id
+
+        const joined = await client.post(`/api/v1/briefings/${id}/join`).bearerToken(invited)
+        joined.assertStatus(200)
+        assert.isTrue(joined.body().data.briefing.camera_on_join)
+        const denied = await client.post(`/api/v1/briefings/${id}/join`).bearerToken(notInvited)
+        denied.assertStatus(403)
+    })
 })
 
 test.group('Build APK: peran yang boleh', (group) => {

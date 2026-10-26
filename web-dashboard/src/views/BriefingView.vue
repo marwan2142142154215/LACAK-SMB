@@ -1,5 +1,5 @@
 <script setup>
-import { Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Presentation, Square, Users, Video, VideoOff } from '@lucide/vue'
+import { Mic, MicOff, MonitorUp, MonitorX, PhoneOff, Presentation, Search, Square, Users, Video, VideoOff } from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -27,13 +27,27 @@ const items = ref([])
 const canHost = ref(false)
 const roleOptions = ref([])
 const siteOptions = ref([])
+const peopleOptions = ref([])
 const loaded = ref(false)
 const current = ref(null) // briefing yang sedang diikuti
 let refreshTimer = null
 
 const startOpen = ref(false)
 const starting = ref(false)
-const form = ref({ title: '', roles: ['staff_viewer'], sites: [] })
+// mode 'roles' = undang menurut peran & site; 'people' = pilih orangnya langsung.
+const form = ref({ title: '', mode: 'roles', roles: ['staff_viewer'], sites: [], people: [] })
+const peopleQuery = ref('')
+const filteredPeople = computed(() => {
+    const query = peopleQuery.value.trim().toLowerCase()
+    if (!query) return peopleOptions.value
+    return peopleOptions.value.filter((person) =>
+        [person.name, person.role, person.site].some((value) => value?.toLowerCase().includes(query)),
+    )
+})
+const INVITE_MODES = [
+    { value: 'roles', label: 'Menurut peran & site' },
+    { value: 'people', label: 'Pilih orang' },
+]
 const confirmEndOpen = ref(false)
 const ending = ref(false)
 
@@ -41,11 +55,12 @@ const roleLabel = (value) => roleOptions.value.find((role) => role.value === val
 
 async function load() {
     try {
-        const { data } = await api.get('/briefings')
+        const { data } = await api.get('/briefings', { params: { with_people: 1 } })
         items.value = data.data.items
         canHost.value = data.data.can_host
         roleOptions.value = data.data.roles
         siteOptions.value = data.data.sites
+        peopleOptions.value = data.data.people ?? []
         loaded.value = true
     } catch (err) {
         toast.error('Gagal memuat briefing', err.response?.data?.message)
@@ -53,7 +68,8 @@ async function load() {
 }
 
 function openStart() {
-    form.value = { title: '', roles: ['staff_viewer'], sites: siteOptions.value.map((site) => site.id) }
+    form.value = { title: '', mode: 'roles', roles: ['staff_viewer'], sites: siteOptions.value.map((site) => site.id), people: [] }
+    peopleQuery.value = ''
     startOpen.value = true
 }
 
@@ -64,15 +80,18 @@ function toggleIn(list, value) {
 }
 
 async function startBriefing() {
-    if (!form.value.roles.length) return toast.error('Pilih peran', 'Minimal satu peran harus diundang.')
+    const byPeople = form.value.mode === 'people'
+    if (byPeople && !form.value.people.length) return toast.error('Pilih peserta', 'Minimal satu orang harus diundang.')
+    if (!byPeople && !form.value.roles.length) return toast.error('Pilih peran', 'Minimal satu peran harus diundang.')
     starting.value = true
     try {
         const allSites = form.value.sites.length === siteOptions.value.length
-        const { data } = await api.post('/briefings', {
-            title: form.value.title,
-            roles: form.value.roles,
-            organization_ids: allSites ? [] : form.value.sites,
-        })
+        const { data } = await api.post(
+            '/briefings',
+            byPeople
+                ? { title: form.value.title, user_ids: form.value.people }
+                : { title: form.value.title, roles: form.value.roles, organization_ids: allSites ? [] : form.value.sites },
+        )
         startOpen.value = false
         await enter(data.data, true)
     } catch (err) {
@@ -95,7 +114,7 @@ async function joinBriefing(briefing) {
 async function enter(connection, asHost) {
     current.value = connection.briefing
     try {
-        await call.join(connection, { asHost })
+        await call.join(connection, { asHost, cameraOn: connection.briefing.camera_on_join })
     } catch (err) {
         current.value = null
         throw err
@@ -338,7 +357,11 @@ onBeforeUnmount(() => clearInterval(refreshTimer))
                         </p>
                         <h2 class="mt-2 font-display text-xl font-extrabold tracking-[-0.025em] text-base-50">{{ briefing.title }}</h2>
                         <p class="mt-1 text-sm text-base-400">Dipimpin {{ briefing.is_host ? 'Anda' : (briefing.host_name ?? '—') }}</p>
-                        <div class="mt-3 flex flex-wrap gap-1.5">
+                        <p v-if="briefing.invited?.length" class="mt-3 text-sm text-pretty text-base-300">
+                            <Users class="mr-1 inline size-4 align-[-3px] text-base-500" />
+                            {{ briefing.invited.join(', ') }}
+                        </p>
+                        <div v-else class="mt-3 flex flex-wrap gap-1.5">
                             <span
                                 v-for="role in briefing.roles"
                                 :key="role"
@@ -361,12 +384,60 @@ onBeforeUnmount(() => clearInterval(refreshTimer))
         <BaseDialog
             :open="startOpen"
             title="Mulai briefing"
-            description="Hanya peran DAN site yang dicentang yang bisa bergabung. Anda masuk dengan kamera & mikrofon menyala."
+            description="Undang menurut peran & site, atau pilih orangnya langsung. Anda masuk dengan kamera & mikrofon menyala."
             @update:open="(v) => (startOpen = v)"
         >
             <form id="briefing-form" class="space-y-5" @submit.prevent="startBriefing">
                 <BaseInput v-model="form.title" label="Judul" placeholder="Contoh: Briefing pagi shift A" required maxlength="120" />
-                <fieldset>
+                <div class="grid grid-cols-2 gap-1 rounded-xl bg-base-850 p-1" role="radiogroup" aria-label="Cara mengundang">
+                    <button
+                        v-for="option in INVITE_MODES"
+                        :key="option.value"
+                        type="button"
+                        role="radio"
+                        :aria-checked="form.mode === option.value"
+                        class="rounded-lg px-3 py-2 text-sm font-semibold transition-colors"
+                        :class="
+                            form.mode === option.value
+                                ? 'bg-base-900 text-base-50 shadow-(--shadow-card)'
+                                : 'text-base-400 hover:text-base-200'
+                        "
+                        @click="form.mode = option.value"
+                    >
+                        {{ option.label }}
+                    </button>
+                </div>
+                <fieldset v-if="form.mode === 'people'">
+                    <legend class="field-label">Peserta ({{ form.people.length }} dipilih)</legend>
+                    <label class="relative block">
+                        <span class="sr-only">Cari nama, peran, atau site</span>
+                        <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-base-500" />
+                        <input v-model="peopleQuery" type="search" placeholder="Cari nama, peran, atau site" class="field-control pl-9" />
+                    </label>
+                    <ul class="mt-2 max-h-64 overflow-y-auto rounded-xl border border-base-800">
+                        <li v-for="person in filteredPeople" :key="person.id">
+                            <label class="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-base-850">
+                                <input
+                                    type="checkbox"
+                                    class="size-4 accent-accent-500"
+                                    :checked="form.people.includes(person.id)"
+                                    @change="toggleIn(form.people, person.id)"
+                                />
+                                <span class="min-w-0 flex-1">
+                                    <span class="block truncate text-sm font-medium text-base-100">{{ person.name }}</span>
+                                    <span class="block truncate text-xs text-base-500">{{
+                                        [person.role, person.site].filter(Boolean).join(' · ')
+                                    }}</span>
+                                </span>
+                            </label>
+                        </li>
+                        <li v-if="!filteredPeople.length" class="px-3 py-4 text-center text-sm text-base-500">Tidak ada yang cocok.</li>
+                    </ul>
+                    <p class="field-hint">
+                        Hanya yang dipilih yang bisa bergabung, dan semua masuk dengan kamera menyala sehingga saling melihat.
+                    </p>
+                </fieldset>
+                <fieldset v-if="form.mode === 'roles'">
                     <legend class="field-label">Peran yang diundang</legend>
                     <div class="flex flex-wrap gap-2">
                         <label
@@ -389,7 +460,7 @@ onBeforeUnmount(() => clearInterval(refreshTimer))
                         </label>
                     </div>
                 </fieldset>
-                <fieldset v-if="siteOptions.length">
+                <fieldset v-if="form.mode === 'roles' && siteOptions.length">
                     <legend class="field-label">Site yang diundang</legend>
                     <div class="flex flex-wrap gap-2">
                         <label
@@ -416,7 +487,12 @@ onBeforeUnmount(() => clearInterval(refreshTimer))
             </form>
             <template #footer>
                 <BaseButton variant="ghost" @click="startOpen = false">Batal</BaseButton>
-                <BaseButton type="submit" form="briefing-form" :loading="starting" :disabled="!form.sites.length && siteOptions.length > 0">
+                <BaseButton
+                    type="submit"
+                    form="briefing-form"
+                    :loading="starting"
+                    :disabled="form.mode === 'people' ? !form.people.length : !form.sites.length && siteOptions.length > 0"
+                >
                     <Presentation class="size-4" />
                     Mulai briefing
                 </BaseButton>
