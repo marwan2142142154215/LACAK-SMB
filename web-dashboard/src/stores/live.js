@@ -3,6 +3,7 @@ import { io } from 'socket.io-client'
 import { computed, ref } from 'vue'
 
 import api from '@/lib/api'
+import { createCameraBackground, rawCameraTrack } from '@/lib/cameraBackground'
 import { createFaceWatch } from '@/lib/faceWatch'
 import { useAuthStore } from '@/stores/auth'
 
@@ -214,6 +215,9 @@ export const useLiveStore = defineStore('live', () => {
         faceMissing.value = missing
         scheduleReport()
     })
+    // Background kamera siaran (blur / gambar), diingat per browser. Cek
+    // kamera & cek wajah tetap membaca kamera ASLI (rawCameraTrack).
+    const cameraBackground = createCameraBackground('lacak.live.background', ownCameraTrack)
     // Status kerja saya menurut server (working, screen_off, break, ...).
     const myStatus = ref(null)
     // Siaran ini dimulai dengan layar (komputer) -> layar WAJIB tetap dibagikan.
@@ -468,6 +472,7 @@ export const useLiveStore = defineStore('live', () => {
         stopHeartbeat()
         stopIdleWatch()
         faceWatch.stop()
+        cameraBackground.reset()
         releaseWakeLock()
         const current = [...rooms.values()]
         rooms.clear()
@@ -495,6 +500,7 @@ export const useLiveStore = defineStore('live', () => {
             stopHeartbeat()
             stopIdleWatch()
             faceWatch.stop()
+            cameraBackground.reset()
             releaseWakeLock()
             resetBroadcastState()
         }
@@ -503,6 +509,11 @@ export const useLiveStore = defineStore('live', () => {
     }
 
     const ownRoomReady = () => ownRoom?.state === CONNECTED
+
+    /** LocalVideoTrack kamera siaran saya, atau null. */
+    function ownCameraTrack() {
+        return ownRoom?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track ?? null
+    }
 
     function handleReconnecting(room) {
         if (room !== ownRoom) return
@@ -623,7 +634,11 @@ export const useLiveStore = defineStore('live', () => {
 
     // Kamera/layar menyala atau mati -> laporkan segera (log kerja mencatat
     // "Camera run", "Screen stop", dst. dengan jam yang tepat).
-    function handleLocalTracksChanged() {
+    function handleLocalTracksChanged(publication) {
+        // Kamera dinyalakan ulang = track baru: pasang lagi background-nya.
+        if (publication?.source === CAMERA_SOURCE && publication.track === ownCameraTrack()) {
+            cameraBackground.apply().catch(() => {})
+        }
         bump()
         if (mode.value === 'broadcasting') scheduleReport()
     }
@@ -643,17 +658,22 @@ export const useLiveStore = defineStore('live', () => {
 
     function trackIsLive(source) {
         const track = ownRoom?.localParticipant.getTrackPublication(source)?.track
-        return !!track && !track.isMuted && track.mediaStreamTrack?.readyState === 'live'
+        return !!track && !track.isMuted && rawCameraTrack(track)?.readyState === 'live'
     }
 
     const cameraIsLive = () => trackIsLive(CAMERA_SOURCE)
+
+    async function setCameraBackground(next) {
+        await cameraBackground.set(next)
+        bump()
+    }
 
     // Kamera bisa tetap 'live' tapi tidak mengirim gambar sama sekali --
     // browser hanya menandainya muted (mis. direbut aplikasi lain, driver
     // tersendat). LiveKit tidak menganggapnya mati, jadi checkCamera() cek
     // sendiri -- dengan tenggang lebih lama, karena muted juga sering
     // muncul sesaat (kamera baru menyala, CPU sibuk).
-    const cameraMuted = () => !!ownRoom?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track?.mediaStreamTrack?.muted
+    const cameraMuted = () => !!rawCameraTrack(ownCameraTrack())?.muted
 
     /**
      * Panggil langsung dari klik tombol: dialog pilih layar & izin deteksi
@@ -726,7 +746,7 @@ export const useLiveStore = defineStore('live', () => {
             ensureLiveSocket()
             acquireWakeLock()
             startIdleWatch(await idlePermission)
-            faceWatch.start(() => ownRoom?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track?.mediaStreamTrack ?? null)
+            faceWatch.start(() => rawCameraTrack(ownCameraTrack()))
             await sendHeartbeat()
         } catch (err) {
             // Kamera ditolak / koneksi gagal -- jangan biarkan sesi kerja
@@ -888,7 +908,7 @@ export const useLiveStore = defineStore('live', () => {
 
     /** Resolusi & frame rate yang benar-benar dihasilkan kamera saat ini. */
     function localCameraSettings() {
-        const settings = ownRoom?.localParticipant.getTrackPublication(CAMERA_SOURCE)?.track?.mediaStreamTrack?.getSettings()
+        const settings = rawCameraTrack(ownCameraTrack())?.getSettings()
         if (!settings?.width) return null
         return { width: settings.width, height: settings.height, frameRate: Math.round(settings.frameRate ?? 0) }
     }
@@ -1215,6 +1235,8 @@ export const useLiveStore = defineStore('live', () => {
         resumeIfBroadcasting,
         endWork,
         restartCamera,
+        cameraBackground: cameraBackground.background,
+        setCameraBackground,
         setScreenShare,
         setBreak,
         localCameraSettings,

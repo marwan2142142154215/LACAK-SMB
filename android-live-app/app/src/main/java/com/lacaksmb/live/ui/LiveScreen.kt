@@ -237,6 +237,10 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
                     MicControl(micState, onToggle = { muted -> LiveBroadcastService.setMicMuted(context.applicationContext, muted) })
                 }
 
+                if (canBroadcast && status !is BroadcastStatus.Stopping) {
+                    BackgroundControl(live = active)
+                }
+
                 if (active) {
                     AppButton(
                         text = if (status is BroadcastStatus.Stopping) "Menghentikan..." else "Selesai kerja",

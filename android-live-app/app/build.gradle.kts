@@ -80,4 +80,6 @@ dependencies {
     implementation(libs.androidx.security.crypto)
     implementation(libs.livekit.android)
     implementation(libs.mlkit.face.detection)
+    implementation(libs.livekit.track.processors)
+    implementation(libs.mlkit.segmentation.selfie)
 }

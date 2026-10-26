@@ -19,11 +19,13 @@ import {
     Square,
     Video,
     VolumeX,
+    Wallpaper,
     X,
 } from '@lucide/vue'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import BackgroundPicker from '@/components/live/BackgroundPicker.vue'
 import LiveAudioButton from '@/components/live/LiveAudioButton.vue'
 import LiveMiniTile from '@/components/live/LiveMiniTile.vue'
 import LiveStatusBar from '@/components/live/LiveStatusBar.vue'
@@ -34,6 +36,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { formatElapsed, useNow } from '@/composables/useNow'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
+import { backgroundSupported } from '@/lib/cameraBackground'
 import { ATTENTION_STATUSES, WORK_STATUS, workStatus } from '@/lib/workStatus'
 import { useAuthStore } from '@/stores/auth'
 import { CAMERA_SOURCE, LEADERS_ROOM_KEY, SCREEN_SOURCE, canShareScreen, micStateOf, useLiveStore } from '@/stores/live'
@@ -449,6 +452,22 @@ async function restartCamera() {
     }
 }
 
+// Background kamera siaran (blur / gambar) -- hanya dari browser yang mendukung.
+const canChangeBackground = ref(false)
+const backgroundOpen = ref(false)
+const applyingBackground = ref(false)
+
+async function chooseBackground(value) {
+    applyingBackground.value = true
+    try {
+        await live.setCameraBackground(value)
+    } catch (err) {
+        toast.error('Background belum bisa dipasang', err.message)
+    } finally {
+        applyingBackground.value = false
+    }
+}
+
 const togglingScreen = ref(false)
 
 async function toggleScreenShare() {
@@ -537,6 +556,7 @@ async function endWork() {
 }
 
 onMounted(async () => {
+    backgroundSupported().then((supported) => (canChangeBackground.value = supported))
     document.addEventListener('fullscreenchange', syncFullscreen)
     document.addEventListener('keydown', focusSearchShortcut)
     stopLiveStatus = live.onLiveStatus(applyLiveStatus)
@@ -777,6 +797,10 @@ onBeforeUnmount(() => {
                         <BaseButton variant="ghost" size="sm" :loading="restartingCamera" @click="restartCamera">
                             <RefreshCw class="size-4" />
                             Nyalakan ulang kamera
+                        </BaseButton>
+                        <BaseButton v-if="canChangeBackground" variant="ghost" size="sm" @click="backgroundOpen = true">
+                            <Wallpaper class="size-4" />
+                            Background
                         </BaseButton>
                         <BaseButton variant="danger" size="sm" :loading="live.connecting" @click="confirmEndOpen = true">
                             <Square class="size-4" />
@@ -1429,6 +1453,15 @@ onBeforeUnmount(() => {
                 </DialogContent>
             </DialogPortal>
         </DialogRoot>
+
+        <BackgroundPicker
+            :open="backgroundOpen"
+            :value="live.cameraBackground"
+            :applying="applyingBackground"
+            description="Ganti latar kamera siaran Live Kerja. Diproses di komputer Anda; atasan melihat hasilnya. Cek wajah tetap berjalan."
+            @update:open="(v) => (backgroundOpen = v)"
+            @select="chooseBackground"
+        />
 
         <ConfirmDialog
             v-model:open="confirmStartOpen"

@@ -11,6 +11,8 @@ coroutines = "1.10.2"
 securityCrypto = "1.1.0"
 livekit = "2.28.2"
 mlkitFaceDetection = "16.1.7"
+# Sama dengan yang dipakai livekit-android-track-processors.
+mlkitSegmentationSelfie = "16.0.0-beta6"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -30,6 +32,9 @@ androidx-security-crypto = { group = "androidx.security", name = "security-crypt
 livekit-android = { group = "io.livekit", name = "livekit-android", version.ref = "livekit" }
 # Cek wajah di HP (model ikut di APK, berjalan tanpa internet).
 mlkit-face-detection = { group = "com.google.mlkit", name = "face-detection", version.ref = "mlkitFaceDetection" }
+# Background kamera (blur / gambar): shader LiveKit + ML Kit Selfie Segmentation.
+mlkit-segmentation-selfie = { group = "com.google.mlkit", name = "segmentation-selfie", version.ref = "mlkitSegmentationSelfie" }
+livekit-track-processors = { group = "io.livekit", name = "livekit-android-track-processors", version.ref = "livekit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
