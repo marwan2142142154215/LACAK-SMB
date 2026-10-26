@@ -74,6 +74,11 @@ const uploadForm = ref({
     apk_file: null,
 })
 
+// SMB Live Kerja cukup satu: selama ada yang berhasil / sedang dibuild,
+// tidak perlu build lagi (backend juga menolak).
+const existingLive = computed(() => builds.value.find((b) => b.apk_type === 'live' && ['pending', 'building', 'success'].includes(b.status)))
+const liveBlocked = computed(() => generateForm.value.apk_type === 'live' && !!existingLive.value)
+
 const hasActiveBuild = computed(() => builds.value.some((b) => b.status === 'pending' || b.status === 'building'))
 
 function typeLabel(build) {
@@ -338,6 +343,15 @@ onBeforeUnmount(() => {
                     Satu SMB Admin untuk semua site. Site yang terlihat ditentukan oleh akun yang masuk, bukan oleh APK-nya.
                 </p>
                 <p
+                    v-else-if="liveBlocked"
+                    class="rounded-lg border border-warning-500/40 bg-warning-500/10 p-3 text-xs text-pretty text-warning-400"
+                    role="status"
+                >
+                    SMB Live Kerja v{{ existingLive.version }}
+                    {{ existingLive.status === 'success' ? 'sudah ada — cukup unduh dari daftar.' : 'sedang dibuild.' }}
+                    Untuk build versi baru, hapus arsip SMB Live Kerja yang lama dulu.
+                </p>
+                <p
                     v-else-if="generateForm.apk_type === 'live'"
                     class="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-pretty text-base-300"
                 >
@@ -347,7 +361,7 @@ onBeforeUnmount(() => {
             </form>
             <template #footer>
                 <BaseButton variant="ghost" @click="generateDialogOpen = false">Batal</BaseButton>
-                <BaseButton type="submit" form="generate-form" :loading="generating"><Hammer class="size-4" /> Mulai build</BaseButton>
+                <BaseButton type="submit" form="generate-form" :loading="generating" :disabled="liveBlocked"><Hammer class="size-4" /> Mulai build</BaseButton>
             </template>
         </BaseDialog>
 
