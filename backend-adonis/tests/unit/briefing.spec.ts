@@ -20,6 +20,7 @@ function briefing(overrides: Partial<BriefingRow> = {}): BriefingRow {
         host_user_id: 99,
         allowed_roles: ['staff_viewer'],
         allowed_organization_ids: [1],
+        invited_user_ids: [],
         started_at: new Date(),
         ended_at: null,
         ...overrides,
@@ -64,6 +65,18 @@ test.group('Briefing: siapa yang boleh memimpin & bergabung', () => {
             )
         )
         assert.deepEqual(sitesOf(leader), [1, 2])
+    })
+
+    test('peserta pilihan: hanya user yang diundang, peran & site diabaikan', ({ assert }) => {
+        const invited = briefing({ allowed_roles: [], invited_user_ids: [10] })
+        assert.isTrue(canJoinBriefing(access(['staff_viewer'], { organizationId: 5 }), invited))
+        assert.isFalse(canJoinBriefing(access(['staff_viewer'], { userId: 11 }), invited))
+        assert.isFalse(
+            canJoinBriefing(
+                access(['staff_viewer'], { userId: 11 }),
+                briefing({ invited_user_ids: [10] })
+            )
+        )
     })
 
     test('pemimpin & root selalu boleh; briefing yang selesai tertutup', ({ assert }) => {

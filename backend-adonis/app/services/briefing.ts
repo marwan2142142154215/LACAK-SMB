@@ -27,6 +27,8 @@ export type BriefingRow = {
     allowed_roles: string[]
     /** Kosong = semua site. */
     allowed_organization_ids: number[]
+    /** Peserta pilihan pemimpin; kosong = undangan menurut peran & site. */
+    invited_user_ids: number[]
     started_at: Date
     ended_at: Date | null
 }
@@ -47,13 +49,15 @@ export function sitesOf(access: Access): number[] | 'all' {
 }
 
 /**
- * Boleh bergabung? Pemimpin & root selalu boleh; selain itu peran user harus
- * ada di daftar undangan DAN salah satu site-nya termasuk site yang diundang
+ * Boleh bergabung? Pemimpin & root selalu boleh. Briefing dengan peserta
+ * pilihan: hanya user yang diundang. Selain itu peran user harus ada di
+ * daftar undangan DAN salah satu site-nya termasuk site yang diundang
  * (daftar site kosong = semua site).
  */
 export function canJoinBriefing(access: Access, briefing: BriefingRow): boolean {
     if (briefing.ended_at) return false
     if (briefing.host_user_id === access.userId || access.roles.includes('super_admin')) return true
+    if (briefing.invited_user_ids?.length) return briefing.invited_user_ids.includes(access.userId)
     if (!access.roles.some((role) => briefing.allowed_roles.includes(role))) return false
     if (!briefing.allowed_organization_ids.length) return true
     const sites = sitesOf(access)
