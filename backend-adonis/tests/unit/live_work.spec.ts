@@ -140,6 +140,9 @@ test.group('Live Kerja: ringkasan jam kerja (padanan WorkPresence::summarize)', 
             event(0, 'work_start'),
             event(10, 'face_lost'),
             event(15, 'face_back'),
+            // Kurang dari 5 menit: tidak dihitung (biasanya sudah dihapus server).
+            event(20, 'face_lost'),
+            event(23, 'face_back'),
             event(40, 'face_lost'),
             // Selesai kerja saat wajah masih hilang: dihitung sampai selesai.
             event(60, 'work_end'),
