@@ -5,13 +5,14 @@ import { ref } from 'vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 
 /**
- * Pilihan background kamera untuk briefing: kamera asli, blur, gambar bawaan,
+ * Pilihan background kamera (Briefing & Live Kerja): kamera asli, blur, gambar bawaan,
  * atau gambar unggahan sendiri (diperkecil ke 1280px lalu disimpan di browser).
  */
 const props = defineProps({
     open: { type: Boolean, default: false },
     value: { type: Object, required: true },
     applying: { type: Boolean, default: false },
+    description: { type: String, default: 'Diproses di komputer Anda; yang lain melihat hasilnya.' },
 })
 const emit = defineEmits(['update:open', 'select'])
 
@@ -72,12 +73,7 @@ async function upload(event) {
 </script>
 
 <template>
-    <BaseDialog
-        :open="open"
-        title="Background kamera"
-        description="Hanya untuk briefing. Diproses di komputer Anda; peserta lain melihat hasilnya. Live Kerja tetap memakai kamera asli."
-        @update:open="(v) => emit('update:open', v)"
-    >
+    <BaseDialog :open="open" title="Background kamera" :description="description" @update:open="(v) => emit('update:open', v)">
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Background kamera">
             <button
                 v-for="option in [

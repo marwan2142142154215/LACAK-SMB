@@ -117,6 +117,10 @@ class LiveBroadcastService : Service() {
     }
     private var watchedTrack: LocalVideoTrack? = null
 
+    // Background kamera (blur / gambar) -- terpasang di track kamera sejak
+    // dibuat; pilihan bisa diganti di tengah siaran (lihat BackgroundProcessor).
+    private var backgroundProcessor: BackgroundProcessor? = null
+
     override fun onCreate() {
         super.onCreate()
         sessionStore = SessionStore(applicationContext)
@@ -138,6 +142,11 @@ class LiveBroadcastService : Service() {
             } else if (runJob?.isActive == true) {
                 pendingScreenData = data
             }
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_SET_BACKGROUND) {
+            // Pilihan sudah disimpan layar (CameraBackground); pasang ke siaran yang jalan.
+            if (runJob?.isActive == true) scope.launch { applyBackground() }
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_SET_MIC) {
@@ -300,9 +309,7 @@ class LiveBroadcastService : Service() {
 
         try {
             newRoom.connect(url, token, ConnectOptions(autoSubscribe = false))
-            if (!newRoom.localParticipant.setCameraEnabled(true)) {
-                throw IllegalStateException("Kamera tidak bisa dinyalakan")
-            }
+            publishCamera(newRoom)
             faceWatch.reset()
             attachFrameCounter(newRoom)
             LiveBroadcastState.setRoom(newRoom)
@@ -325,6 +332,36 @@ class LiveBroadcastService : Service() {
             watchdog?.cancel()
             withContext(NonCancellable) { releaseRoom() }
         }
+    }
+
+    /**
+     * Kamera depan dengan BackgroundProcessor terpasang (setara
+     * setCameraEnabled(true), yang tidak bisa diberi processor). Setelah
+     * terbit, setCameraEnabled(false/true) watchdog tetap memakai track ini.
+     */
+    private suspend fun publishCamera(room: Room) {
+        val processor = BackgroundProcessor(room.lkObjects.eglBase)
+        backgroundProcessor = processor
+        applyBackground()
+        val track = room.localParticipant.createVideoTrack(name = "camera", videoProcessor = processor)
+        track.start()
+        track.startCapture()
+        if (!room.localParticipant.publishVideoTrack(track)) {
+            track.stopCapture()
+            track.stop()
+            throw IllegalStateException("Kamera tidak bisa dinyalakan")
+        }
+    }
+
+    /** Pasang pilihan background yang tersimpan ke processor kamera. */
+    private suspend fun applyBackground() {
+        val processor = backgroundProcessor ?: return
+        val choice = CameraBackground.load(applicationContext)
+        val image = withContext(Dispatchers.IO) {
+            runCatching { CameraBackground.bitmapFor(applicationContext, choice) }.getOrNull()
+        }
+        processor.backgroundImage = image
+        processor.enabled = choice != BackgroundChoice.None
     }
 
     private suspend fun heartbeatLoop() {
@@ -514,6 +551,8 @@ class LiveBroadcastService : Service() {
         delay(150)
         current.disconnect()
         current.release()
+        backgroundProcessor?.dispose()
+        backgroundProcessor = null
     }
 
     /**
@@ -552,6 +591,8 @@ class LiveBroadcastService : Service() {
             finished = true
             room?.let { it.disconnect(); it.release() }
             room = null
+            backgroundProcessor?.dispose()
+            backgroundProcessor = null
             LiveBroadcastState.setRoom(null)
             LiveBroadcastState.setStatus(BroadcastStatus.Idle("Siaran dihentikan oleh sistem"))
             val api = apiClient
@@ -664,6 +705,7 @@ class LiveBroadcastService : Service() {
         private const val ACTION_STOP = "com.lacaksmb.live.action.STOP"
         private const val ACTION_SET_MIC = "com.lacaksmb.live.action.SET_MIC"
         private const val ACTION_SHARE_SCREEN = "com.lacaksmb.live.action.SHARE_SCREEN"
+        private const val ACTION_SET_BACKGROUND = "com.lacaksmb.live.action.SET_BACKGROUND"
         private const val EXTRA_SCREEN_DATA = "screen_data"
         private const val SCREEN_NOTIFICATION_ID = 3002
         private const val EXTRA_MUTED = "muted"
@@ -704,6 +746,11 @@ class LiveBroadcastService : Service() {
             context.startService(
                 Intent(context, LiveBroadcastService::class.java).setAction(ACTION_SET_MIC).putExtra(EXTRA_MUTED, muted),
             )
+        }
+
+        /** Pilihan background baru (sudah disimpan di CameraBackground) -> pasang ke siaran yang jalan. */
+        fun backgroundChanged(context: Context) {
+            context.startService(Intent(context, LiveBroadcastService::class.java).setAction(ACTION_SET_BACKGROUND))
         }
 
         fun stop(context: Context) {

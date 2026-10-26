@@ -22,6 +22,11 @@ latar belakang.
   ada wajah >= 30 detik = `face_missing` (log "Wajah hilang"/"Wajah kembali").
   Hanya dicatat, jam kerja tetap dihitung. APK hanya untuk HP ARM
   (`arm64-v8a`, `armeabi-v7a`).
+- Background kamera (`BackgroundProcessor`): kamera asli, blur, gradasi
+  bawaan, atau gambar galeri -- dipilih di layar Live Kerja, diingat di HP.
+  Masker orang/latar dari ML Kit Selfie Segmentation (~8x/detik) pada frame
+  kamera, digambar dengan shader `livekit-android-track-processors`. Frame
+  tetap berasal dari kamera, jadi watchdog kamera & cek wajah tidak berubah.
 - Memakai API backend yang sudah ada tanpa mengubah kontraknya:
   `POST /live/sessions/start` (→ `livekit_url`, `token`, `room`),
   `POST /live/sessions/heartbeat` tiap 30 detik + saat layar/kamera berubah,

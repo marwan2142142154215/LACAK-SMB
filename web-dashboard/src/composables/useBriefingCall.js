@@ -1,43 +1,12 @@
 import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
 
+import { createCameraBackground } from '@/lib/cameraBackground'
+
 const CAMERA = 'camera'
 const MICROPHONE = 'microphone'
 const SCREEN = 'screen_share'
 
-// Background kamera (hanya briefing; Live Kerja selalu kamera asli). Diproses
-// di browser peserta sendiri lewat @livekit/track-processors -- yang dikirim
-// ke peserta lain sudah berupa video dengan background diganti.
-const BACKGROUND_KEY = 'lacak.briefing.background'
-const SEGMENTER_MODEL = '/models/selfie_segmenter.tflite'
-const BLUR_RADIUS = 12
-
-function loadBackground() {
-    try {
-        const saved = JSON.parse(localStorage.getItem(BACKGROUND_KEY))
-        if (saved?.mode === 'blur' || (saved?.mode === 'image' && saved.image)) return saved
-    } catch {
-        // Penyimpanan browser tidak bisa dibaca: pakai kamera asli.
-    }
-    return { mode: 'none', image: null }
-}
-
-function saveBackground(value) {
-    try {
-        localStorage.setItem(BACKGROUND_KEY, JSON.stringify(value))
-    } catch {
-        // Gambar terlalu besar / penyimpanan diblokir: tetap berlaku untuk sesi ini.
-    }
-}
-
-/** Browser ini sanggup mengganti background? (butuh WebGL + insertable streams / OffscreenCanvas) */
-export async function backgroundSupported() {
-    try {
-        const { supportsBackgroundProcessors } = await import('@livekit/track-processors')
-        return supportsBackgroundProcessors()
-    } catch {
-        return false
-    }
-}
+export { backgroundSupported } from '@/lib/cameraBackground'
 
 /**
  * Satu panggilan briefing (room LiveKit briefing-{id}). Dipakai BriefingView;
@@ -53,36 +22,15 @@ export function useBriefingCall() {
     const connecting = ref(false)
     const endedByHost = ref(false)
     let audioContainer = null
-    const background = ref(loadBackground())
-    let processor = null
-
-    const bump = () => revision.value++
-
-    /** Pasang pilihan background ke track kamera lokal (kalau kamera menyala). */
-    async function applyBackground() {
-        const track = room.value?.localParticipant.getTrackPublication(CAMERA)?.track
-        if (!track) return
-        const { mode, image } = background.value
-        if (mode === 'none') {
-            if (track.getProcessor()) await track.stopProcessor()
-            processor = null
-            return
-        }
-        const options =
-            mode === 'blur' ? { mode: 'background-blur', blurRadius: BLUR_RADIUS } : { mode: 'virtual-background', imagePath: image }
-        if (processor && track.getProcessor() === processor) {
-            await processor.switchTo(options)
-            return
-        }
-        const { BackgroundProcessor } = await import('@livekit/track-processors')
-        processor = BackgroundProcessor({ ...options, assetPaths: { modelAssetPath: SEGMENTER_MODEL } })
-        await track.setProcessor(processor)
-    }
+    // Background kamera (blur / gambar), diingat per browser.
+    const cameraBackground = createCameraBackground(
+        'lacak.briefing.background',
+        () => room.value?.localParticipant.getTrackPublication(CAMERA)?.track ?? null,
+    )
+    const applyBackground = cameraBackground.apply
 
     async function setBackground(next) {
-        background.value = next
-        saveBackground(next)
-        await applyBackground()
+        await cameraBackground.set(next)
         bump()
     }
 
@@ -205,7 +153,7 @@ export function useBriefingCall() {
 
     function cleanup() {
         room.value = null
-        processor = null
+        cameraBackground.reset()
         audioContainer?.remove()
         audioContainer = null
         bump()
@@ -233,7 +181,7 @@ export function useBriefingCall() {
         toggleMic,
         toggleCamera,
         toggleScreen,
-        background,
+        background: cameraBackground.background,
         setBackground,
     }
 }
