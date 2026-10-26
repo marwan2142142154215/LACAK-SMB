@@ -64,6 +64,8 @@ const routes = [
                 path: 'apk-builds',
                 name: 'apk-builds',
                 component: () => import('@/views/ApkBuildsView.vue'),
+                // Root, admin, leader, admin site -- staf tidak bisa build/unduh APK.
+                meta: { permission: 'apk-builds.manage' },
             },
             {
                 path: 'telegram-bindings',
