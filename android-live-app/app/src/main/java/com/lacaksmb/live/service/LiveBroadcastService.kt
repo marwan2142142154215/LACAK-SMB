@@ -36,7 +36,9 @@ import io.livekit.android.room.track.LocalTrackPublication
 import io.livekit.android.room.track.LocalVideoTrack
 import io.livekit.android.room.track.LocalVideoTrackOptions
 import io.livekit.android.room.track.Track
+import io.livekit.android.room.track.ScreenSharePresets
 import io.livekit.android.room.track.VideoPreset169
+import io.livekit.android.room.track.screencapture.ScreenCaptureParams
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -55,8 +57,8 @@ import livekit.org.webrtc.VideoSink
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Live Kerja dari HP: menyiarkan kamera depan + mikrofon ke rekan se-site lewat
- * LiveKit, TETAP JALAN saat staf pindah aplikasi atau layar mati -- hal yang
+ * Live Kerja dari HP: menyiarkan layar HP + kamera depan + mikrofon ke atasan
+ * lewat LiveKit, TETAP JALAN saat staf pindah aplikasi atau layar mati -- hal yang
  * tidak bisa dilakukan dashboard web/PWA (browser HP menghentikan kamera
  * begitu halaman masuk latar belakang).
  *
@@ -65,11 +67,17 @@ import java.util.concurrent.atomic.AtomicLong
  * terlihat): selama service ini hidup, Android mengizinkan app memakai
  * kamera & mikrofon walau Activity-nya sudah di latar belakang.
  *
+ * Layar dibagikan lewat MediaProjection: izinnya diminta Activity tepat
+ * sebelum Mulai kerja (atau tombol Bagikan layar), hasilnya dikirim ke sini
+ * dan dipakai SEKALI (Android 14+ melarang memakai ulang izin yang sama).
+ * LiveKit menjalankan foreground service mediaProjection-nya sendiri.
+ *
  * Perilaku dicocokkan dengan web-dashboard/src/stores/live.js: kamera +
  * mikrofon (bisa dibisukan staf, pilihan bisu diingat), 720p + simulcast
- * h180/h360, dynacast, tidak berlangganan
- * video peserta lain, heartbeat tiap 30 detik, dan 404 dari heartbeat =
- * server sudah menutup sesi -> berhenti. Kontrak API tidak diubah.
+ * h180/h360, layar 1080p 15fps + simulcast, dynacast, tidak berlangganan
+ * video peserta lain, heartbeat tiap 30 detik (+ langsung saat layar/kamera
+ * berubah) berisi camera_active & screen_active, dan 404 dari heartbeat =
+ * server sudah menutup sesi -> berhenti.
  */
 class LiveBroadcastService : Service() {
 
@@ -81,6 +89,10 @@ class LiveBroadcastService : Service() {
     private var room: Room? = null
     private var userStopped = false
     private var finished = false
+
+    // Hasil izin MediaProjection dari Activity, menunggu room tersambung.
+    // Sekali pakai: setelah dipakai (berhasil atau gagal) dibuang.
+    private var pendingScreenData: Intent? = null
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
@@ -102,6 +114,17 @@ class LiveBroadcastService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             stopBroadcast(userInitiated = true, error = null)
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_SHARE_SCREEN) {
+            // Bagikan layar lagi di tengah siaran (izin baru dari Activity).
+            val data = screenDataOf(intent) ?: return START_NOT_STICKY
+            val current = room
+            if (runJob?.isActive == true && current != null) {
+                scope.launch { shareScreen(current, data) }
+            } else if (runJob?.isActive == true) {
+                pendingScreenData = data
+            }
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_SET_MIC) {
@@ -126,6 +149,8 @@ class LiveBroadcastService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+
+        screenDataOf(intent)?.let { pendingScreenData = it }
 
         if (runJob?.isActive != true) {
             userStopped = false
@@ -226,6 +251,16 @@ class LiveBroadcastService : Service() {
                     simulcast = true,
                     simulcastLayers = listOf(VideoPreset169.H180, VideoPreset169.H360),
                 ),
+                // Layar kerja: teks harus terbaca, gerakan tidak penting --
+                // sama dengan dashboard web (1080p 15fps, lapis 360p & 720p).
+                screenShareTrackCaptureDefaults = LocalVideoTrackOptions(
+                    captureParams = ScreenSharePresets.H1080_FPS15.capture,
+                ),
+                screenShareTrackPublishDefaults = VideoTrackPublishDefaults(
+                    videoEncoding = ScreenSharePresets.H1080_FPS15.encoding,
+                    simulcast = true,
+                    simulcastLayers = listOf(ScreenSharePresets.H360_FPS3, ScreenSharePresets.H720_FPS5),
+                ),
             ),
             // NoAudioHandler: aplikasi ini hanya MENGIRIM suara, tidak memutar
             // apa pun -- jangan ambil fokus audio / ubah mode audio HP (musik
@@ -258,9 +293,14 @@ class LiveBroadcastService : Service() {
             attachFrameCounter(newRoom)
             LiveBroadcastState.setRoom(newRoom)
             publishMicrophone(newRoom)
+            pendingScreenData?.let { data ->
+                pendingScreenData = null
+                shareScreen(newRoom, data)
+            }
             LiveBroadcastState.setStatus(BroadcastStatus.Live)
             updateNotification(liveNotificationText())
             onLive()
+            reportStateNow()
 
             heartbeat = scope.launch { heartbeatLoop() }
             watchdog = scope.launch { cameraWatchdog(newRoom) }
@@ -276,7 +316,7 @@ class LiveBroadcastService : Service() {
     private suspend fun heartbeatLoop() {
         while (scope.isActive) {
             delay(HEARTBEAT_INTERVAL_MS)
-            val result = apiClient.heartbeatLiveSession()
+            val result = sendHeartbeat()
             if (result is ApiResult.Fail) {
                 when (result.httpCode) {
                     404 -> { stopBroadcast(userInitiated = false, error = "Sesi kerja sudah ditutup server (koneksi sempat terputus terlalu lama)", endSession = false); return }
@@ -313,6 +353,48 @@ class LiveBroadcastService : Service() {
             }
             lastCount = frameCount.get()
         }
+    }
+
+    private suspend fun sendHeartbeat(): ApiResult {
+        val camera = (room?.localParticipant?.getTrackPublication(Track.Source.CAMERA))?.let { !it.muted } ?: false
+        return apiClient.heartbeatLiveSession(cameraActive = camera, screenActive = LiveBroadcastState.screenSharing.value)
+    }
+
+    /** Detak tambahan begitu layar/kamera berubah -- penonton tidak menunggu 30 detik. */
+    private fun reportStateNow() {
+        if (room == null || finished) return
+        scope.launch { sendHeartbeat() }
+    }
+
+    /**
+     * Bagikan layar HP memakai izin MediaProjection [data] (sekali pakai).
+     * Berhenti sendiri (staf menekan "Berhenti berbagi" dari sistem, layar
+     * dikunci di beberapa HP, dll.) = dilaporkan Screen off ke server dan
+     * staf diminta membagikan lagi dari aplikasi.
+     */
+    private suspend fun shareScreen(room: Room, data: Intent) {
+        try {
+            val params = ScreenCaptureParams(
+                data,
+                SCREEN_NOTIFICATION_ID,
+                buildScreenNotification(),
+            ) { scope.launch { onScreenShareStopped() } }
+            val shared = room.localParticipant.setScreenShareEnabled(true, params)
+            LiveBroadcastState.setScreenSharing(shared)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            LiveBroadcastState.setScreenSharing(false)
+        }
+        updateNotification(liveNotificationText())
+        reportStateNow()
+    }
+
+    private fun onScreenShareStopped() {
+        if (!LiveBroadcastState.screenSharing.value) return
+        LiveBroadcastState.setScreenSharing(false)
+        updateNotification(liveNotificationText())
+        reportStateNow()
     }
 
     private fun hasMicPermission(): Boolean =
@@ -373,11 +455,26 @@ class LiveBroadcastService : Service() {
         }
     }
 
-    private fun liveNotificationText(): String = when (LiveBroadcastState.micState.value) {
-        MicState.On -> "Kamera depan & suara disiarkan ke rekan se-site"
-        MicState.Muted -> "Kamera depan disiarkan · mikrofon dibisukan"
-        MicState.None -> "Kamera depan disiarkan ke rekan se-site (tanpa suara)"
+    private fun liveNotificationText(): String {
+        if (!LiveBroadcastState.screenSharing.value) {
+            return "Layar belum dibagikan — tidak dihitung kerja. Buka aplikasi lalu Bagikan layar."
+        }
+        return when (LiveBroadcastState.micState.value) {
+            MicState.On -> "Layar, kamera & suara disiarkan ke atasan"
+            MicState.Muted -> "Layar & kamera disiarkan · mikrofon dibisukan"
+            MicState.None -> "Layar & kamera disiarkan ke atasan (tanpa suara)"
+        }
     }
+
+    private fun buildScreenNotification(): Notification =
+        NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Layar sedang dibagikan")
+            .setContentText("Layar HP disiarkan ke atasan selama Live Kerja")
+            .setSmallIcon(android.R.drawable.ic_menu_slideshow)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .build()
 
     private fun attachFrameCounter(room: Room) {
         val track = room.localParticipant.getTrackPublication(Track.Source.CAMERA)?.track as? LocalVideoTrack
@@ -488,7 +585,7 @@ class LiveBroadcastService : Service() {
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(CHANNEL_ID, "Siaran Live Kerja", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "Tampil selama kamera sedang disiarkan ke rekan se-site"
+            description = "Tampil selama layar & kamera sedang disiarkan ke atasan"
             setShowBadge(false)
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -546,18 +643,40 @@ class LiveBroadcastService : Service() {
         private const val ACTION_START = "com.lacaksmb.live.action.START"
         private const val ACTION_STOP = "com.lacaksmb.live.action.STOP"
         private const val ACTION_SET_MIC = "com.lacaksmb.live.action.SET_MIC"
+        private const val ACTION_SHARE_SCREEN = "com.lacaksmb.live.action.SHARE_SCREEN"
+        private const val EXTRA_SCREEN_DATA = "screen_data"
+        private const val SCREEN_NOTIFICATION_ID = 3002
         private const val EXTRA_MUTED = "muted"
         private const val PREFS = "live_broadcast"
         private const val PREF_MIC_MUTED = "mic_muted"
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
         private const val CAMERA_WATCHDOG_MS = 10_000L
 
-        /** Harus dipanggil saat app terlihat -- Android melarang FGS kamera dimulai dari latar belakang. */
-        fun start(context: Context) {
-            ContextCompat.startForegroundService(
-                context,
-                Intent(context, LiveBroadcastService::class.java).setAction(ACTION_START),
+        /**
+         * Harus dipanggil saat app terlihat -- Android melarang FGS kamera dimulai
+         * dari latar belakang. [screenData] = hasil izin MediaProjection (null =
+         * siaran tanpa layar, tercatat Screen off sampai staf membagikannya).
+         */
+        fun start(context: Context, screenData: Intent?) {
+            val intent = Intent(context, LiveBroadcastService::class.java).setAction(ACTION_START)
+            screenData?.let { intent.putExtra(EXTRA_SCREEN_DATA, it) }
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        /** Bagikan layar lagi di tengah siaran (izin MediaProjection baru). */
+        fun shareScreen(context: Context, screenData: Intent) {
+            context.startService(
+                Intent(context, LiveBroadcastService::class.java)
+                    .setAction(ACTION_SHARE_SCREEN)
+                    .putExtra(EXTRA_SCREEN_DATA, screenData),
             )
+        }
+
+        @Suppress("DEPRECATION")
+        private fun screenDataOf(intent: Intent?): Intent? = when {
+            intent == null -> null
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> intent.getParcelableExtra(EXTRA_SCREEN_DATA, Intent::class.java)
+            else -> intent.getParcelableExtra(EXTRA_SCREEN_DATA)
         }
 
         /** Bisukan / nyalakan mikrofon siaran yang sedang jalan. */
