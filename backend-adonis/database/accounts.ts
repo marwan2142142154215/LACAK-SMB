@@ -47,9 +47,10 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         'live.broadcast',
         'live.watch',
     ],
-    // admin & leader: lintas site lewat user_site_access, hanya melihat.
-    admin: ['devices.view', 'live.watch'],
-    leader: ['devices.view', 'live.watch'],
+    // admin & leader: lintas site lewat user_site_access; melihat, plus
+    // build & unduh APK untuk site yang dipegang.
+    admin: ['devices.view', 'live.watch', 'apk-builds.manage'],
+    leader: ['devices.view', 'live.watch', 'apk-builds.manage'],
     staff_viewer: ['devices.view', 'live.broadcast', 'live.watch'],
     // Akun layanan bot Telegram: kendali device + build APK, tanpa pengaturan site.
     telegram_bot_service: [

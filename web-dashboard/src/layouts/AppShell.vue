@@ -76,7 +76,7 @@ const navGroups = computed(() => [
             { to: { name: 'devices' }, label: 'Device', icon: Smartphone },
             { to: { name: 'geofence-rules' }, label: 'Aturan geofence', icon: MapPinned },
             { to: { name: 'consent-documents' }, label: 'Dokumen consent', icon: FileSignature },
-            { to: { name: 'apk-builds' }, label: 'Build APK', icon: PackageOpen },
+            { to: { name: 'apk-builds' }, label: 'Build APK', icon: PackageOpen, hidden: !auth.hasPermission('apk-builds.manage') },
         ],
     },
     {

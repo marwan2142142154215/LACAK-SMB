@@ -122,7 +122,11 @@ export function dateColumnValue(value: string): string {
 export default class ConsentDocumentsController {
     async index(ctx: HttpContext) {
         const access = await accessOf(ctx)
-        if (!can(access, 'consent-documents.manage')) return forbidden(ctx)
+        // Yang boleh build APK juga butuh daftarnya (APK Pelacak wajib consent),
+        // walau tidak boleh mengunggah atau mencabut dokumen.
+        if (!can(access, 'consent-documents.manage') && !can(access, 'apk-builds.manage')) {
+            return forbidden(ctx)
+        }
 
         const filter = organizationFilter(access, requestedOrganizationId(ctx))
         if (filter === null) {
