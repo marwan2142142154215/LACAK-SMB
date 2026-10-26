@@ -64,6 +64,25 @@ async function userWithRole(role: string, organizationId: number | null, granted
     return `${token.id}|${plain}`
 }
 
+test.group('Briefing: site yang diundang', (group) => {
+    group.each.setup(() => testUtils.db().withGlobalTransaction())
+
+    test('leader tanpa site tidak bisa membuat briefing untuk semua site', async ({
+        client,
+        assert,
+    }) => {
+        const bearer = await userWithRole('leader', null)
+        const response = await client
+            .post('/api/v1/briefings')
+            .json({ title: 'Briefing pagi', roles: ['staff_viewer'] })
+            .bearerToken(bearer)
+
+        response.assertStatus(403)
+        const count = await db.from('briefings').count('* as total').first()
+        assert.equal(Number(count.total), 0)
+    })
+})
+
 test.group('Build APK: peran yang boleh', (group) => {
     group.each.setup(() => testUtils.db().withGlobalTransaction())
 
