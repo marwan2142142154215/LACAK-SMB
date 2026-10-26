@@ -122,10 +122,14 @@ async function loadBuilds() {
     }
 }
 
+// Root memilih dari semua site; admin & leader dari site yang dipegangnya
+// (daftar Live Kerja); admin site selalu site-nya sendiri.
+const canPickSite = computed(() => auth.isSuperAdmin || ['admin', 'leader'].some((role) => auth.user?.roles?.includes(role)))
+
 async function loadOrganizations() {
-    if (!auth.isSuperAdmin) return
-    const response = await api.get('/organizations')
-    organizations.value = response.data.data.items
+    if (!canPickSite.value) return
+    const response = auth.isSuperAdmin ? await api.get('/organizations') : await api.get('/live/sites')
+    organizations.value = auth.isSuperAdmin ? response.data.data.items : response.data.data
     const fallback = organizations.value[0]?.id ?? null
     if (!generateForm.value.organization_id) generateForm.value.organization_id = fallback
     if (!uploadForm.value.organization_id) uploadForm.value.organization_id = fallback
@@ -305,7 +309,7 @@ onBeforeUnmount(() => {
                     <option value="server">Server — lacak-server.exe untuk komputer kantor</option>
                 </BaseSelect>
                 <BaseSelect
-                    v-if="auth.isSuperAdmin && !UNIVERSAL_TYPES.includes(generateForm.apk_type)"
+                    v-if="canPickSite && !UNIVERSAL_TYPES.includes(generateForm.apk_type)"
                     v-model="generateForm.organization_id"
                     label="Site"
                     required
@@ -354,7 +358,7 @@ onBeforeUnmount(() => {
             @update:open="(v) => (uploadDialogOpen = v)"
         >
             <form id="upload-form" class="space-y-4" @submit.prevent="submitUpload">
-                <BaseSelect v-if="auth.isSuperAdmin" v-model="uploadForm.organization_id" label="Site" required>
+                <BaseSelect v-if="canPickSite" v-model="uploadForm.organization_id" label="Site" required>
                     <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
                 </BaseSelect>
                 <BaseInput v-model="uploadForm.version" label="Versi" placeholder="1.0.0" required />
