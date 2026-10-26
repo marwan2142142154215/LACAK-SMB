@@ -9,6 +9,7 @@
         "preview": "vite preview"
     },
     "dependencies": {
+        "@livekit/track-processors": "0.8.1",
         "@lucide/vue": "^1.52.0",
         "@mediapipe/tasks-vision": "1.1.1",
         "@sentry/vue": "^11.6.0",

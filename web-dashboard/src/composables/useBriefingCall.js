@@ -4,6 +4,41 @@ const CAMERA = 'camera'
 const MICROPHONE = 'microphone'
 const SCREEN = 'screen_share'
 
+// Background kamera (hanya briefing; Live Kerja selalu kamera asli). Diproses
+// di browser peserta sendiri lewat @livekit/track-processors -- yang dikirim
+// ke peserta lain sudah berupa video dengan background diganti.
+const BACKGROUND_KEY = 'lacak.briefing.background'
+const SEGMENTER_MODEL = '/models/selfie_segmenter.tflite'
+const BLUR_RADIUS = 12
+
+function loadBackground() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(BACKGROUND_KEY))
+        if (saved?.mode === 'blur' || (saved?.mode === 'image' && saved.image)) return saved
+    } catch {
+        // Penyimpanan browser tidak bisa dibaca: pakai kamera asli.
+    }
+    return { mode: 'none', image: null }
+}
+
+function saveBackground(value) {
+    try {
+        localStorage.setItem(BACKGROUND_KEY, JSON.stringify(value))
+    } catch {
+        // Gambar terlalu besar / penyimpanan diblokir: tetap berlaku untuk sesi ini.
+    }
+}
+
+/** Browser ini sanggup mengganti background? (butuh WebGL + insertable streams / OffscreenCanvas) */
+export async function backgroundSupported() {
+    try {
+        const { supportsBackgroundProcessors } = await import('@livekit/track-processors')
+        return supportsBackgroundProcessors()
+    } catch {
+        return false
+    }
+}
+
 /**
  * Satu panggilan briefing (room LiveKit briefing-{id}). Dipakai BriefingView;
  * terputus otomatis saat halaman ditinggalkan. Peserta biasa masuk dengan
@@ -18,8 +53,38 @@ export function useBriefingCall() {
     const connecting = ref(false)
     const endedByHost = ref(false)
     let audioContainer = null
+    const background = ref(loadBackground())
+    let processor = null
 
     const bump = () => revision.value++
+
+    /** Pasang pilihan background ke track kamera lokal (kalau kamera menyala). */
+    async function applyBackground() {
+        const track = room.value?.localParticipant.getTrackPublication(CAMERA)?.track
+        if (!track) return
+        const { mode, image } = background.value
+        if (mode === 'none') {
+            if (track.getProcessor()) await track.stopProcessor()
+            processor = null
+            return
+        }
+        const options =
+            mode === 'blur' ? { mode: 'background-blur', blurRadius: BLUR_RADIUS } : { mode: 'virtual-background', imagePath: image }
+        if (processor && track.getProcessor() === processor) {
+            await processor.switchTo(options)
+            return
+        }
+        const { BackgroundProcessor } = await import('@livekit/track-processors')
+        processor = BackgroundProcessor({ ...options, assetPaths: { modelAssetPath: SEGMENTER_MODEL } })
+        await track.setProcessor(processor)
+    }
+
+    async function setBackground(next) {
+        background.value = next
+        saveBackground(next)
+        await applyBackground()
+        bump()
+    }
 
     const participants = computed(() => {
         revision.value
@@ -86,6 +151,10 @@ export function useBriefingCall() {
                     if (track.kind === 'audio') track.detach().forEach((element) => element.remove())
                     bump()
                 })
+                .on(RoomEvent.LocalTrackPublished, (publication) => {
+                    // Kamera dinyalakan ulang = track baru: pasang lagi background-nya.
+                    if (publication.source === CAMERA) applyBackground().catch(() => {})
+                })
                 .on(RoomEvent.Disconnected, () => {
                     // Room dihapus server = pemimpin mengakhiri briefing.
                     if (room.value === instance) {
@@ -136,6 +205,7 @@ export function useBriefingCall() {
 
     function cleanup() {
         room.value = null
+        processor = null
         audioContainer?.remove()
         audioContainer = null
         bump()
@@ -163,5 +233,7 @@ export function useBriefingCall() {
         toggleMic,
         toggleCamera,
         toggleScreen,
+        background,
+        setBackground,
     }
 }
