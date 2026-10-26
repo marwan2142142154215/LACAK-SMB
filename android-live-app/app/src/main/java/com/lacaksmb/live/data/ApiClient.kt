@@ -100,17 +100,23 @@ class ApiClient(private val sessionStore: SessionStore) {
     // ---- Live Kerja ----
 
     /** Membuka (atau melanjutkan) sesi kerja; data berisi livekit_url, token, room, session. */
+    // device=android_app: APK ini membagikan layar + kamera, jadi server
+    // mengizinkannya (browser HP & APK lama tanpa layar tetap ditolak).
     suspend fun startLiveSession(): ApiResult =
-        execute(authedBuilder("/live/sessions/start").post(emptyBody()).build())
+        execute(authedBuilder("/live/sessions/start").post(jsonBody(mapOf("device" to "android_app"))).build())
 
     /**
      * Detak sesi + kondisi siaran (kamera & layar menyala?) -- server menghitung
      * status kerja dari sini (layar mati = Screen off, tidak dihitung kerja).
      * 404 = server sudah menutup sesi (timeout) -- siaran wajib berhenti.
      */
-    suspend fun heartbeatLiveSession(cameraActive: Boolean, screenActive: Boolean): ApiResult = execute(
+    suspend fun heartbeatLiveSession(cameraActive: Boolean, screenActive: Boolean, faceMissing: Boolean): ApiResult = execute(
         authedBuilder("/live/sessions/heartbeat")
-            .post(jsonBody(mapOf("camera_active" to cameraActive, "screen_active" to screenActive)))
+            .post(
+                jsonBody(
+                    mapOf("camera_active" to cameraActive, "screen_active" to screenActive, "face_missing" to faceMissing),
+                ),
+            )
             .build(),
     )
 

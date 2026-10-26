@@ -18,6 +18,7 @@ function session(overrides: Partial<WorkSessionRow> = {}): WorkSessionRow {
         screen_active: true,
         on_break: false,
         idle: false,
+        face_missing: false,
         ...overrides,
     }
 }

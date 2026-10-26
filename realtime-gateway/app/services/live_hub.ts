@@ -72,7 +72,7 @@ export function canWatchSite(user: AuthenticatedUser, organizationId: number): b
 /** Status terakhir yang sudah dikirim, per sesi kerja terbuka. */
 const lastKnown = new Map<
     number,
-    { userId: number; organizationId: number | null; status: WorkStatus }
+    { userId: number; organizationId: number | null; status: WorkStatus; faceMissing: boolean }
 >()
 
 type MediaTransport = 'udp' | 'tcp'
@@ -106,6 +106,7 @@ function publishSession(opsNs: OpsNamespace, session: LiveSession, now: Date) {
         userId: session.user_id,
         organizationId: session.organization_id,
         status,
+        faceMissing: session.face_missing,
     })
     opsNs.to(liveRoom(session.organization_id)).emit('live:status', {
         organization_id: session.organization_id,
@@ -232,7 +233,12 @@ export function startLiveSweeper(opsNs: OpsNamespace): () => void {
             }
 
             for (const session of sessions) {
-                if (lastKnown.get(session.id)?.status !== statusOf(session, now)) {
+                // Wajah hilang/kembali dari APK (heartbeat HTTP) juga diteruskan.
+                const known = lastKnown.get(session.id)
+                if (
+                    known?.status !== statusOf(session, now) ||
+                    known.faceMissing !== session.face_missing
+                ) {
                     publishSession(opsNs, session, now)
                 }
             }

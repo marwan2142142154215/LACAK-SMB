@@ -101,7 +101,20 @@ class LiveBroadcastService : Service() {
     // watchdog untuk tahu kamera macet (mis. direbut aplikasi kamera lain)
     // walau track LiveKit-nya masih tercatat "terbit".
     private val frameCount = AtomicLong(0)
-    private val frameCounter = VideoSink { frameCount.incrementAndGet() }
+
+    // Cek wajah memakai frame kamera yang sama (lihat FaceWatch).
+    private val faceWatch by lazy {
+        FaceWatch { missing ->
+            scope.launch {
+                LiveBroadcastState.setFaceMissing(missing)
+                reportStateNow()
+            }
+        }
+    }
+    private val frameCounter = VideoSink { frame ->
+        frameCount.incrementAndGet()
+        faceWatch.onFrame(frame)
+    }
     private var watchedTrack: LocalVideoTrack? = null
 
     override fun onCreate() {
@@ -290,6 +303,7 @@ class LiveBroadcastService : Service() {
             if (!newRoom.localParticipant.setCameraEnabled(true)) {
                 throw IllegalStateException("Kamera tidak bisa dinyalakan")
             }
+            faceWatch.reset()
             attachFrameCounter(newRoom)
             LiveBroadcastState.setRoom(newRoom)
             publishMicrophone(newRoom)
@@ -339,6 +353,7 @@ class LiveBroadcastService : Service() {
             delay(CAMERA_WATCHDOG_MS)
             val now = frameCount.get()
             if (now == lastCount && room.state == Room.State.CONNECTED && !userStopped) {
+                faceWatch.cameraUnavailable()
                 updateNotification("Kamera berhenti, menyalakan ulang...")
                 try {
                     room.localParticipant.setCameraEnabled(false)
@@ -357,7 +372,11 @@ class LiveBroadcastService : Service() {
 
     private suspend fun sendHeartbeat(): ApiResult {
         val camera = (room?.localParticipant?.getTrackPublication(Track.Source.CAMERA))?.let { !it.muted } ?: false
-        return apiClient.heartbeatLiveSession(cameraActive = camera, screenActive = LiveBroadcastState.screenSharing.value)
+        return apiClient.heartbeatLiveSession(
+            cameraActive = camera,
+            screenActive = LiveBroadcastState.screenSharing.value,
+            faceMissing = camera && LiveBroadcastState.faceMissing.value,
+        )
     }
 
     /** Detak tambahan begitu layar/kamera berubah -- penonton tidak menunggu 30 detik. */
@@ -540,6 +559,7 @@ class LiveBroadcastService : Service() {
             releaseLocks()
         }
         scope.cancel()
+        faceWatch.close()
         super.onDestroy()
     }
 

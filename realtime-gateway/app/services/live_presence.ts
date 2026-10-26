@@ -36,6 +36,7 @@ const SESSION_COLUMNS = [
     'work_sessions.screen_active',
     'work_sessions.on_break',
     'work_sessions.idle',
+    'work_sessions.face_missing',
     'users.name as user_name',
 ]
 
@@ -156,6 +157,7 @@ export function sessionPayload(session: LiveSession, now: Date = new Date()) {
         screen_active: session.screen_active,
         on_break: session.on_break,
         idle: session.idle,
+        face_missing: session.face_missing,
         status: statusOf(session, now),
         end_reason: session.end_reason,
     }

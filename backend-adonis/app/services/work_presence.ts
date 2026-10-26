@@ -26,6 +26,8 @@ export const STATE_EVENTS = {
     screen_active: ['screen_start', 'screen_stop'],
     on_break: ['break_start', 'break_end'],
     idle: ['idle_start', 'idle_end'],
+    // Cek wajah: hanya kejadian log, tidak mengubah status kerja.
+    face_missing: ['face_lost', 'face_back'],
 } as const
 
 export type StateColumn = keyof typeof STATE_EVENTS
@@ -44,6 +46,7 @@ export type WorkSessionRow = {
     screen_active: boolean
     on_break: boolean
     idle: boolean
+    face_missing: boolean
     user_name?: string | null
 }
 
@@ -191,6 +194,7 @@ export function sessionResource(session: WorkSessionRow, now: Date = new Date())
         screen_active: session.screen_active,
         on_break: session.on_break,
         idle: session.idle,
+        face_missing: session.face_missing,
         status: statusOf(session, now),
         end_reason: session.end_reason,
     }
@@ -235,16 +239,32 @@ export function summarize(
         let status: string = before.get(userId)?.status ?? 'offline'
         let cursor = from.getTime()
         const totals: Record<string, number> = { working: 0, break: 0 }
+        // Wajah hilang: dihitung dari face_lost sampai face_back / sesi selesai.
+        let faceLostAt: number | null = before.get(userId)?.type === 'face_lost' ? cursor : null
+        let faceMissingSeconds = 0
+        let faceLostCount = 0
+        const closeFace = (at: number) => {
+            if (faceLostAt === null) return
+            faceMissingSeconds += Math.floor(Math.max(0, at - faceLostAt) / 1000)
+            faceLostAt = null
+        }
 
         for (const event of userEvents) {
             const at = event.occurred_at.getTime()
             totals[status] = (totals[status] ?? 0) + Math.floor(Math.abs(at - cursor) / 1000)
             status = event.status
             cursor = at
+            if (event.type === 'face_lost') {
+                faceLostCount++
+                faceLostAt ??= at
+            } else if (event.type === 'face_back' || event.status === 'offline') {
+                closeFace(at)
+            }
         }
         if (cursor < end) {
             totals[status] = (totals[status] ?? 0) + Math.floor((end - cursor) / 1000)
         }
+        closeFace(end)
 
         const reference = userEvents[0] ?? before.get(userId)
         const last = userEvents[userEvents.length - 1] ?? before.get(userId)
@@ -256,6 +276,8 @@ export function summarize(
             organization_id: last?.organization_id ?? null,
             work_seconds: totals.working,
             break_seconds: totals.break,
+            face_missing_seconds: faceMissingSeconds,
+            face_lost_count: faceLostCount,
             first_login_at: firstLogin ? firstLogin.occurred_at.toISOString() : null,
             status,
         }
