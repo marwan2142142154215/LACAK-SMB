@@ -1,7 +1,10 @@
 package com.lacaksmb.live.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
+import android.media.projection.MediaProjectionConfig
+import android.media.projection.MediaProjectionManager
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.Icon
@@ -83,11 +87,39 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
     val room by LiveBroadcastState.room.collectAsStateWithLifecycle()
     val liveSince by LiveBroadcastState.liveSince.collectAsStateWithLifecycle()
     val micState by LiveBroadcastState.micState.collectAsStateWithLifecycle()
+    val screenSharing by LiveBroadcastState.screenSharing.collectAsStateWithLifecycle()
     var permissionError by remember { mutableStateOf<String?>(null) }
 
     val canBroadcast = user?.can("live.broadcast") == true
     val busy = status is BroadcastStatus.Connecting || status is BroadcastStatus.Stopping
     val active = status !is BroadcastStatus.Idle
+
+    // Izin berbagi layar (MediaProjection). Hasilnya sekali pakai, langsung
+    // diserahkan ke service. Ditolak = siaran tetap jalan tanpa layar
+    // (Screen off: tidak dihitung kerja) dan tombol Bagikan layar muncul.
+    val screenLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data.takeIf { result.resultCode == Activity.RESULT_OK }
+        val app = context.applicationContext
+        when {
+            active && data != null -> LiveBroadcastService.shareScreen(app, data)
+            active -> Unit
+            else -> LiveBroadcastService.start(app, data)
+        }
+        if (data == null) {
+            permissionError = "Layar tidak dibagikan. Selama layar tidak dibagikan, waktu Anda tidak dihitung sebagai jam kerja."
+        }
+    }
+
+    fun requestScreenShare() {
+        val manager = context.getSystemService(MediaProjectionManager::class.java)
+        // Android 14+: paksa pilihan "Seluruh layar", bukan satu aplikasi saja.
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+        } else {
+            manager.createScreenCaptureIntent()
+        }
+        screenLauncher.launch(intent)
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
         if (granted[Manifest.permission.CAMERA] == true ||
@@ -95,7 +127,7 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
         ) {
             // Izin notifikasi / mikrofon ditolak tidak menghalangi siaran --
             // notifikasinya tidak tampil / siaran tanpa suara.
-            LiveBroadcastService.start(context.applicationContext)
+            requestScreenShare()
         } else {
             permissionError = "Izin kamera dibutuhkan untuk menyiarkan. Buka Pengaturan > Aplikasi > Lacak SMB Live > Izin."
         }
@@ -111,7 +143,7 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
         }.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
 
         if (needed.isEmpty()) {
-            LiveBroadcastService.start(context.applicationContext)
+            requestScreenShare()
         } else {
             permissionLauncher.launch(needed.toTypedArray())
         }
@@ -144,7 +176,7 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
         ) {
             SectionCard(
                 title = user?.name ?: "Staf",
-                subtitle = "Siaran kamera depan ke rekan se-site",
+                subtitle = "Siaran layar HP & kamera depan ke atasan",
                 actions = { StatusBadge(statusLabel(status), statusVariant(status)) },
             ) {
                 Box(
@@ -188,6 +220,10 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
                 }
 
                 if (status is BroadcastStatus.Live) {
+                    ScreenControl(screenSharing, onShare = {
+                        permissionError = null
+                        requestScreenShare()
+                    })
                     MicControl(micState, onToggle = { muted -> LiveBroadcastService.setMicMuted(context.applicationContext, muted) })
                 }
 
@@ -251,13 +287,43 @@ private fun LocalCameraPreview(room: Room) {
     }
 }
 
+/** Status berbagi layar + tombol membagikan lagi (izin baru tiap kali, aturan Android). */
+@Composable
+private fun ScreenControl(sharing: Boolean, onShare: () -> Unit) {
+    Text(
+        if (sharing) {
+            "Layar HP sedang dibagikan ke atasan."
+        } else {
+            "Layar belum dibagikan — status Anda Screen off dan tidak dihitung jam kerja."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = if (sharing) Base50 else Warning400,
+        modifier = Modifier.padding(top = 12.dp),
+    )
+    if (!sharing) {
+        AppButton(
+            text = "Bagikan layar",
+            icon = Icons.Filled.ScreenShare,
+            onClick = onShare,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        )
+    } else {
+        Text(
+            "Untuk berhenti berbagi layar, tekan Selesai kerja.",
+            style = MaterialTheme.typography.bodySmall,
+            color = Base400,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
 /** Status mikrofon + tombol bisukan. Tanpa izin mikrofon: arahkan ke pengaturan. */
 @Composable
 private fun MicControl(state: MicState, onToggle: (muted: Boolean) -> Unit) {
     val context = LocalContext.current
     Text(
         when (state) {
-            MicState.On -> "Mikrofon menyala — suara Anda terdengar oleh rekan yang mendengarkan."
+            MicState.On -> "Mikrofon menyala — suara Anda terdengar oleh atasan yang mendengarkan."
             MicState.Muted -> "Mikrofon dibisukan — suara Anda tidak disiarkan."
             MicState.None -> "Siaran tanpa suara: izin mikrofon belum diberikan atau mikrofon tidak bisa dibuka."
         },
@@ -355,8 +421,8 @@ private fun statusVariant(status: BroadcastStatus): BadgeVariant = when (status)
 }
 
 private fun statusDescription(status: BroadcastStatus): String = when (status) {
-    is BroadcastStatus.Idle -> "Tekan Mulai kerja untuk menyiarkan kamera depan dan suara ke rekan se-site (mikrofon bisa dibisukan). Siaran tetap jalan saat Anda pindah aplikasi atau layar mati."
+    is BroadcastStatus.Idle -> "Tekan Mulai kerja, izinkan kamera & mikrofon, lalu pilih Bagikan seluruh layar. Layar HP, kamera depan, dan suara disiarkan ke atasan (mikrofon bisa dibisukan). Siaran tetap jalan saat Anda pindah aplikasi."
     is BroadcastStatus.Connecting -> status.message
-    BroadcastStatus.Live -> "Kamera depan sedang disiarkan. Anda boleh pindah aplikasi atau mematikan layar — siaran tetap jalan sampai Anda menekan Selesai kerja (di sini atau di notifikasi)."
+    BroadcastStatus.Live -> "Sedang disiarkan. Anda boleh pindah aplikasi — siaran tetap jalan sampai Anda menekan Selesai kerja (di sini atau di notifikasi)."
     BroadcastStatus.Stopping -> "Menghentikan siaran..."
 }
