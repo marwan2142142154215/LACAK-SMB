@@ -95,4 +95,37 @@ test.group('Build APK: peran yang boleh', (group) => {
         const deniedConsents = await client.get('/api/v1/consent-documents').bearerToken(staff)
         deniedConsents.assertStatus(403)
     })
+
+    test('SMB Live Kerja cukup satu: build kedua ditolak selama yang lama ada', async ({
+        client,
+        assert,
+    }) => {
+        const mine = await site('Site APK Live')
+        const bearer = await userWithRole('admin', null, [mine])
+        const builder = await db.from('users').orderBy('id', 'desc').select('id').firstOrFail()
+        await db.table('apk_builds').insert({
+            built_by: builder.id,
+            organization_id: mine,
+            apk_type: 'live',
+            version: '1.0.0',
+            status: 'success',
+            embedded_site_code: 'UJI-LIVE',
+            created_at: new Date(),
+            updated_at: new Date(),
+        })
+
+        const response = await client
+            .post('/api/v1/apk-builds/generate')
+            .json({ organization_id: mine, apk_type: 'live', version: '1.0.1' })
+            .bearerToken(bearer)
+
+        response.assertStatus(422)
+        assert.include(response.body().message, 'sudah ada')
+        const count = await db
+            .from('apk_builds')
+            .where('apk_type', 'live')
+            .count('* as total')
+            .first()
+        assert.equal(Number(count.total), 1)
+    })
 })
