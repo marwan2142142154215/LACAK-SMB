@@ -3,6 +3,7 @@ package com.lacaksmb.live.service
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.view.Surface
+import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.segmentation.Segmentation
 import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions
 import io.livekit.android.room.track.video.NoDropVideoProcessor
@@ -18,7 +19,9 @@ import livekit.org.webrtc.EglRenderer
 import livekit.org.webrtc.SurfaceTextureHelper
 import livekit.org.webrtc.VideoFrame
 import livekit.org.webrtc.VideoSink
-import java.util.concurrent.atomic.AtomicBoolean
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
 /**
@@ -29,8 +32,14 @@ import kotlin.math.roundToInt
  *
  * Diadaptasi dari VirtualBackgroundVideoProcessor (livekit-android-track-
  * processors, Apache-2.0). Bedanya: masker orang/latar dihitung dari frame
- * kamera itu sendiri (ML Kit Selfie Segmentation, ~8x per detik), bukan dari
- * CameraX ImageAnalysis -- APK ini memakai kamera bawaan LiveKit (Camera2).
+ * kamera itu sendiri (ML Kit Selfie Segmentation), bukan dari CameraX
+ * ImageAnalysis -- APK ini memakai kamera bawaan LiveKit (Camera2).
+ *
+ * Supaya tepi rapi: tiap frame disegmentasi DULU lalu digambar dengan
+ * maskernya sendiri (tidak ada masker "tertinggal" saat staf bergerak), dan
+ * masker dihaluskan sedikit antar-frame ([MASK_SMOOTHING]) supaya tepinya
+ * tidak berkedip. Kalau HP lambat, frame dilewati (fps turun), bukan
+ * tepinya yang meleset.
  *
  * Frame tetap mengalir dari kamera: kalau kamera berhenti, frame olahan ikut
  * berhenti, jadi watchdog kamera & cek wajah tetap bekerja seperti biasa.
@@ -43,9 +52,12 @@ class BackgroundProcessor(eglBase: EglBase) : NoDropVideoProcessor() {
             .setDetectorMode(SelfieSegmenterOptions.STREAM_MODE)
             .build(),
     )
-    private val segmenting = AtomicBoolean(false)
-    @Volatile private var lastSegmentAt = 0L
-    @Volatile private var lastMask: VirtualBackgroundTransformer.MaskHolder? = null
+    // Masker hasil penghalusan; beberapa buffer bergantian karena masker
+    // dibaca thread GL setelah frame berikutnya mulai diproses.
+    private val maskBuffers = arrayOfNulls<ByteBuffer>(MASK_BUFFERS)
+    private var maskIndex = 0
+    private var previousMask: ByteBuffer? = null
+    private var previousMaskSize = 0 to 0
 
     private var lastRotation = 0
     private var lastWidth = 0
@@ -106,7 +118,6 @@ class BackgroundProcessor(eglBase: EglBase) : NoDropVideoProcessor() {
         } catch (_: Exception) {
             return
         }
-        segment(frame)
         // Berhasil masuk antrean = antrean pemilik frame; kalau masih sibuk, frame dilewati.
         if (!frames.tryEmit(frame)) frame.release()
     }
@@ -115,22 +126,47 @@ class BackgroundProcessor(eglBase: EglBase) : NoDropVideoProcessor() {
         targetSink = sink
     }
 
-    /** Hitung masker baru dari frame ini, paling sering tiap [SEGMENT_INTERVAL_MS]. */
-    private fun segment(frame: VideoFrame) {
-        val now = System.currentTimeMillis()
-        if (now - lastSegmentAt < SEGMENT_INTERVAL_MS || !segmenting.compareAndSet(false, true)) return
-        lastSegmentAt = now
+    /**
+     * Masker orang/latar untuk [frame] ini (diperkecil ke ~360p dulu -- model
+     * bekerja di 256 px, jadi tidak ada detail yang hilang), dihaluskan
+     * dengan masker sebelumnya. null = segmentasi gagal / terlalu lama.
+     */
+    private fun maskFor(frame: VideoFrame): VirtualBackgroundTransformer.MaskHolder? {
+        val buffer = frame.buffer
+        val scale = minOf(1f, SEGMENT_HEIGHT / minOf(buffer.width, buffer.height).toFloat())
+        val scaled = buffer.cropAndScale(
+            0, 0, buffer.width, buffer.height,
+            (buffer.width * scale).roundToInt(), (buffer.height * scale).roundToInt(),
+        )
         val image = try {
-            frame.toNv21InputImage()
+            VideoFrame(scaled, frame.rotation, frame.timestampNs).toNv21InputImage()
         } catch (_: Exception) {
-            segmenting.set(false)
-            return
+            return null
+        } finally {
+            scaled.release()
         }
-        segmenter.process(image)
-            .addOnSuccessListener { mask ->
-                lastMask = VirtualBackgroundTransformer.MaskHolder(mask.width, mask.height, mask.buffer)
-            }
-            .addOnCompleteListener { segmenting.set(false) }
+        val mask = try {
+            Tasks.await(segmenter.process(image), SEGMENT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        } catch (_: Exception) {
+            return null
+        }
+
+        val size = mask.width to mask.height
+        val count = mask.width * mask.height
+        val target = maskBuffers[maskIndex]?.takeIf { it.capacity() == count * 4 }
+            ?: ByteBuffer.allocateDirect(count * 4).order(ByteOrder.nativeOrder()).also { maskBuffers[maskIndex] = it }
+        maskIndex = (maskIndex + 1) % MASK_BUFFERS
+
+        val fresh = mask.buffer.order(ByteOrder.nativeOrder()).asFloatBuffer()
+        val out = target.asFloatBuffer()
+        val previous = previousMask?.takeIf { previousMaskSize == size }?.asFloatBuffer()
+        for (i in 0 until count) {
+            val value = fresh.get(i)
+            out.put(i, if (previous == null) value else value * (1f - MASK_SMOOTHING) + previous.get(i) * MASK_SMOOTHING)
+        }
+        previousMask = target
+        previousMaskSize = size
+        return VirtualBackgroundTransformer.MaskHolder(mask.width, mask.height, target)
     }
 
     private fun processFrame(frame: VideoFrame) {
@@ -145,14 +181,15 @@ class BackgroundProcessor(eglBase: EglBase) : NoDropVideoProcessor() {
             backgroundImageNeedsUpdating = true
         }
 
+        val mask = maskFor(frame)
         frame.retain()
         surfaceTextureHelper.handler.post {
             if (backgroundImageNeedsUpdating) {
                 transformer.backgroundImage = backgroundImage?.let { fitTo(it, frame) }
                 backgroundImageNeedsUpdating = false
             }
-            lastMask?.let { transformer.updateMask(it) }
-            lastMask = null
+            // Masker frame ini dipasang tepat sebelum frame ini digambar.
+            mask?.let { transformer.updateMask(it) }
             eglRenderer.onFrame(frame)
             frame.release()
         }
@@ -189,6 +226,11 @@ class BackgroundProcessor(eglBase: EglBase) : NoDropVideoProcessor() {
 
     companion object {
         private const val BLUR_RADIUS = 16f
-        private const val SEGMENT_INTERVAL_MS = 120L
+        /** Tinggi gambar untuk segmentasi (px); model ML Kit sendiri bekerja di 256 px. */
+        private const val SEGMENT_HEIGHT = 360f
+        private const val SEGMENT_TIMEOUT_MS = 250L
+        /** Bobot masker sebelumnya: 0 = tanpa penghalusan, makin besar makin halus tapi makin lambat mengikuti gerak. */
+        private const val MASK_SMOOTHING = 0.3f
+        private const val MASK_BUFFERS = 3
     }
 }
