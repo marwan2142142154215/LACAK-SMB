@@ -33,6 +33,10 @@ object LiveBroadcastState {
     private val _micState = MutableStateFlow(MicState.None)
     val micState: StateFlow<MicState> = _micState.asStateFlow()
 
+    private val _screenSharing = MutableStateFlow(false)
+    /** Layar HP sedang dibagikan (MediaProjection aktif & track layar terbit). */
+    val screenSharing: StateFlow<Boolean> = _screenSharing.asStateFlow()
+
     private val _liveSince = MutableStateFlow<Long?>(null)
     val liveSince: StateFlow<Long?> = _liveSince.asStateFlow()
 
@@ -44,7 +48,14 @@ object LiveBroadcastState {
 
     internal fun setRoom(room: Room?) {
         _room.value = room
-        if (room == null) _micState.value = MicState.None
+        if (room == null) {
+            _micState.value = MicState.None
+            _screenSharing.value = false
+        }
+    }
+
+    internal fun setScreenSharing(sharing: Boolean) {
+        _screenSharing.value = sharing
     }
 
     internal fun setMicState(state: MicState) {
