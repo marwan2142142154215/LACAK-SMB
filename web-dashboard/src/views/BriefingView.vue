@@ -528,6 +528,7 @@ onBeforeUnmount(() => clearInterval(refreshTimer))
             :open="backgroundOpen"
             :value="call.background.value"
             :applying="applyingBackground"
+            description="Untuk briefing. Diproses di komputer Anda; peserta lain melihat hasilnya."
             @update:open="(v) => (backgroundOpen = v)"
             @select="chooseBackground"
         />
