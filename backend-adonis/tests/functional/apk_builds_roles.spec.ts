@@ -125,6 +125,42 @@ test.group('Briefing: site yang diundang', (group) => {
         const denied = await client.post(`/api/v1/briefings/${id}/join`).bearerToken(notInvited)
         denied.assertStatus(403)
     })
+
+    test('root bisa memulai briefing untuk semua site maupun peserta pilihan', async ({
+        client,
+        assert,
+    }) => {
+        const mine = await site('Site Briefing Root')
+        const root = await userWithRole('super_admin', null)
+        const staff = await userWithRole('staff_viewer', mine)
+
+        const list = await client.get('/api/v1/briefings').qs({ with_people: 1 }).bearerToken(root)
+        list.assertStatus(200)
+        assert.isTrue(list.body().data.can_host)
+
+        const everyone = await client
+            .post('/api/v1/briefings')
+            .json({
+                title: 'Briefing semua',
+                roles: ['staff_viewer', 'leader'],
+                organization_ids: [],
+            })
+            .bearerToken(root)
+        everyone.assertStatus(201)
+        assert.isString(everyone.body().data.token)
+
+        const me = await client.get('/api/v1/auth/me').bearerToken(staff)
+        const picked = await client
+            .post('/api/v1/briefings')
+            .json({ title: 'Rapat kecil root', user_ids: [me.body().data.id] })
+            .bearerToken(root)
+        picked.assertStatus(201)
+
+        const joined = await client
+            .post(`/api/v1/briefings/${everyone.body().data.briefing.id}/join`)
+            .bearerToken(staff)
+        joined.assertStatus(200)
+    })
 })
 
 test.group('Build APK: peran yang boleh', (group) => {
