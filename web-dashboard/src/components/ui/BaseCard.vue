@@ -16,7 +16,7 @@ defineProps({
             class="flex flex-wrap items-center justify-between gap-3 border-b border-base-800 px-5 py-4"
         >
             <div class="min-w-0">
-                <h2 v-if="title" class="flex items-center gap-2 font-display text-[15px] font-bold tracking-[-0.01em] text-base-50">
+                <h2 v-if="title" class="flex items-center gap-2 font-display text-[15px] font-semibold tracking-[-0.01em] text-base-50">
                     {{ title }}
                     <span
                         v-if="count != null"

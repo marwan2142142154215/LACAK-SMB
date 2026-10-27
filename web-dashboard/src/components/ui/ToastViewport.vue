@@ -14,13 +14,13 @@ const iconByVariant = {
 
 // Garis warna di tepi kiri = jenis pesan, seperti lampu indikator panel
 const railByVariant = {
-    success: 'before:bg-accent-400',
+    success: 'before:bg-st-online',
     error: 'before:bg-danger-400',
     info: 'before:bg-base-500',
 }
 
 const iconColorByVariant = {
-    success: 'text-accent-400',
+    success: 'text-st-online',
     error: 'text-danger-400',
     info: 'text-base-300',
 }
@@ -33,7 +33,7 @@ const iconColorByVariant = {
                 v-for="toast in toasts"
                 :key="toast.id"
                 :open="toast.open"
-                class="toast relative overflow-hidden rounded-lg border border-base-700 bg-base-850/95 py-3.5 pr-10 pl-4 shadow-2xl shadow-black/50 backdrop-blur before:absolute before:inset-y-0 before:left-0 before:w-[3px]"
+                class="toast relative overflow-hidden rounded-lg border border-base-800 bg-base-900/95 py-3.5 pr-10 pl-4 shadow-2xl shadow-black/50 backdrop-blur before:absolute before:inset-y-0 before:left-0 before:w-[3px]"
                 :class="railByVariant[toast.variant]"
                 @update:open="(open) => !open && dismiss(toast.id)"
             >
