@@ -28,8 +28,12 @@ const deleteTarget = ref(null)
 const deleting = ref(false)
 const editTarget = ref(null)
 
+// Admin & leader mengelola site yang diberikan ke akunnya, jadi perlu memilih site.
+const isGrantBased = computed(() => !auth.isSuperAdmin && ['admin', 'leader'].some((role) => auth.user?.roles?.includes(role)))
+const canPickSite = computed(() => auth.isSuperAdmin || isGrantBased.value)
+
 const emptyForm = () => ({
-    organization_id: auth.user?.organization_id ?? null,
+    organization_id: isGrantBased.value ? (organizations.value[0]?.id ?? null) : (auth.user?.organization_id ?? null),
     rule_name: '',
     allowed_ssid: '',
     allowed_ip_cidr: '',
@@ -83,9 +87,10 @@ async function loadRules() {
 }
 
 async function loadOrganizations() {
-    if (!auth.isSuperAdmin) return
-    const response = await api.get('/organizations')
-    organizations.value = response.data.data.items
+    if (!canPickSite.value) return
+    // /organizations khusus root; admin & leader memakai daftar site yang diberikan.
+    const response = await api.get(auth.isSuperAdmin ? '/organizations' : '/live/sites')
+    organizations.value = auth.isSuperAdmin ? response.data.data.items : response.data.data
     if (!form.value.organization_id && organizations.value.length) {
         form.value.organization_id = organizations.value[0].id
     }
@@ -272,7 +277,7 @@ onMounted(async () => {
             "
         >
             <form id="geofence-form" class="space-y-4" @submit.prevent="submitForm">
-                <BaseSelect v-if="auth.isSuperAdmin && !editTarget" v-model="form.organization_id" label="Site" required>
+                <BaseSelect v-if="canPickSite && !editTarget" v-model="form.organization_id" label="Site" required>
                     <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
                 </BaseSelect>
                 <BaseInput v-model="form.rule_name" label="Nama aturan" placeholder="Kantor Pusat" required />

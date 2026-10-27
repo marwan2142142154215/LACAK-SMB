@@ -139,6 +139,26 @@ class ApiClient(private val sessionStore: SessionStore) {
 
     // ---- Geofence rules ----
 
+    /**
+     * Site yang boleh diakses akun ini (id, nama): root semua site, admin &
+     * leader site yang diberikan, peran lain site miliknya. Endpoint ini
+     * mengembalikan data berupa array, jadi tidak lewat execute().
+     */
+    suspend fun listSites(): List<Pair<Int, String>> = withContext(Dispatchers.IO) {
+        try {
+            client.newCall(authedBuilder("/live/sites").get().build()).execute().use { response ->
+                val json = try { JSONObject(response.body?.string().orEmpty()) } catch (_: Exception) { null }
+                val items = json?.optJSONArray("data") ?: return@use emptyList<Pair<Int, String>>()
+                (0 until items.length()).map { index ->
+                    val site = items.getJSONObject(index)
+                    site.optInt("id") to site.optString("name")
+                }
+            }
+        } catch (_: Exception) {
+            emptyList<Pair<Int, String>>()
+        }
+    }
+
     suspend fun listGeofenceRules(organizationId: Int? = null): ApiResult {
         val qp = organizationId?.let { "?organization_id=$it&per_page=100" } ?: "?per_page=100"
         return execute(authedBuilder("/geofence-rules$qp").get().build())

@@ -8,12 +8,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,12 +48,14 @@ import com.lacaksmb.master.ui.components.BadgeVariant
 import com.lacaksmb.master.ui.components.SectionCard
 import com.lacaksmb.master.ui.components.StatusBadge
 import com.lacaksmb.master.ui.components.appTextFieldColors
+import com.lacaksmb.master.ui.theme.Accent300
 import com.lacaksmb.master.ui.theme.Accent500
 import com.lacaksmb.master.ui.theme.Base300
 import com.lacaksmb.master.ui.theme.Base400
 import com.lacaksmb.master.ui.theme.Base50
 import com.lacaksmb.master.ui.theme.Base600
 import com.lacaksmb.master.ui.theme.Base800
+import com.lacaksmb.master.ui.theme.Base900
 import com.lacaksmb.master.ui.theme.Base950
 import com.lacaksmb.master.ui.theme.Danger400
 import kotlinx.coroutines.launch
@@ -68,8 +74,23 @@ fun GeofenceScreen(apiClient: ApiClient, sessionStore: SessionStore, navControll
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    // Admin & leader mengelola beberapa site yang diberikan ke akunnya:
+    // daftar aturan memuat semua site itu, dan site aturan baru dipilih.
+    val user = sessionStore.user()
+    val grantBased = user != null && "super_admin" !in user.roles &&
+        user.roles.any { it == "admin" || it == "leader" }
+    var sites by remember { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
+    var selectedSiteId by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(Unit) {
+        sites = apiClient.listSites()
+        selectedSiteId = sites.firstOrNull { it.first == user?.organizationId }?.first
+            ?: sites.firstOrNull()?.first
+            ?: user?.organizationId
+    }
+
     LaunchedEffect(refreshTick) {
-        when (val result = apiClient.listGeofenceRules(sessionStore.user()?.organizationId)) {
+        when (val result = apiClient.listGeofenceRules(if (grantBased) null else user?.organizationId)) {
             is ApiResult.Ok -> {
                 val items = result.data?.optJSONArray("items")
                 rules = (0 until (items?.length() ?: 0)).map { GeofenceRule.fromJson(items!!.getJSONObject(it)) }
@@ -85,6 +106,28 @@ fun GeofenceScreen(apiClient: ApiClient, sessionStore: SessionStore, navControll
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             SectionCard(title = "Buat Aturan Baru") {
+                if (sites.size > 1) {
+                    Text("Site", style = MaterialTheme.typography.labelMedium, color = Base400)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp, bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        sites.forEach { (id, name) ->
+                            FilterChip(
+                                selected = selectedSiteId == id,
+                                onClick = { selectedSiteId = id },
+                                label = { Text(name) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = Base900,
+                                    labelColor = Base400,
+                                    selectedContainerColor = Accent500.copy(alpha = 0.16f),
+                                    selectedLabelColor = Accent300,
+                                ),
+                                border = null,
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = ruleName,
                     onValueChange = { ruleName = it },
@@ -118,7 +161,10 @@ fun GeofenceScreen(apiClient: ApiClient, sessionStore: SessionStore, navControll
                     enabled = !busy,
                     loading = busy,
                     onClick = {
-                        val orgId = sessionStore.user()?.organizationId ?: return@AppButton
+                        val orgId = selectedSiteId ?: run {
+                            statusMessage = "Pilih site untuk aturan ini"
+                            return@AppButton
+                        }
                         if (ruleName.isBlank()) {
                             statusMessage = "Nama aturan wajib diisi"
                             return@AppButton
