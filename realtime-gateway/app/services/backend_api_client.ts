@@ -2,6 +2,7 @@ import axios from 'axios'
 import env from '#start/env'
 import log from '#services/log'
 import { describeHttpError } from '#services/http_error'
+import { userHeaders } from '#services/client_ip'
 
 export type AuthenticatedUser = {
     id: number
@@ -54,10 +55,7 @@ export async function extendSession(token: string): Promise<boolean | null> {
 async function checkSession(token: string, path: string): Promise<boolean | null> {
     try {
         const response = await axios.get(`${env.get('BACKEND_API_URL')}${path}`, {
-            headers: {
-                Authorization: `Bearer ${token}`,
-                Accept: 'application/json',
-            },
+            headers: userHeaders(token),
             validateStatus: () => true,
         })
 
@@ -75,10 +73,7 @@ export async function verifyBearerToken(token: string): Promise<AuthenticatedUse
         const response = await axios.get<AuthMeResponse>(
             `${env.get('BACKEND_API_URL')}/api/v1/auth/me`,
             {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: 'application/json',
-                },
+                headers: userHeaders(token),
                 // Status non-2xx (mis. 401 token kedaluwarsa) adalah jawaban
                 // normal "token tidak sah", bukan kegagalan yang perlu dicatat.
                 validateStatus: () => true,

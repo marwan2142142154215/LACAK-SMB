@@ -35,7 +35,7 @@ export async function setTwoFactorRequired(
 }
 
 /** AppSetting::get(): json_decode(value, true), atau default kalau barisnya tidak ada. */
-async function getSetting(key: string, fallback: unknown): Promise<unknown> {
+export async function getSetting(key: string, fallback: unknown): Promise<unknown> {
     const row = await db.from('app_settings').where('key', key).select('value').first()
     if (!row) {
         return fallback
@@ -44,7 +44,7 @@ async function getSetting(key: string, fallback: unknown): Promise<unknown> {
 }
 
 /** AppSetting::put(): updateOrCreate + log aktivitas manual (log_name app_settings). */
-async function putSetting(
+export async function putSetting(
     key: string,
     value: unknown,
     updatedBy: number | null,

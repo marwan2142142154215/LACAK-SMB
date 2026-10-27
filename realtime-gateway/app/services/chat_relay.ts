@@ -2,6 +2,7 @@ import axios from 'axios'
 import env from '#start/env'
 import log from '#services/log'
 import { describeHttpError } from '#services/http_error'
+import { userHeaders } from '#services/client_ip'
 
 /**
  * Chat staf per site. Gateway TIDAK menyimpan pesan dan TIDAK memutuskan
@@ -52,7 +53,7 @@ async function callBackend<T>(
         const response = await axios.request({
             method,
             url: `${env.get('BACKEND_API_URL')}${base}${path}`,
-            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            headers: userHeaders(token),
             ...(method === 'get' ? { params } : { data: params }),
             timeout: 10_000,
             // 4xx (ditolak, validasi, throttle) adalah jawaban normal untuk diteruskan ke user.

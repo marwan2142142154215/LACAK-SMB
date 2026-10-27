@@ -20,6 +20,7 @@ import {
 } from '#services/master_anchor_registry'
 import { chatRoom, fetchChatHistory, fetchChatMessage, postChatMessage } from '#services/chat_relay'
 import { registerGroupChatHandlers } from '#services/group_chat_hub'
+import { clientIpOf, forgetClientIp, rememberClientIp } from '#services/client_ip'
 
 type DeviceHelloPayload = {
     deviceUuid: string
@@ -421,8 +422,12 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
             return next(new Error('Token tidak ditemukan'))
         }
 
+        // IP asli klien ikut diteruskan ke backend (whitelist IP), mulai dari
+        // verifikasi token ini sampai socket putus.
+        rememberClientIp(token, clientIpOf(socket.handshake))
         const user = await verifyBearerToken(token)
         if (!user) {
+            forgetClientIp(token)
             return next(new Error('Token tidak valid atau kedaluwarsa'))
         }
 
@@ -499,6 +504,7 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
 
         socket.on('disconnect', () => {
             clearInterval(revalidate)
+            forgetClientIp(token)
             unregisterMasterBeaconsForSocket(socket.id)
         })
 

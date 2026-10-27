@@ -13,6 +13,7 @@ import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/activi
 import * as AccountCenter from '#services/account_center'
 import { laravelEncrypter, LARAVEL_USER_MORPH } from '#services/laravel/index'
 import { verifyLaravelPassword } from '#services/laravel/bcrypt'
+import { ipRejectionBody, ipRejectionFor } from '#services/ip_whitelist'
 import { removeBroadcaster } from '#services/livekit'
 import { permissionNamesOf, roleNamesOf } from '#services/permissions'
 import * as TwoFactor from '#services/two_factor'
@@ -112,6 +113,13 @@ export default class AuthController {
             return ctx.response
                 .status(403)
                 .send(fail('Akun Anda dinonaktifkan. Hubungi super admin.'))
+        }
+
+        // Dicek setelah password benar: penolakan IP tidak membocorkan
+        // apakah username terdaftar, dan super_admin tetap dikecualikan.
+        const ipRejection = await ipRejectionFor(ctx, user.id)
+        if (ipRejection) {
+            return ctx.response.status(403).send(ipRejectionBody(ipRejection, ctx))
         }
 
         // 2FA berlaku untuk SEMUA akun tanpa pengecualian -- kecuali

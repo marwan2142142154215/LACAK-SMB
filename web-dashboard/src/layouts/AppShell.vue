@@ -124,7 +124,9 @@ onMounted(() => {
     // Refresh saat sedang siaran: sambung lagi otomatis di halaman mana pun.
     live.resumeIfBroadcasting().then(({ resumed, error }) => {
         if (resumed) toast.success('Siaran dilanjutkan', 'Kamera Anda tersiar lagi setelah halaman dimuat ulang.')
-        else if (error) toast.error('Siaran belum tersambung lagi', `${error.message} Buka Live Kerja lalu tekan Lanjutkan siaran.`)
+        // Sesi berakhir (401) / IP ditolak: interceptor sudah menampilkan pesannya.
+        else if (error && auth.isAuthenticated)
+            toast.error('Siaran belum tersambung lagi', `${error.message} Buka Live Kerja lalu tekan Lanjutkan siaran.`)
     })
 })
 onBeforeUnmount(() => clearInterval(clockTimer))
