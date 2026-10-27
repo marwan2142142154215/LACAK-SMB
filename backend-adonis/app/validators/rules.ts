@@ -3,7 +3,7 @@ import vine, { SimpleMessagesProvider } from '@vinejs/vine'
 import type { FieldContext } from '@vinejs/vine/types'
 
 /**
- * Validasi modul aturan (geofence, dokumen consent, Telegram) -- padanan
+ * Validasi modul aturan (geofence, Telegram) -- padanan
  * Store*Request & $request->validate() di backend-api.
  *
  * backend-api memakai locale 'en' tanpa folder lang/, jadi isi `errors`
@@ -12,41 +12,6 @@ import type { FieldContext } from '@vinejs/vine/types'
  * Pesan yang sama dipakai di sini supaya dashboard menampilkan teks yang
  * sama dari kedua backend.
  */
-
-/** Tanggal yang bisa dibaca strtotime() (aturan 'date' Laravel). */
-export function parseLaravelDate(value: unknown): Date | null {
-    if (typeof value !== 'string' || value.trim() === '') return null
-    const trimmed = value.trim()
-    // Tanggal saja (YYYY-MM-DD) dibaca sebagai tengah malam UTC, seperti
-    // strtotime() dengan zona waktu aplikasi UTC (config/app.php backend-api).
-    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(trimmed)
-        ? new Date(`${trimmed}T00:00:00Z`)
-        : new Date(trimmed)
-    return Number.isNaN(parsed.getTime()) ? null : parsed
-}
-
-const laravelDateRule = vine.createRule((value, _options, field: FieldContext) => {
-    if (!field.isValid) return
-    if (parseLaravelDate(value) === null) {
-        field.report('The {{ field }} field must be a valid date.', 'date', field)
-    }
-})
-
-/** Aturan 'after:<field lain>' Laravel: harus SETELAH tanggal field lain. */
-const afterFieldRule = vine.createRule(
-    (value, options: { otherField: string; label: string }, field: FieldContext) => {
-        if (!field.isValid) return
-        const current = parseLaravelDate(value)
-        const other = parseLaravelDate(field.parent?.[options.otherField])
-        if (current === null || other === null || current.getTime() <= other.getTime()) {
-            field.report(
-                `The {{ field }} field must be a date after ${options.label}.`,
-                'after',
-                field
-            )
-        }
-    }
-)
 
 /**
  * Aturan 'boolean' Laravel: hanya true, false, 0, 1, "0", "1" (vine.boolean()
@@ -160,50 +125,6 @@ updateGeofenceRuleValidator.messagesProvider = messagesFor(
         'is_active',
     ],
     ['max_distance_meters', 'anchor_device_id']
-)
-
-// --- Dokumen consent --------------------------------------------------------
-
-export const SIGNER_ROLES = ['hrd', 'leader', 'asisten_manager', 'manager', 'cs_line'] as const
-
-/** Batas berkas consent (standar 6.3): PDF atau foto scan, maks 10MB. */
-export const CONSENT_FILE_EXTNAMES = ['pdf', 'jpg', 'jpeg', 'png']
-export const CONSENT_FILE_MAX_KB = 10240
-
-export const storeConsentDocumentValidator = vine.compile(
-    vine.object({
-        organization_id: integerId().exists({ table: 'organizations', column: 'id' }),
-        subject_name: vine.string().maxLength(255),
-        signer_name: vine.string().maxLength(255),
-        signer_role: vine.enum(SIGNER_ROLES),
-        document_file: vine.file({
-            size: `${CONSENT_FILE_MAX_KB}kb`,
-            extnames: CONSENT_FILE_EXTNAMES,
-        }),
-        signed_at: vine.string().use(laravelDateRule()),
-        valid_until: vine
-            .string()
-            .use(laravelDateRule())
-            .use(afterFieldRule({ otherField: 'signed_at', label: 'signed at' }))
-            .nullable()
-            .optional(),
-    })
-)
-storeConsentDocumentValidator.messagesProvider = messagesFor(
-    [
-        'organization_id',
-        'subject_name',
-        'signer_name',
-        'signer_role',
-        'document_file',
-        'signed_at',
-        'valid_until',
-    ],
-    ['organization_id'],
-    {
-        'file.extname': `The {{ field }} field must be a file of type: ${CONSENT_FILE_EXTNAMES.join(', ')}.`,
-        'file.size': `The {{ field }} field must not be greater than ${CONSENT_FILE_MAX_KB} kilobytes.`,
-    }
 )
 
 // --- Telegram ---------------------------------------------------------------

@@ -137,7 +137,9 @@ onMounted(loadOrganizations)
                     <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
                             <StatusDot :status="org.is_active ? 'active' : 'inactive'" />
-                            <h2 class="mt-2 font-display text-lg leading-snug font-bold text-base-50 tracking-[-0.015em]">{{ org.name }}</h2>
+                            <h2 class="mt-2 font-display text-lg leading-snug font-bold text-base-50 tracking-[-0.015em]">
+                                {{ org.name }}
+                            </h2>
                         </div>
                         <RowMenu :items="menuItems(org)" :label="`Aksi untuk ${org.name}`" />
                     </div>
@@ -194,7 +196,7 @@ onMounted(loadOrganizations)
         <ConfirmDialog
             :open="!!deleteTarget"
             :title="deleteTitle"
-            description="Semua device dan dokumen consent milik site ini ikut terhapus."
+            description="Semua device milik site ini ikut terhapus."
             confirm-label="Hapus site"
             :loading="deleting"
             @update:open="(v) => !v && (deleteTarget = null)"

@@ -91,7 +91,6 @@ export type GenerateApkBuildInput = {
     apk_type: ApkType
     version: string | null
     device_name: string | null
-    consent_document_id: number | null
 }
 
 export async function validateGenerateApkBuild(
@@ -103,7 +102,6 @@ export async function validateGenerateApkBuild(
         apk_type: normalize(body.apk_type),
         version: normalize(body.version),
         device_name: normalize(body.device_name),
-        consent_document_id: normalize(body.consent_document_id),
     }
 
     // 'organization_id' => ['required', 'integer', 'exists:organizations,id']
@@ -154,25 +152,6 @@ export async function validateGenerateApkBuild(
         deviceName = input.device_name
     }
 
-    // 'consent_document_id' => ['required_if:apk_type,tracker', 'nullable', 'integer', 'exists:consent_documents,id']
-    let consentDocumentId: number | null = null
-    if (isMissing(input.consent_document_id)) {
-        if (isTracker) {
-            addError(
-                errors,
-                'consent_document_id',
-                'The consent document id field is required when apk type is tracker.'
-            )
-        }
-    } else {
-        consentDocumentId = await validateForeignId(
-            errors,
-            'consent_document_id',
-            input.consent_document_id,
-            'consent_documents'
-        )
-    }
-
     if (Object.keys(errors).length > 0) {
         return { errors }
     }
@@ -183,7 +162,6 @@ export async function validateGenerateApkBuild(
             apk_type: apkType!,
             version,
             device_name: deviceName,
-            consent_document_id: consentDocumentId,
         },
     }
 }

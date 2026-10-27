@@ -19,7 +19,6 @@ import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -88,7 +87,6 @@ fun DeviceListScreen(apiClient: ApiClient, sessionStore: SessionStore, navContro
                     IconButton(onClick = { refreshTick++ }) { Icon(Icons.Filled.Refresh, "Refresh", tint = Base300) }
                     IconButton(onClick = { navController.navigate(Routes.RADAR) }) { Icon(Icons.Filled.LocationOn, "Radar", tint = Base300) }
                     IconButton(onClick = { navController.navigate(Routes.GEOFENCE) }) { Icon(Icons.AutoMirrored.Filled.Rule, "Geofence", tint = Base300) }
-                    IconButton(onClick = { navController.navigate(Routes.CONSENT) }) { Icon(Icons.Filled.VerifiedUser, "Consent", tint = Base300) }
                     IconButton(onClick = { navController.navigate(Routes.DOWNLOAD_APK) }) { Icon(Icons.Filled.Download, "Download APK", tint = Base300) }
                     IconButton(onClick = {
                         scope.launch { apiClient.logout() }

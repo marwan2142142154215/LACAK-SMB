@@ -41,33 +41,11 @@ const generateForm = ref({
     apk_type: 'tracker',
     version: '1.0.0',
     device_name: '',
-    consent_document_id: null,
 })
 
-// Zero-touch: APK pelacak sekarang terikat SATU device sejak dibuild
-// (identitas+device_secret-nya ditanam langsung, lihat backend-api
-// ApkBuildController::generate) -- dialog build-nya ikut minta nama
-// device & dokumen consent, bukan cuma site+versi seperti sebelumnya.
-const consentDocuments = ref([])
-
-async function loadConsentDocuments() {
-    if (generateForm.value.apk_type !== 'tracker' || !generateForm.value.organization_id) {
-        consentDocuments.value = []
-        return
-    }
-    try {
-        const response = await api.get('/consent-documents', {
-            params: { organization_id: generateForm.value.organization_id, per_page: 100 },
-        })
-        consentDocuments.value = response.data.data.items.filter((d) => d.is_active)
-        if (!consentDocuments.value.some((d) => d.id === generateForm.value.consent_document_id)) {
-            generateForm.value.consent_document_id = consentDocuments.value[0]?.id ?? null
-        }
-    } catch {
-        consentDocuments.value = []
-    }
-}
-
+// Zero-touch: APK pelacak terikat SATU device sejak dibuild (identitas +
+// device_secret ditanam langsung, lihat ApkBuildsController.generate) --
+// dialog build-nya ikut minta nama device.
 const uploadForm = ref({
     organization_id: auth.user?.organization_id ?? null,
     version: '',
@@ -76,7 +54,9 @@ const uploadForm = ref({
 
 // SMB Live Kerja cukup satu: selama ada yang berhasil / sedang dibuild,
 // tidak perlu build lagi (backend juga menolak).
-const existingLive = computed(() => builds.value.find((b) => b.apk_type === 'live' && ['pending', 'building', 'success'].includes(b.status)))
+const existingLive = computed(() =>
+    builds.value.find((b) => b.apk_type === 'live' && ['pending', 'building', 'success'].includes(b.status)),
+)
 const liveBlocked = computed(() => generateForm.value.apk_type === 'live' && !!existingLive.value)
 
 const hasActiveBuild = computed(() => builds.value.some((b) => b.status === 'pending' || b.status === 'building'))
@@ -180,10 +160,6 @@ async function submitUpload() {
         submitting.value = false
     }
 }
-
-watch([() => generateForm.value.apk_type, () => generateForm.value.organization_id, generateDialogOpen], () => {
-    if (generateDialogOpen.value) loadConsentDocuments()
-})
 
 function schedulePoll() {
     if (pollTimer) return
@@ -323,18 +299,13 @@ onBeforeUnmount(() => {
                 </BaseSelect>
                 <BaseInput v-model="generateForm.version" label="Versi" placeholder="1.0.0" required />
                 <template v-if="generateForm.apk_type === 'tracker'">
-                    <BaseInput v-model="generateForm.device_name" label="Nama device" placeholder="Contoh: HP CS Line — Asep" required />
-                    <BaseSelect
-                        v-model="generateForm.consent_document_id"
-                        label="Dokumen consent"
+                    <BaseInput
+                        v-model="generateForm.device_name"
+                        label="Nama device"
+                        placeholder="Contoh: HP CS Line — Asep"
+                        hint="Device otomatis muncul di menu Device setelah APK dipasang."
                         required
-                        hint="Hanya consent yang masih berlaku di site ini. Device otomatis muncul di menu Device setelah APK dipasang."
-                    >
-                        <option v-if="consentDocuments.length === 0" :value="null" disabled>
-                            Belum ada consent yang berlaku di site ini
-                        </option>
-                        <option v-for="doc in consentDocuments" :key="doc.id" :value="doc.id">{{ doc.subject_name }}</option>
-                    </BaseSelect>
+                    />
                 </template>
                 <p
                     v-else-if="generateForm.apk_type === 'master'"
@@ -361,7 +332,9 @@ onBeforeUnmount(() => {
             </form>
             <template #footer>
                 <BaseButton variant="ghost" @click="generateDialogOpen = false">Batal</BaseButton>
-                <BaseButton type="submit" form="generate-form" :loading="generating" :disabled="liveBlocked"><Hammer class="size-4" /> Mulai build</BaseButton>
+                <BaseButton type="submit" form="generate-form" :loading="generating" :disabled="liveBlocked"
+                    ><Hammer class="size-4" /> Mulai build</BaseButton
+                >
             </template>
         </BaseDialog>
 

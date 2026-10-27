@@ -361,8 +361,8 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     override fun onRejected(message: String) {
         updateNotification("Ditolak: $message")
         heartbeatJob?.cancel()
-        // Device ditolak server (site code tidak cocok / consent tidak berlaku
-        // / dinonaktifkan) — hentikan service, jangan terus mencoba diam-diam.
+        // Device ditolak server (site code tidak cocok / dinonaktifkan)
+        // — hentikan service, jangan terus mencoba diam-diam.
         stopSelf()
     }
 

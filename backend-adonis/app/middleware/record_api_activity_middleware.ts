@@ -323,18 +323,6 @@ const ACTION_LIST: Array<[string[], string, string, Describe]> = [
         'aturan',
         (_r, m) => `Menghapus aturan geofence ${name(m, 'rule_name')}`,
     ],
-    [
-        ['POST /api/v1/consent-documents'],
-        'ConsentDocumentController@store',
-        'aturan',
-        (r) => `Mengunggah dokumen consent ${phpString(r.subject_name)}`,
-    ],
-    [
-        ['POST /api/v1/consent-documents/:consentDocument/revoke'],
-        'ConsentDocumentController@revoke',
-        'aturan',
-        (_r, m) => `Mencabut consent ${name(m, 'subject_name')}`,
-    ],
 
     // ---- Build APK
     [
@@ -448,7 +436,6 @@ export const ROUTE_MODELS: Record<string, ModelName> = {
     user: 'User',
     device: 'Device',
     geofence_rule: 'GeofenceRule',
-    consentDocument: 'ConsentDocument',
     apk_build: 'ApkBuild',
     telegram_binding: 'TelegramBinding',
     telegram_user_link: 'TelegramUserLink',
@@ -460,7 +447,6 @@ const CREATED_MODELS: Record<string, ModelName> = {
     UserController: 'User',
     DeviceController: 'Device',
     GeofenceRuleController: 'GeofenceRule',
-    ConsentDocumentController: 'ConsentDocument',
     ApkBuildController: 'ApkBuild',
     OrganizationController: 'Organization',
     TelegramBindingController: 'TelegramBinding',

@@ -1,6 +1,6 @@
 /*
 |--------------------------------------------------------------------------
-| Route modul aturan (Tahap 3): geofence, dokumen consent, Telegram
+| Route modul aturan (Tahap 3): geofence & Telegram
 |--------------------------------------------------------------------------
 |
 | Path, method, dan nama parameter sama persis dengan backend-api
@@ -13,7 +13,6 @@ import router from '@adonisjs/core/services/router'
 import { middleware } from '#start/kernel'
 
 const GeofenceRulesController = () => import('#controllers/geofence_rules_controller')
-const ConsentDocumentsController = () => import('#controllers/consent_documents_controller')
 const TelegramBindingsController = () => import('#controllers/telegram_bindings_controller')
 const TelegramUserLinksController = () => import('#controllers/telegram_user_links_controller')
 
@@ -22,33 +21,8 @@ const id = router.matchers.number()
 
 router
     .group(() => {
-        // Download via signed URL (standar 6.3) -- tanpa login karena tautannya
-        // sendiri sudah berumur pendek & bertanda tangan. Tanda tangan dicek di
-        // controller (padanan middleware 'signed').
-        router
-            .get('/consent-documents/:consentDocument/download', [
-                ConsentDocumentsController,
-                'download',
-            ])
-            .where('consentDocument', id)
-
         router
             .group(() => {
-                router.get('/consent-documents', [ConsentDocumentsController, 'index'])
-                router.post('/consent-documents', [ConsentDocumentsController, 'store'])
-                router
-                    .get('/consent-documents/:consent_document', [
-                        ConsentDocumentsController,
-                        'show',
-                    ])
-                    .where('consent_document', id)
-                router
-                    .post('/consent-documents/:consentDocument/revoke', [
-                        ConsentDocumentsController,
-                        'revoke',
-                    ])
-                    .where('consentDocument', id)
-
                 router.get('/geofence-rules', [GeofenceRulesController, 'index'])
                 router.post('/geofence-rules', [GeofenceRulesController, 'store'])
                 router
