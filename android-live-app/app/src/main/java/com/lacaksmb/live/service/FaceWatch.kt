@@ -11,9 +11,16 @@ import java.util.concurrent.atomic.AtomicBoolean
  * tidak ada wajah >= [MISSING_AFTER_MS] = "wajah hilang". Hanya dicatat di
  * log kerja, tidak mengubah status maupun jam kerja.
  *
+ * Kalau background kamera aktif, wajah juga dianggap hilang saat masker
+ * background tidak menemukan orang ([personVisible] = false) -- penonton
+ * hanya melihat background walau wajah ada di kamera asli.
+ *
  * Sama dengan web-dashboard/src/lib/faceWatch.js.
  */
-class FaceWatch(private val onChange: (missing: Boolean) -> Unit) {
+class FaceWatch(
+    private val personVisible: () -> Boolean? = { null },
+    private val onChange: (missing: Boolean) -> Unit,
+) {
     private val detector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
             .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
@@ -59,7 +66,7 @@ class FaceWatch(private val onChange: (missing: Boolean) -> Unit) {
 
     private fun update(faceFound: Boolean) {
         val now = System.currentTimeMillis()
-        if (faceFound) {
+        if (faceFound && personVisible() != false) {
             lastSeen = now
             setMissing(false)
         } else if (now - lastSeen >= MISSING_AFTER_MS) {
