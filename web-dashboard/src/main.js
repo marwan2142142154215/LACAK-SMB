@@ -6,6 +6,7 @@ import { createApp } from 'vue'
 
 import App from '@/App.vue'
 import api from '@/lib/api'
+import { forgetIpAccess } from '@/lib/ipAccess'
 import router from '@/router'
 import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
@@ -67,15 +68,17 @@ api.interceptors.response.use(
             }
             router.push({ name: 'login' })
         }
-        // Whitelist IP: jaringan ini tidak terdaftar -> keluar dengan pesan
-        // jelas (sesi yang sama tetap ditolak sampai kembali ke jaringan kantor).
-        if (error.response?.status === 403 && error.response.data?.errors?.reason === 'ip_not_allowed' && auth.isAuthenticated) {
-            auth.clearSession()
-            useLiveStore(pinia)
-                .disconnect()
-                .catch(() => {})
-            useToast().error('Akses ditolak dari jaringan ini', error.response.data.message)
-            router.push({ name: 'login' })
+        // Whitelist IP: jaringan ini tidak terdaftar -> keluar ke halaman
+        // "Akses dibatasi" (yang sudah menjelaskan sendiri, tanpa toast).
+        if (error.response?.status === 403 && error.response.data?.errors?.reason === 'ip_not_allowed') {
+            if (auth.isAuthenticated) {
+                auth.clearSession()
+                useLiveStore(pinia)
+                    .disconnect()
+                    .catch(() => {})
+            }
+            forgetIpAccess()
+            router.push({ name: 'ip-restricted' })
         }
         return Promise.reject(error)
     },

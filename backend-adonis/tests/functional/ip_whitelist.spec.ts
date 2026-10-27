@@ -175,4 +175,28 @@ test.group('Whitelist IP', (group) => {
             .header('X-Forwarded-For', HOME)
         response.assertStatus(200)
     })
+
+    test('cek IP publik: hanya memberi tahu boleh/tidaknya IP pemanggil', async ({
+        client,
+        assert,
+    }) => {
+        const root = await superAdmin()
+
+        const before = await client.get('/api/v1/auth/ip-check').header('X-Forwarded-For', HOME)
+        before.assertStatus(200)
+        assert.deepEqual(before.body().data, { ip: HOME, allowed: true })
+
+        await client
+            .put('/api/v1/settings/ip-whitelist')
+            .header('Authorization', `Bearer ${root.bearer}`)
+            .json({ enabled: true, entries: [{ value: '103.10.20.0/24', label: 'Kantor' }] })
+            .then((response) => response.assertStatus(200))
+
+        const home = await client.get('/api/v1/auth/ip-check').header('X-Forwarded-For', HOME)
+        assert.deepEqual(home.body().data, { ip: HOME, allowed: false })
+        assert.notInclude(JSON.stringify(home.body()), '103.10.20.0')
+
+        const office = await client.get('/api/v1/auth/ip-check').header('X-Forwarded-For', OFFICE)
+        assert.deepEqual(office.body().data, { ip: OFFICE, allowed: true })
+    })
 })

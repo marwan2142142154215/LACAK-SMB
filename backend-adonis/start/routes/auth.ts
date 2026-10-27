@@ -17,6 +17,10 @@ router
         // throttle per-IP sebagai lapis pertama anti brute-force (lapis kedua:
         // hitung percobaan per challenge di controller). /login lebih ketat
         // karena tidak punya batas percobaan per challenge.
+        // Halaman depan dashboard: IP di luar whitelist tidak diberi form login.
+        router
+            .get('/auth/ip-check', [AuthController, 'ipCheck'])
+            .use(middleware.throttle({ max: 30, minutes: 1 }))
         router
             .post('/auth/login', [AuthController, 'login'])
             .use(middleware.throttle({ max: 5, minutes: 1 }))

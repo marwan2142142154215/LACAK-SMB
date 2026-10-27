@@ -34,10 +34,13 @@ export async function getIpWhitelist(): Promise<IpWhitelist> {
     return list
 }
 
+/**
+ * @param changedByUserId pelaku (null = dari perintah konsol security:ip-whitelist).
+ */
 export async function setIpWhitelist(
     list: IpWhitelist,
-    changedByUserId: number,
-    ctx: HttpContext
+    changedByUserId: number | null,
+    ctx: HttpContext | null = null
 ): Promise<void> {
     await putSetting(IP_WHITELIST_SETTING_KEY, list, changedByUserId, ctx)
     cache = null
@@ -90,6 +93,16 @@ export function ipMatches(blockList: BlockList, ip: string): boolean {
     const family = isIP(address)
     if (!family) return false
     return blockList.check(address, family === 4 ? 'ipv4' : 'ipv6')
+}
+
+/**
+ * Boleh/tidaknya IP ini secara umum (whitelist mati atau IP terdaftar), tanpa
+ * pengecualian peran -- dipakai halaman depan dashboard sebelum login.
+ */
+export async function isIpAllowed(ip: string): Promise<boolean> {
+    const { list, blockList } = await loaded()
+    if (!list.enabled || list.entries.length === 0) return true
+    return ipMatches(blockList, ip)
 }
 
 /**
