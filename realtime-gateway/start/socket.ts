@@ -19,6 +19,7 @@ import {
     unregisterMasterBeaconsForSocket,
 } from '#services/master_anchor_registry'
 import { chatRoom, fetchChatHistory, fetchChatMessage, postChatMessage } from '#services/chat_relay'
+import { registerGroupChatHandlers } from '#services/group_chat_hub'
 
 type DeviceHelloPayload = {
     deviceUuid: string
@@ -493,6 +494,7 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
         })
 
         registerChatHandlers(opsNs, socket, user, token)
+        registerGroupChatHandlers(opsNs, socket, user, token)
         registerLiveHandlers(opsNs, socket, user)
 
         socket.on('disconnect', () => {
