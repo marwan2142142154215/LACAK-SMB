@@ -6,6 +6,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
+import { useChatStore } from '@/stores/chat'
 
 const props = defineProps({
     open: { type: Boolean, default: false },
@@ -20,6 +21,7 @@ const LEVELS = [
 ]
 
 const toast = useToast()
+const chat = useChatStore()
 const level = ref('teguran')
 const message = ref('')
 const sending = ref(false)
@@ -48,6 +50,8 @@ async function send() {
     sending.value = true
     try {
         await api.post('/staff-warnings', { user_id: props.staff.user_id, level: level.value, message: message.value })
+        // Popup di dashboard staf muncul seketika (cek berkala tetap jadi cadangan).
+        chat.notifyWarning(props.staff.user_id)
         toast.success('Peringatan terkirim', `${props.staff.name} akan melihatnya sebagai popup di dashboard.`)
         emit('update:open', false)
     } catch (error) {
