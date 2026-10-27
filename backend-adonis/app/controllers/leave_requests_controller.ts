@@ -32,6 +32,8 @@ type LeaveRow = {
     id: number
     user_id: number
     organization_id: number | null
+    /** Site staf saat ini -- dasar siapa yang boleh meninjau. */
+    user_organization_id?: number | null
     type: LeaveType
     start_date: Date | string
     end_date: Date | string
@@ -78,6 +80,7 @@ function baseQuery() {
         .select(
             'leave_requests.*',
             'users.name as user_name',
+            'users.organization_id as user_organization_id',
             'organizations.name as site_name',
             'reviewers.name as reviewer_name'
         )
@@ -104,7 +107,7 @@ export default class LeaveRequestsController {
             review = await baseQuery()
                 .whereNot('leave_requests.user_id', access.userId)
                 .if(own !== 'all', (query) =>
-                    query.whereIn('leave_requests.organization_id', own as number[])
+                    query.whereIn('users.organization_id', own as number[])
                 )
                 .if(['pending', 'approved', 'rejected', 'cancelled'].includes(status), (query) =>
                     query.where('leave_requests.status', status)
@@ -115,10 +118,11 @@ export default class LeaveRequestsController {
         const pendingCount = canReview
             ? await db
                   .from('leave_requests')
-                  .where('status', 'pending')
-                  .whereNot('user_id', access.userId)
+                  .join('users', 'users.id', 'leave_requests.user_id')
+                  .where('leave_requests.status', 'pending')
+                  .whereNot('leave_requests.user_id', access.userId)
                   .if(managedSites(access) !== 'all', (query) =>
-                      query.whereIn('organization_id', managedSites(access) as number[])
+                      query.whereIn('users.organization_id', managedSites(access) as number[])
                   )
                   .count('* as total')
                   .first()
@@ -210,7 +214,9 @@ export default class LeaveRequestsController {
         const access = await accessOf(ctx)
         const leave = await findLeave(ctx.params.id)
         if (!leave) return ctx.response.status(404).send(fail('Pengajuan tidak ditemukan'))
-        if (!managesSite(access, leave.organization_id)) {
+        // Site staf saat ini, bukan saat mengajukan: staf yang pindah site
+        // ditinjau pengelola site barunya.
+        if (!managesSite(access, leave.user_organization_id ?? null)) {
             return ctx.response.status(403).send(fail('Anda tidak mengelola site staf ini'))
         }
         if (leave.user_id === access.userId && !access.roles.includes('super_admin')) {

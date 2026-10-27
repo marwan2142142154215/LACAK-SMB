@@ -1,4 +1,5 @@
 import db from '@adonisjs/lucid/services/db'
+import { roleNamesOf } from '#services/permissions'
 import { closeBriefingRoom, type BriefingRow } from '#services/briefing'
 import {
     addDays,
@@ -92,29 +93,55 @@ export function asBriefing(schedule: ScheduleRow): BriefingRow {
     }
 }
 
-/** Site yang diberi tahu lewat Telegram: site undangan, atau site peserta pilihan. */
+/**
+ * Site yang dipegang pemimpin SAAT INI (root: semua site aktif). Akses yang
+ * dicabut sesudah jadwal dibuat ikut berlaku untuk pengingatnya.
+ */
+async function hostSites(hostUserId: number): Promise<number[] | 'all'> {
+    const [roles, user] = await Promise.all([
+        roleNamesOf(hostUserId),
+        db.from('users').where('id', hostUserId).select('organization_id').first(),
+    ])
+    if (roles.includes('super_admin')) return 'all'
+    const granted = await db
+        .from('user_site_access')
+        .where('user_id', hostUserId)
+        .select('organization_id')
+    const sites = new Set(granted.map((row) => Number(row.organization_id)))
+    if (roles.includes('site_admin') && user?.organization_id) {
+        sites.add(Number(user.organization_id))
+    }
+    return [...sites]
+}
+
+/**
+ * Site yang diberi tahu lewat Telegram: site undangan, atau site peserta
+ * pilihan -- selalu dibatasi ke site yang dipegang pemimpin, supaya judul
+ * briefing tidak sampai ke chat site lain.
+ */
 async function sitesToNotify(schedule: ScheduleRow): Promise<number[]> {
+    const own = await hostSites(schedule.host_user_id)
+    let targets: number[]
     if (schedule.invited_user_ids.length) {
         const rows = await db
             .from('users')
             .whereIn('id', schedule.invited_user_ids)
             .whereNotNull('organization_id')
             .distinct('organization_id')
-        return rows.map((row) => Number(row.organization_id))
+        targets = rows.map((row) => Number(row.organization_id))
+    } else if (schedule.allowed_organization_ids.length) {
+        targets = schedule.allowed_organization_ids
+    } else if (own === 'all') {
+        const sites = await db
+            .from('organizations')
+            .where('is_active', true)
+            .whereNull('deleted_at')
+            .select('id')
+        return sites.map((row) => Number(row.id))
+    } else {
+        return own
     }
-    if (schedule.allowed_organization_ids.length) return schedule.allowed_organization_ids
-    // Semua site: hanya site yang dipegang pemimpin (root: semua site aktif).
-    const granted = await db
-        .from('user_site_access')
-        .where('user_id', schedule.host_user_id)
-        .select('organization_id')
-    if (granted.length) return granted.map((row) => Number(row.organization_id))
-    const sites = await db
-        .from('organizations')
-        .where('is_active', true)
-        .whereNull('deleted_at')
-        .select('id')
-    return sites.map((row) => Number(row.id))
+    return own === 'all' ? targets : targets.filter((id) => own.includes(id))
 }
 
 async function hostName(userId: number) {
