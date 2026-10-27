@@ -43,6 +43,12 @@ export default await Env.create(new URL('../', import.meta.url), {
 
     LIVE_HEARTBEAT_TIMEOUT_SECONDS: Env.schema.number.optional(),
 
+    // Zona waktu jam shift, jadwal briefing & laporan (default Asia/Jakarta).
+    APP_TIMEZONE: Env.schema.string.optional(),
+    // Token bot Telegram untuk peringatan & laporan kerja -- sama dengan
+    // TELEGRAM_BOT_TOKEN di realtime-gateway/.env. Kosong = tidak dikirim.
+    TELEGRAM_BOT_TOKEN: Env.schema.secret.optional(),
+
     // Account Center (login email) -- sama dengan ACCOUNTCENTER_* di backend-api/.env
     ACCOUNTCENTER_ENABLED: Env.schema.boolean.optional(),
     ACCOUNTCENTER_URI: Env.schema.string.optional(),

@@ -28,6 +28,21 @@ const routes = [
                 component: () => import('@/views/BriefingView.vue'),
             },
             {
+                path: 'absensi',
+                name: 'attendance',
+                component: () => import('@/views/AttendanceView.vue'),
+            },
+            {
+                path: 'izin',
+                name: 'leave',
+                component: () => import('@/views/LeaveView.vue'),
+            },
+            {
+                path: 'pengumuman',
+                name: 'announcements',
+                component: () => import('@/views/AnnouncementsView.vue'),
+            },
+            {
                 path: 'rekaman',
                 name: 'recordings',
                 component: () => import('@/views/RecordingsView.vue'),

@@ -32,10 +32,12 @@ import LiveStatusBar from '@/components/live/LiveStatusBar.vue'
 import LivePairTile from '@/components/live/LivePairTile.vue'
 import LoginDeviceIcon from '@/components/live/LoginDeviceIcon.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import BaseDialog from '@/components/ui/BaseDialog.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { formatElapsed, useNow } from '@/composables/useNow'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
+import { LEAVE_LABELS } from '@/lib/attendance'
 import { backgroundSupported } from '@/lib/cameraBackground'
 import { ATTENTION_STATUSES, WORK_STATUS, workStatus } from '@/lib/workStatus'
 import { useAuthStore } from '@/stores/auth'
@@ -60,6 +62,8 @@ const focusedIdentity = ref(null)
 const focused = computed(() => live.remoteParticipants.find((p) => p.identity === focusedIdentity.value) ?? null)
 const confirmStartOpen = ref(false)
 const confirmEndOpen = ref(false)
+// Catatan kerja yang ditulis saat Selesai kerja (tampil di Aktivitas user).
+const endNote = ref('')
 
 // Leader juga Live Kerja, tapi di ruang leader (terpisah dari staf) yang hanya
 // ditonton peran di atasnya (admin & root).
@@ -545,7 +549,8 @@ async function startWork() {
 
 async function endWork() {
     try {
-        await live.endWork()
+        await live.endWork(endNote.value.trim() || undefined)
+        endNote.value = ''
         toast.success('Selesai kerja', 'Siaran kamera & layar dihentikan')
         if (selectedSiteId.value) await selectSite(selectedSiteId.value)
     } catch (err) {
@@ -1349,9 +1354,15 @@ onBeforeUnmount(() => {
                                             }}<template v-if="staff.started_at"> · </template></template
                                         >
                                         <template v-if="staff.started_at">live {{ formatElapsed(staff.started_at, now) }}</template>
+                                        <template v-else-if="staff.leave">{{ LEAVE_LABELS[staff.leave] ?? 'Izin' }} hari ini</template>
                                         <template v-else-if="!isAllSites">belum mulai kerja</template>
                                     </span>
                                 </span>
+                                <span
+                                    v-if="staff.leave && !staff.started_at"
+                                    class="shrink-0 rounded-full bg-copper-500/12 px-1.5 py-0.5 text-[11px] font-semibold text-copper-400"
+                                    >{{ LEAVE_LABELS[staff.leave] ?? 'Izin' }}</span
+                                >
                                 <span
                                     v-if="faceMissingOf(staff.participant_identity)"
                                     class="shrink-0 rounded-full bg-danger-500/12 px-1.5 py-0.5 text-[11px] font-semibold text-danger-400"
@@ -1477,14 +1488,28 @@ onBeforeUnmount(() => {
             @confirm="startWork"
         />
 
-        <ConfirmDialog
-            v-model:open="confirmEndOpen"
+        <BaseDialog
+            :open="confirmEndOpen"
             title="Selesai kerja?"
             description="Siaran kamera, layar, dan mikrofon Anda dihentikan, dan jam selesai kerja dicatat."
-            confirm-label="Selesai kerja"
-            :loading="live.connecting"
-            @confirm="endWork"
-        />
+            @update:open="(v) => (confirmEndOpen = v)"
+        >
+            <label class="block">
+                <span class="field-label">Catatan kerja hari ini (opsional)</span>
+                <textarea
+                    v-model="endNote"
+                    rows="4"
+                    maxlength="2000"
+                    class="field-control"
+                    placeholder="Contoh: Input 40 faktur, follow-up 3 pelanggan, laporan stok selesai."
+                />
+                <span class="field-hint block">Dibaca leader di Aktivitas user.</span>
+            </label>
+            <template #footer>
+                <BaseButton variant="ghost" @click="confirmEndOpen = false">Batal</BaseButton>
+                <BaseButton variant="danger" :loading="live.connecting" @click="endWork">Selesai kerja</BaseButton>
+            </template>
+        </BaseDialog>
     </div>
 </template>
 

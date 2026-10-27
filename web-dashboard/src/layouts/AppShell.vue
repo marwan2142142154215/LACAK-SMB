@@ -2,11 +2,14 @@
 import {
     Activity,
     Building2,
+    CalendarClock,
+    CalendarOff,
     FileSignature,
     Film,
     History,
     LogOut,
     MapPinned,
+    Megaphone,
     Menu,
     Moon,
     PackageOpen,
@@ -31,6 +34,7 @@ import ScreenShareLock from '@/components/live/ScreenShareLock.vue'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useTheme } from '@/composables/useTheme'
 import api from '@/lib/api'
+import { refreshWorkCounters, workCountersVersion } from '@/lib/workCounters'
 import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
@@ -68,6 +72,14 @@ const navGroups = computed(() => [
             { to: { name: 'briefing' }, label: 'Briefing', icon: Presentation, live: briefings.value.length > 0 },
             { to: { name: 'activity' }, label: 'Aktivitas user', icon: Activity, hidden: !auth.hasPermission('live.watch') },
             { to: { name: 'recordings' }, label: 'Rekaman', icon: Film, hidden: !auth.hasPermission('live.watch') },
+        ],
+    },
+    {
+        label: 'Kerja',
+        items: [
+            { to: { name: 'attendance' }, label: 'Absensi', icon: CalendarClock },
+            { to: { name: 'leave' }, label: 'Izin & cuti', icon: CalendarOff, count: leavePending.value },
+            { to: { name: 'announcements' }, label: 'Pengumuman', icon: Megaphone, count: announcementUnread.value },
         ],
     },
     {
@@ -118,25 +130,80 @@ onBeforeUnmount(() => clearInterval(clockTimer))
 // Briefing yang mengundang user ini: banner "Gabung" di semua halaman.
 const BRIEFING_POLL_MS = 60_000
 const briefings = ref([])
+const upcomingBriefings = ref([])
 let briefingTimer = null
 async function loadBriefings() {
     try {
         const { data } = await api.get('/briefings')
         briefings.value = data.data.items
+        upcomingBriefings.value = data.data.upcoming ?? []
     } catch {
         // Diam saja: banner hanya bantuan, halaman Briefing tetap bisa dibuka.
     }
 }
 const briefingInvite = computed(() => (route.name === 'briefing' ? null : (briefings.value.find((briefing) => !briefing.is_host) ?? null)))
+// Briefing terjadwal yang mulai dalam 15 menit (pengingat sebelum dibuka).
+const BRIEFING_SOON_MS = 15 * 60_000
+const briefingSoon = computed(() => {
+    if (route.name === 'briefing' || briefingInvite.value) return null
+    return (
+        upcomingBriefings.value.find((schedule) => {
+            const left = dayjs(schedule.next_run_at).diff(now.value)
+            return left > 0 && left <= BRIEFING_SOON_MS
+        }) ?? null
+    )
+})
+const minutesUntil = (at) => Math.max(1, Math.ceil(dayjs(at).diff(now.value) / 60_000))
+
+// Pengumuman belum dibaca & pengajuan izin yang menunggu (angka di menu, banner).
+const announcementUnread = ref(0)
+const latestAnnouncement = ref(null)
+const leavePending = ref(0)
+const isManager = computed(() => ['super_admin', 'admin', 'leader', 'site_admin'].some((role) => auth.user?.roles?.includes(role)))
+async function loadWorkCounters() {
+    try {
+        const { data } = await api.get('/announcements')
+        announcementUnread.value = data.data.unread_count
+        latestAnnouncement.value = data.data.items.find((item) => !item.is_read) ?? null
+    } catch {
+        // Banner hanya bantuan.
+    }
+    if (!isManager.value) return
+    try {
+        const { data } = await api.get('/leave-requests')
+        leavePending.value = data.data.pending_count
+    } catch {
+        // Angka di menu hanya bantuan.
+    }
+}
+const announcementBanner = computed(() => (route.name === 'announcements' ? null : latestAnnouncement.value))
+async function dismissAnnouncement() {
+    const item = latestAnnouncement.value
+    latestAnnouncement.value = null
+    try {
+        await api.post(`/announcements/${item.id}/read`)
+    } finally {
+        refreshWorkCounters()
+    }
+}
+
 onMounted(() => {
     loadBriefings()
-    briefingTimer = setInterval(loadBriefings, BRIEFING_POLL_MS)
+    loadWorkCounters()
+    briefingTimer = setInterval(() => {
+        loadBriefings()
+        loadWorkCounters()
+    }, BRIEFING_POLL_MS)
 })
 onBeforeUnmount(() => clearInterval(briefingTimer))
 watch(
     () => route.name,
-    () => loadBriefings(),
+    () => {
+        loadBriefings()
+        loadWorkCounters()
+    },
 )
+watch(workCountersVersion, loadWorkCounters)
 
 const readouts = computed(() => [
     { label: 'Site', value: telemetry.sites.value },
@@ -249,6 +316,12 @@ async function handleLogout() {
                                     <span class="beacon" />
                                     Live
                                 </span>
+                                <span
+                                    v-else-if="item.count"
+                                    class="ml-auto min-w-5 rounded-full bg-accent-500 px-1.5 text-center font-mono text-[11px] leading-5 font-bold text-white tabular-nums"
+                                    :aria-label="`${item.count} baru`"
+                                    >{{ item.count > 99 ? '99+' : item.count }}</span
+                                >
                             </router-link>
                         </template>
                     </div>
@@ -350,6 +423,42 @@ async function handleLogout() {
                         <Presentation class="size-4" />
                         Gabung
                     </router-link>
+                </div>
+                <div
+                    v-if="briefingSoon"
+                    class="mx-4 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-base-700 bg-base-900 px-4 py-3 shadow-(--shadow-card) sm:mx-8"
+                    role="status"
+                >
+                    <Presentation class="size-4 text-accent-500" />
+                    <p class="min-w-0 flex-1 text-sm text-base-100">
+                        <span class="font-semibold">Briefing {{ briefingSoon.title }}</span> mulai pukul
+                        {{ dayjs(briefingSoon.next_run_at).format('HH:mm') }}
+                        <span class="text-base-400">· {{ minutesUntil(briefingSoon.next_run_at) }} menit lagi</span>
+                    </p>
+                    <router-link :to="{ name: 'briefing' }" class="text-sm font-semibold text-accent-500 hover:underline"
+                        >Lihat</router-link
+                    >
+                </div>
+                <div
+                    v-if="announcementBanner"
+                    class="mx-4 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-3 sm:mx-8"
+                    :class="
+                        announcementBanner.is_important ? 'border-danger-500/40 bg-danger-500/10' : 'border-copper-500/30 bg-copper-500/10'
+                    "
+                    role="status"
+                >
+                    <Megaphone class="size-4 shrink-0" :class="announcementBanner.is_important ? 'text-danger-400' : 'text-copper-400'" />
+                    <p class="min-w-0 flex-1 text-sm text-base-100">
+                        <span class="font-semibold">{{ announcementBanner.title }}</span>
+                        <span class="text-base-400"> · {{ announcementBanner.author_name ?? 'Pengumuman' }}</span>
+                        <span v-if="announcementUnread > 1" class="text-base-400"> · {{ announcementUnread - 1 }} pengumuman lain</span>
+                    </p>
+                    <router-link :to="{ name: 'announcements' }" class="text-sm font-semibold text-base-50 hover:underline"
+                        >Baca</router-link
+                    >
+                    <button type="button" class="text-sm font-medium text-base-400 hover:text-base-100" @click="dismissAnnouncement">
+                        Sudah dibaca
+                    </button>
                 </div>
                 <router-view />
                 <ScreenShareLock />

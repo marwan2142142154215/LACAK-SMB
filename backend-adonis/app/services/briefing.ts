@@ -31,6 +31,9 @@ export type BriefingRow = {
     invited_user_ids: number[]
     started_at: Date
     ended_at: Date | null
+    /** Dibuka otomatis dari jadwal (briefing_schedules). */
+    schedule_id?: number | null
+    planned_end_at?: Date | null
 }
 
 export const roomForBriefing = (briefingId: number) => `briefing-${briefingId}`
