@@ -31,6 +31,7 @@ import {
     type PresenceEvent,
     type WorkSessionRow,
 } from '#services/work_presence'
+import { leaveToday } from '#controllers/leave_requests_controller'
 
 /** Umur cache GET /live/overview per kumpulan site, sama dengan backend-api. */
 const OVERVIEW_CACHE_SECONDS = 5
@@ -45,6 +46,13 @@ const heartbeatValidator = vine.compile(
         on_break: vine.boolean().optional(),
         idle: vine.boolean().optional(),
         face_missing: vine.boolean().optional(),
+    })
+)
+
+const endValidator = vine.compile(
+    vine.object({
+        // Catatan kerja hari ini (opsional), ditulis saat Selesai kerja.
+        note: vine.string().trim().maxLength(2000).nullable().optional(),
     })
 )
 
@@ -203,11 +211,15 @@ export default class WorkSessionsController {
     }
 
     async end(ctx: HttpContext) {
+        const { note } = await ctx.request.validateUsing(endValidator)
         const session = await openSessionOf(ctx.authUser!.id)
         if (!session) {
             return ctx.response.status(404).send(fail('Tidak ada sesi kerja yang aktif'))
         }
 
+        if (note) {
+            await db.from('work_sessions').where('id', session.id).update({ end_note: note })
+        }
         await closeSession(session, 'manual', 'work_end')
         await logModelEvent(ctx, {
             event: 'updated',
@@ -335,7 +347,26 @@ export default class WorkSessionsController {
             : []
         const before = new Map(beforeRows.map((event) => [event.user_id, event]))
 
+        // Catatan kerja yang ditulis saat Selesai kerja dalam rentang ini.
+        const notes = siteIds.length
+            ? await db
+                  .from('work_sessions')
+                  .whereIn('organization_id', siteIds)
+                  .if(ownOnly !== null, (query) => query.where('user_id', ownOnly!))
+                  .whereNotNull('end_note')
+                  .whereBetween('ended_at', [from, to])
+                  .orderBy('ended_at')
+                  .select(
+                      'id as session_id',
+                      'user_id',
+                      'started_at',
+                      'ended_at',
+                      'end_note as note'
+                  )
+            : []
+
         return success('Log kerja', {
+            notes,
             organization_id: organizationId,
             summary: summarize(events, before, from, to),
             initial_statuses: Object.fromEntries(
@@ -590,6 +621,7 @@ async function rosterFor(organizationIds: number[], openSessionRows: WorkSession
         .select('id', 'name', 'organization_id')
 
     const logins = await activeLoginsOf(staff.map((member) => member.id))
+    const leaves = await leaveToday(staff.map((member) => member.id))
     const now = new Date()
 
     return staff.map((member) => {
@@ -606,6 +638,8 @@ async function rosterFor(organizationIds: number[], openSessionRows: WorkSession
             started_at: session?.started_at ?? null,
             face_missing: session?.face_missing ?? false,
             login_device: logins.get(member.id) ?? null,
+            // Izin/sakit/cuti yang disetujui untuk hari ini.
+            leave: leaves.get(member.id) ?? null,
         }
     })
 }

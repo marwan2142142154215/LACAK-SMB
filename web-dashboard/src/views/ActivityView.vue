@@ -27,6 +27,8 @@ const day = ref(dayjs().startOf('day'))
 const search = ref('')
 const events = ref([])
 const initialStatuses = ref({})
+// Catatan kerja yang ditulis staf saat Selesai kerja.
+const notes = ref([])
 const loading = ref(false)
 const loadedOnce = ref(false)
 const now = ref(Date.now())
@@ -57,6 +59,7 @@ async function loadActivity({ quiet = false } = {}) {
         const response = await api.get('/live/activity', { params })
         events.value = response.data.data.events
         initialStatuses.value = response.data.data.initial_statuses ?? {}
+        notes.value = response.data.data.notes ?? []
         now.value = Date.now()
         loadedOnce.value = true
     } catch (err) {
@@ -272,6 +275,12 @@ const selectedEvents = computed(() =>
               .filter((e) => e.user_id === selected.value.id && inDay(e) && !shortFaceEventIds.value.has(e.id))
               .slice()
               .reverse()
+        : [],
+)
+
+const selectedNotes = computed(() =>
+    selected.value
+        ? notes.value.filter((note) => note.user_id === selected.value.id && inDay({ occurred_at: note.ended_at })).reverse()
         : [],
 )
 
@@ -868,6 +877,18 @@ const dayLog = computed(() => {
                                         {{ bar.date.format('dd') }}
                                     </span>
                                 </div>
+                            </div>
+
+                            <div v-if="selectedNotes.length">
+                                <p class="eyebrow mb-2">Catatan kerja</p>
+                                <ul class="space-y-2">
+                                    <li v-for="note in selectedNotes" :key="note.session_id" class="rounded-xl bg-base-850 px-3.5 py-2.5">
+                                        <p class="text-sm whitespace-pre-line text-pretty text-base-100">{{ note.note }}</p>
+                                        <p class="mt-1 font-mono text-[11px] text-base-500 tabular-nums">
+                                            {{ dayjs(note.started_at).format('HH:mm') }}–{{ dayjs(note.ended_at).format('HH:mm') }}
+                                        </p>
+                                    </li>
+                                </ul>
                             </div>
 
                             <div>
