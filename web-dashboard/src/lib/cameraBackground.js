@@ -13,6 +13,11 @@ const BLUR_RADIUS = 12
 const MASK_SMOOTHING = 0.3
 // Lebar frame untuk segmentasi (px). Model selfie_segmenter bekerja di 256 px.
 const SEGMENT_WIDTH = 256
+// Porsi frame minimal yang dianggap "orang" supaya penonton masih melihat
+// seseorang. Di bawah ini video siaran praktis hanya berisi background.
+const MIN_PERSON_COVERAGE = 0.02
+// Hasil masker lebih tua dari ini = processor berhenti / macet -> tidak dipakai.
+const COVERAGE_STALE_MS = 3000
 
 /** Browser ini sanggup mengganti background? (butuh WebGL + insertable streams / OffscreenCanvas) */
 export async function backgroundSupported() {
@@ -73,7 +78,7 @@ async function createSegmenter() {
  * diteruskan ke pipeline WebGL paket yang sama (blur tepi + komposit).
  * Masker untuk pipeline itu = peluang LATAR (1 - peluang orang).
  */
-async function createSmoothProcessor(options) {
+async function createSmoothProcessor(options, onCoverage) {
     const { BackgroundProcessorWrapper, BackgroundTransformer, VideoTransformer } = await import('@livekit/track-processors')
 
     class SmoothBackgroundTransformer extends BackgroundTransformer {
@@ -104,12 +109,15 @@ async function createSmoothProcessor(options) {
             }
             const previous = this.smoothMask
             const smooth = previous ?? new Float32Array(count)
+            let personPixels = 0
             for (let i = 0; i < count; i++) {
                 const background = 1 - values[i]
                 smooth[i] = previous ? background * (1 - MASK_SMOOTHING) + previous[i] * MASK_SMOOTHING : background
                 this.maskBytes[i] = smooth[i] * 255
+                if (smooth[i] < 0.5) personPixels++
             }
             this.smoothMask = smooth
+            onCoverage?.(personPixels / count)
 
             const bound = context.getParameter(context.TEXTURE_BINDING_2D)
             if (!this.maskTexture) {
@@ -167,6 +175,9 @@ function save(storageKey, value) {
 export function createCameraBackground(storageKey, getTrack) {
     const background = ref(load(storageKey))
     let processor = null
+    // Porsi orang di masker frame terakhir (lihat personVisible).
+    let coverage = null
+    const recordCoverage = (value) => (coverage = { value, at: Date.now() })
 
     /** Pasang pilihan saat ini ke kamera (kalau kamera menyala). */
     async function apply() {
@@ -176,6 +187,7 @@ export function createCameraBackground(storageKey, getTrack) {
         if (mode === 'none') {
             if (track.getProcessor()) await track.stopProcessor()
             processor = null
+            coverage = null
             return
         }
         const options =
@@ -184,7 +196,7 @@ export function createCameraBackground(storageKey, getTrack) {
             await processor.switchTo(options)
             return
         }
-        processor = await createSmoothProcessor(options)
+        processor = await createSmoothProcessor(options, recordCoverage)
         await track.setProcessor(processor)
     }
 
@@ -197,7 +209,19 @@ export function createCameraBackground(storageKey, getTrack) {
     /** Room ditutup: processor lama ikut track yang sudah berhenti. */
     function reset() {
         processor = null
+        coverage = null
     }
 
-    return { background, apply, set, reset }
+    /**
+     * Apakah penonton masih melihat orang di video siaran? false = masker
+     * background tidak menemukan orang (yang tersiar hanya background),
+     * null = background mati / belum ada hasil masker -> tidak bisa dinilai.
+     */
+    function personVisible() {
+        if (background.value.mode === 'none' || !processor || !coverage) return null
+        if (Date.now() - coverage.at > COVERAGE_STALE_MS) return null
+        return coverage.value >= MIN_PERSON_COVERAGE
+    }
+
+    return { background, apply, set, reset, personVisible }
 }

@@ -216,7 +216,8 @@ export const useLiveStore = defineStore('live', () => {
         scheduleReport()
     })
     // Background kamera siaran (blur / gambar), diingat per browser. Cek
-    // kamera & cek wajah tetap membaca kamera ASLI (rawCameraTrack).
+    // kamera & cek wajah tetap membaca kamera ASLI (rawCameraTrack);
+    // cek wajah juga memakai masker background: orang tertutup background = wajah hilang.
     const cameraBackground = createCameraBackground('lacak.live.background', ownCameraTrack)
     // Status kerja saya menurut server (working, screen_off, break, ...).
     const myStatus = ref(null)
@@ -746,7 +747,10 @@ export const useLiveStore = defineStore('live', () => {
             ensureLiveSocket()
             acquireWakeLock()
             startIdleWatch(await idlePermission)
-            faceWatch.start(() => rawCameraTrack(ownCameraTrack()))
+            faceWatch.start(
+                () => rawCameraTrack(ownCameraTrack()),
+                () => cameraBackground.personVisible(),
+            )
             await sendHeartbeat()
         } catch (err) {
             // Kamera ditolak / koneksi gagal -- jangan biarkan sesi kerja

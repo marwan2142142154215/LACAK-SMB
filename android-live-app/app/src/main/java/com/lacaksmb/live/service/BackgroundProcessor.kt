@@ -80,6 +80,20 @@ class BackgroundProcessor(eglBase: EglBase) : NoDropVideoProcessor() {
     /** false = kamera asli (frame diteruskan tanpa diolah). */
     @Volatile var enabled = false
 
+    // Porsi "orang" di masker frame terakhir (lihat personVisible).
+    @Volatile private var coverage = 0f
+    @Volatile private var coverageAt = 0L
+
+    /**
+     * Apakah penonton masih melihat orang di video siaran? false = masker
+     * tidak menemukan orang (yang tersiar hanya background), null = background
+     * mati / belum ada masker baru -> tidak bisa dinilai. Dipakai FaceWatch.
+     */
+    fun personVisible(): Boolean? {
+        if (!enabled || System.currentTimeMillis() - coverageAt > COVERAGE_STALE_MS) return null
+        return coverage >= MIN_PERSON_COVERAGE
+    }
+
     /** Gambar latar; null = blur. */
     var backgroundImage: Bitmap? = null
         set(value) {
@@ -160,10 +174,15 @@ class BackgroundProcessor(eglBase: EglBase) : NoDropVideoProcessor() {
         val fresh = mask.buffer.order(ByteOrder.nativeOrder()).asFloatBuffer()
         val out = target.asFloatBuffer()
         val previous = previousMask?.takeIf { previousMaskSize == size }?.asFloatBuffer()
+        var personPixels = 0
         for (i in 0 until count) {
             val value = fresh.get(i)
-            out.put(i, if (previous == null) value else value * (1f - MASK_SMOOTHING) + previous.get(i) * MASK_SMOOTHING)
+            val smooth = if (previous == null) value else value * (1f - MASK_SMOOTHING) + previous.get(i) * MASK_SMOOTHING
+            out.put(i, smooth)
+            if (smooth >= 0.5f) personPixels++
         }
+        coverage = personPixels / count.toFloat()
+        coverageAt = System.currentTimeMillis()
         previousMask = target
         previousMaskSize = size
         return VirtualBackgroundTransformer.MaskHolder(mask.width, mask.height, target)
@@ -232,5 +251,9 @@ class BackgroundProcessor(eglBase: EglBase) : NoDropVideoProcessor() {
         /** Bobot masker sebelumnya: 0 = tanpa penghalusan, makin besar makin halus tapi makin lambat mengikuti gerak. */
         private const val MASK_SMOOTHING = 0.3f
         private const val MASK_BUFFERS = 3
+        /** Porsi frame minimal yang dianggap orang; di bawahnya video praktis hanya background. */
+        private const val MIN_PERSON_COVERAGE = 0.02f
+        /** Masker lebih tua dari ini = pemrosesan berhenti -> tidak dipakai. */
+        private const val COVERAGE_STALE_MS = 3_000L
     }
 }
