@@ -13,7 +13,7 @@ import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/activi
 import * as AccountCenter from '#services/account_center'
 import { laravelEncrypter, LARAVEL_USER_MORPH } from '#services/laravel/index'
 import { verifyLaravelPassword } from '#services/laravel/bcrypt'
-import { ipRejectionBody, ipRejectionFor } from '#services/ip_whitelist'
+import { ipRejectionBody, ipRejectionFor, isIpAllowed, normalizeIp } from '#services/ip_whitelist'
 import { removeBroadcaster } from '#services/livekit'
 import { permissionNamesOf, roleNamesOf } from '#services/permissions'
 import * as TwoFactor from '#services/two_factor'
@@ -54,6 +54,17 @@ const LOGIN_CLIENTS = ['web_dashboard', 'master_app', 'telegram_bot']
 type Client = typeof db | TransactionClientContract
 
 export default class AuthController {
+    /**
+     * Publik: apakah IP pemanggil boleh membuka halaman login (whitelist IP).
+     * Hanya memberi tahu IP pemanggil sendiri & boleh/tidaknya -- isi daftar
+     * tidak pernah dibocorkan. Penegakan sebenarnya tetap di login & setiap
+     * request; ini hanya supaya dashboard tidak menampilkan form login.
+     */
+    async ipCheck(ctx: HttpContext) {
+        const ip = normalizeIp(ctx.request.ip())
+        return success('Cek IP', { ip, allowed: await isIpAllowed(ip) })
+    }
+
     async login(ctx: HttpContext) {
         const input = validate(ctx, {
             username: ['required', 'string'],
