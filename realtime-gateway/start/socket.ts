@@ -402,6 +402,9 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
     })
 }
 
+/** Peran yang boleh memberi peringatan staf (sama dengan isManager di backend). */
+const WARNING_SENDER_ROLES = ['super_admin', 'admin', 'leader', 'site_admin']
+
 function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
     // Dashboard web & APK master wajib login (Bearer token Sanctum dari
     // backend-api Laravel) sebelum bisa berlangganan radar/alert — tidak ada
@@ -492,6 +495,19 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
         registerChatHandlers(opsNs, socket, user, token)
         registerGroupChatHandlers(opsNs, socket, user, token)
         registerLiveHandlers(opsNs, socket, user)
+
+        // Peringatan staf: leader ke atas baru saja mengirim peringatan lewat
+        // backend -- beri tahu dashboard staf tujuan supaya popup-nya muncul
+        // seketika. Hanya sinyal; isi peringatan tetap diambil staf itu
+        // sendiri dari backend (/staff-warnings/pending) dengan token miliknya.
+        socket.on('warning:notify', async (payload: { userId?: unknown }) => {
+            if (!user.roles.some((role) => WARNING_SENDER_ROLES.includes(role))) return
+            const userId = Number(payload?.userId)
+            if (!Number.isInteger(userId) || userId <= 0) return
+            for (const peer of await opsNs.fetchSockets()) {
+                if (peer.data.user?.id === userId) peer.emit('warning:new')
+            }
+        })
 
         socket.on('disconnect', () => {
             clearInterval(revalidate)

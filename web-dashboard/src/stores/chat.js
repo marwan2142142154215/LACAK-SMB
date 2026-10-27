@@ -101,6 +101,14 @@ export const useChatStore = defineStore('chat', () => {
         typingBySite.value = { ...typingBySite.value, [siteId]: current }
     }
 
+    // Naik setiap gateway memberi tahu ada peringatan baru untuk user ini.
+    const warningSignal = ref(0)
+
+    /** Beri tahu dashboard staf tujuan bahwa peringatan baru saja dikirim. */
+    function notifyWarning(userId) {
+        socket?.emit('warning:notify', { userId })
+    }
+
     function emitWithAck(event, payload) {
         return new Promise((resolve) => {
             if (!socket?.connected) return resolve({ ok: false, message: 'Chat belum tersambung, coba lagi sebentar' })
@@ -154,6 +162,8 @@ export const useChatStore = defineStore('chat', () => {
         })
 
         socket.on('chat:message', addMessage)
+        // Peringatan baru dari atasan: WarningPopup memuatnya seketika.
+        socket.on('warning:new', () => warningSignal.value++)
         socket.on('chat:presence', ({ organizationId, users }) => {
             presenceBySite.value = { ...presenceBySite.value, [organizationId]: users }
         })
@@ -426,6 +436,8 @@ export const useChatStore = defineStore('chat', () => {
 
     return {
         connected,
+        warningSignal,
+        notifyWarning,
         sites,
         activeSiteId,
         open,

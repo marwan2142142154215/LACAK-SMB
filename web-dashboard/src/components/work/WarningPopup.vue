@@ -8,17 +8,23 @@ import { useRoute } from 'vue-router'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
+import { playWarningSound, primeWarningSound } from '@/lib/warningSound'
+import { useChatStore } from '@/stores/chat'
 
 /*
  * Popup peringatan dari leader ke atas. Menutupi layar dan tidak bisa
  * ditutup dengan Esc / klik di luar -- staf wajib menekan "Saya mengerti",
- * yang dicatat sebagai waktu konfirmasi. Peringatan baru dicek berkala,
- * saat pindah halaman, dan saat tab kembali dibuka.
+ * yang dicatat sebagai waktu konfirmasi. Peringatan baru datang seketika
+ * lewat sinyal gateway (warning:new); cek berkala, pindah halaman, dan tab
+ * yang dibuka lagi jadi cadangan. Nada peringatan berbunyi berulang selama
+ * popup terbuka dan baru berhenti setelah semua peringatan dikonfirmasi.
  */
 const POLL_MS = 30_000
+const SOUND_REPEAT_MS = 3_000
 
 const route = useRoute()
 const toast = useToast()
+const chat = useChatStore()
 const pending = ref([])
 const acknowledging = ref(false)
 const current = computed(() => pending.value[0] ?? null)
@@ -46,18 +52,38 @@ async function acknowledge() {
     }
 }
 
+// Bunyi berulang selama ada peringatan yang belum dikonfirmasi.
+let soundTimer = null
+function stopSound() {
+    clearInterval(soundTimer)
+    soundTimer = null
+}
+watch(
+    () => current.value?.id ?? null,
+    (id) => {
+        stopSound()
+        if (id === null) return
+        const ring = () => playWarningSound(isSevere.value)
+        ring()
+        soundTimer = setInterval(ring, SOUND_REPEAT_MS)
+    },
+)
+
 let timer = null
 const onVisible = () => document.visibilityState === 'visible' && load()
 onMounted(() => {
+    primeWarningSound()
     load()
     timer = setInterval(load, POLL_MS)
     document.addEventListener('visibilitychange', onVisible)
 })
 onBeforeUnmount(() => {
     clearInterval(timer)
+    stopSound()
     document.removeEventListener('visibilitychange', onVisible)
 })
 watch(() => route.name, load)
+watch(() => chat.warningSignal, load)
 </script>
 
 <template>
