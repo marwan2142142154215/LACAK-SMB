@@ -9,13 +9,13 @@ const props = defineProps({
 })
 
 const STATUS = {
-    online: { text: 'Online', color: 'text-accent-400' },
+    online: { text: 'Online', color: 'text-st-online' },
     offline: { text: 'Offline', color: 'text-base-500', off: true },
     locked: { text: 'Terkunci', color: 'text-danger-400' },
     pending_enrollment: { text: 'Menunggu daftar', color: 'text-warning-400' },
-    active: { text: 'Aktif', color: 'text-accent-400' },
+    active: { text: 'Aktif', color: 'text-st-online' },
     inactive: { text: 'Nonaktif', color: 'text-base-500', off: true },
-    success: { text: 'Berhasil', color: 'text-accent-400' },
+    success: { text: 'Berhasil', color: 'text-st-online' },
     building: { text: 'Sedang build', color: 'text-warning-400' },
     pending: { text: 'Antre', color: 'text-warning-400' },
     failed: { text: 'Gagal', color: 'text-danger-400' },

@@ -269,21 +269,21 @@ async function handleLogout() {
             bersamaan membuat kondisi v-if/class diam-diam tidak berefek.
         -->
         <aside
-            class="fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col p-3 transition-transform duration-200 lg:sticky lg:top-0 lg:h-dvh lg:!translate-x-0"
+            class="fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-base-800 bg-base-900 transition-transform duration-200 lg:sticky lg:top-0 lg:h-dvh lg:!translate-x-0"
             :class="mobileNavOpen ? 'translate-x-0' : '-translate-x-full'"
         >
-            <div class="flex min-h-0 flex-1 flex-col rounded-2xl border border-base-800 bg-base-900 shadow-(--shadow-card)">
-                <div class="flex h-16 items-center justify-between gap-2 px-4">
+            <div class="flex min-h-0 flex-1 flex-col">
+                <div class="flex h-16 items-center justify-between gap-2 px-5">
                     <router-link
                         :to="{ name: 'radar' }"
                         class="flex items-center gap-3 rounded-xl focus-visible:outline-2 focus-visible:outline-accent-500"
                     >
-                        <!-- Logo: beacon oranye di atas tinta -- sinyal yang sedang dipantau -->
-                        <span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-base-50" aria-hidden="true">
-                            <span class="beacon" />
+                        <!-- Logo: beacon putih di atas biru -- sinyal yang sedang dipantau -->
+                        <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-500 shadow-sm" aria-hidden="true">
+                            <span class="beacon bg-white!" />
                         </span>
                         <span class="leading-tight">
-                            <span class="block font-display text-[15px] font-extrabold tracking-[-0.02em] text-base-50">Lacak SMB</span>
+                            <span class="block font-display text-[15px] font-semibold tracking-[-0.01em] text-base-50">Lacak SMB</span>
                             <span class="block text-xs text-base-500">Pusat pantau</span>
                         </span>
                     </router-link>
@@ -297,9 +297,9 @@ async function handleLogout() {
                     </button>
                 </div>
 
-                <nav class="flex-1 space-y-5 overflow-y-auto px-3 pt-2 pb-4" aria-label="Menu utama">
+                <nav class="flex-1 space-y-6 overflow-y-auto px-3 pt-3 pb-4" aria-label="Menu utama">
                     <div v-for="group in navGroups" :key="group.label">
-                        <p class="mb-1 px-3 text-[11px] font-semibold text-base-500">{{ group.label }}</p>
+                        <p class="mb-1 px-3 text-xs font-medium text-base-500">{{ group.label }}</p>
                         <!--
                             Pakai exact-active-class (bukan active-class): active-class
                             bawaan Vue Router mencocokkan prefix path, jadi link Radar
@@ -311,18 +311,18 @@ async function handleLogout() {
                             <router-link
                                 v-if="!item.hidden"
                                 :to="item.to"
-                                class="nav-link group relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-base-400 transition-colors hover:bg-base-850 hover:text-base-100 focus-visible:outline-2 focus-visible:outline-accent-500"
+                                class="nav-link group relative flex items-center gap-3 rounded-lg px-3 py-[7px] text-sm font-medium text-base-400 transition-colors hover:bg-base-850 hover:text-base-50 focus-visible:outline-2 focus-visible:outline-accent-500"
                                 exact-active-class="is-active"
                             >
                                 <component :is="item.icon" class="nav-icon size-[18px] shrink-0" />
                                 {{ item.label }}
-                                <span v-if="item.live" class="ml-auto flex items-center gap-1.5 text-[11px] font-bold text-accent-400">
+                                <span v-if="item.live" class="ml-auto flex items-center gap-1.5 text-[11px] font-semibold text-accent-400">
                                     <span class="beacon" />
                                     Live
                                 </span>
                                 <span
                                     v-else-if="item.count"
-                                    class="ml-auto min-w-5 rounded-full bg-accent-500 px-1.5 text-center font-mono text-[11px] leading-5 font-bold text-white tabular-nums"
+                                    class="ml-auto min-w-5 rounded-full bg-accent-500 px-1.5 text-center font-mono text-[11px] leading-5 font-medium text-white tabular-nums"
                                     :aria-label="`${item.count} baru`"
                                     >{{ item.count > 99 ? '99+' : item.count }}</span
                                 >
@@ -331,10 +331,10 @@ async function handleLogout() {
                     </div>
                 </nav>
 
-                <div class="border-t border-base-800 p-2">
-                    <div class="flex items-center gap-3 rounded-xl px-2 py-2">
+                <div class="border-t border-base-800 p-3">
+                    <div class="flex items-center gap-3 rounded-lg px-1 py-1">
                         <div
-                            class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-copper-500/12 font-display text-sm font-extrabold text-copper-400"
+                            class="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-500/10 font-display text-sm font-semibold text-accent-400"
                         >
                             {{ auth.user?.name?.charAt(0)?.toUpperCase() ?? '?' }}
                         </div>
@@ -359,10 +359,8 @@ async function handleLogout() {
 
         <div class="flex min-w-0 flex-1 flex-col">
             <!-- Bar status: angka kunci yang berlaku di semua halaman -->
-            <div class="sticky top-0 z-30 px-3 pt-3 lg:pl-0">
-                <div
-                    class="flex h-14 items-center gap-3 rounded-2xl border border-base-800 bg-base-900/85 px-3 shadow-(--shadow-card) backdrop-blur sm:px-4"
-                >
+            <div class="sticky top-0 z-30 border-b border-base-800 bg-base-950/80 backdrop-blur-md">
+                <div class="flex h-16 items-center gap-3 px-4 sm:px-8">
                     <button
                         type="button"
                         class="rounded-lg p-1 text-base-300 hover:text-base-50 lg:hidden"
@@ -371,9 +369,12 @@ async function handleLogout() {
                     >
                         <Menu class="size-5" />
                     </button>
-                    <dl class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+                    <dl class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none]">
                         <template v-for="item in readouts" :key="item.label">
-                            <div v-if="!item.hidden" class="flex shrink-0 items-center gap-2 rounded-full bg-base-850 px-3 py-1.5 text-xs">
+                            <div
+                                v-if="!item.hidden"
+                                class="flex shrink-0 items-center gap-2 rounded-full border border-base-800 bg-base-900 px-3 py-1.5 text-xs shadow-(--shadow-card)"
+                            >
                                 <span v-if="item.beacon" class="beacon" />
                                 <span v-else-if="item.led" class="led" :class="item.led" />
                                 <dt class="font-medium text-base-500">{{ item.label }}</dt>
@@ -387,7 +388,7 @@ async function handleLogout() {
                     </p>
                     <button
                         type="button"
-                        class="flex size-9 shrink-0 items-center justify-center rounded-xl text-base-400 transition-colors hover:bg-base-850 hover:text-base-50 focus-visible:outline-2 focus-visible:outline-accent-500"
+                        class="flex size-9 shrink-0 items-center justify-center rounded-lg border border-base-800 bg-base-900 text-base-400 shadow-(--shadow-card) transition-colors hover:text-base-50 focus-visible:outline-2 focus-visible:outline-accent-500"
                         :aria-label="theme === 'dark' ? 'Pakai tema terang' : 'Pakai tema gelap'"
                         :title="theme === 'dark' ? 'Tema terang' : 'Tema gelap'"
                         @click="toggleTheme"
@@ -474,11 +475,10 @@ async function handleLogout() {
 </template>
 
 <style scoped>
-/* Menu aktif: lapisan oranye tipis, ikon oranye -- sama di tema terang & gelap */
+/* Menu aktif: lapisan biru tipis, ikon biru -- sama di tema terang & gelap */
 .nav-link.is-active {
-    background-color: color-mix(in oklab, var(--color-accent-500) 12%, transparent);
+    background-color: color-mix(in oklab, var(--color-accent-500) 9%, transparent);
     color: var(--color-base-50);
-    font-weight: 600;
 }
 
 .nav-link.is-active .nav-icon {
