@@ -102,9 +102,10 @@ class LiveBroadcastService : Service() {
     // walau track LiveKit-nya masih tercatat "terbit".
     private val frameCount = AtomicLong(0)
 
-    // Cek wajah memakai frame kamera yang sama (lihat FaceWatch).
+    // Cek wajah memakai frame kamera yang sama (lihat FaceWatch), ditambah
+    // hasil masker background: orang tertutup background = wajah hilang.
     private val faceWatch by lazy {
-        FaceWatch { missing ->
+        FaceWatch(personVisible = { backgroundProcessor?.personVisible() }) { missing ->
             scope.launch {
                 LiveBroadcastState.setFaceMissing(missing)
                 reportStateNow()

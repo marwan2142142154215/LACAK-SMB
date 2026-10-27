@@ -6,6 +6,8 @@ import wasmLoaderPath from '../../node_modules/@mediapipe/tasks-vision/wasm/visi
  * browser staf sendiri (MediaPipe Face Detector, model di /models) -- tidak
  * ada gambar yang dikirim ke server; yang dilaporkan hanya "wajah hilang"
  * (tidak ada wajah >= FACE_MISSING_AFTER_MS) dan "wajah kembali".
+ * Kalau background kamera aktif, wajah juga dianggap hilang saat masker
+ * background tidak menemukan orang -- penonton hanya melihat background.
  *
  * Frame diambil langsung dari track kamera (ImageCapture), jadi tetap jalan
  * walau tab dashboard sedang di latar belakang. Gagal dimuat = cek wajah
@@ -41,6 +43,7 @@ function loadDetector() {
 export function createFaceWatch(onChange) {
     let timer = null
     let getTrack = () => null
+    let getPersonVisible = () => null
     let capture = null
     let busy = false
     let lastSeen = 0
@@ -68,7 +71,9 @@ export function createFaceWatch(onChange) {
             const frame = await capture.grabFrame()
             const faces = detector.detect(frame).detections.length
             frame.close()
-            if (faces > 0) {
+            // Wajah ada di kamera asli tapi background menutupi orangnya
+            // (penonton hanya melihat background) = tetap dianggap hilang.
+            if (faces > 0 && getPersonVisible() !== false) {
                 lastSeen = Date.now()
                 setMissing(false)
             } else if (Date.now() - lastSeen >= FACE_MISSING_AFTER_MS) {
@@ -82,10 +87,15 @@ export function createFaceWatch(onChange) {
     }
 
     return {
-        /** Mulai memantau; [cameraTrack] mengembalikan MediaStreamTrack kamera saat ini. */
-        start(cameraTrack) {
+        /**
+         * Mulai memantau; [cameraTrack] mengembalikan MediaStreamTrack kamera
+         * saat ini, [personVisible] (opsional) hasil masker background: false =
+         * video yang tersiar tidak memperlihatkan orang.
+         */
+        start(cameraTrack, personVisible = () => null) {
             if (!('ImageCapture' in window)) return
             getTrack = cameraTrack
+            getPersonVisible = personVisible
             if (timer) return
             lastSeen = Date.now()
             timer = setInterval(check, CHECK_INTERVAL_MS)
@@ -94,6 +104,7 @@ export function createFaceWatch(onChange) {
             clearInterval(timer)
             timer = null
             getTrack = () => null
+            getPersonVisible = () => null
             capture = null
             lastSeen = 0
             missing = false
