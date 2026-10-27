@@ -46,6 +46,8 @@ router
         // Wajib/tidaknya 2FA -- security.manage (super_admin) saja.
         router.get('/settings/security', [SecuritySettingsController, 'show'])
         router.put('/settings/security', [SecuritySettingsController, 'update'])
+        router.get('/settings/ip-whitelist', [SecuritySettingsController, 'ipWhitelist'])
+        router.put('/settings/ip-whitelist', [SecuritySettingsController, 'updateIpWhitelist'])
     })
     .prefix('/api/v1')
     .use([middleware.auth(), middleware.extendToken()])
