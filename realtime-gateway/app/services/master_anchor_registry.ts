@@ -23,8 +23,13 @@ type MasterBeacon = {
     username: string
     organizationId: number | null
     isSuperAdmin: boolean
+    /** Site yang diberikan ke admin/leader (user_site_access). */
+    grantedOrganizationIds: number[]
     socketId: string
 }
+
+/** Peran yang aksesnya lewat site yang diberikan, bukan site miliknya sendiri. */
+const GRANT_BASED_ROLES = ['admin', 'leader']
 
 const activeBeacons = new Map<string, MasterBeacon>()
 
@@ -36,20 +41,24 @@ export function registerMasterBeacon(
         organizationId: number | null
         roles: string[]
         permissions: string[]
+        accessibleOrganizationIds?: number[]
     },
     socketId: string
 ) {
     // Cuma akun yang memang boleh lock/unlock yang berhak jadi anchor --
-    // staf view-only (admin/leader/staff_viewer) hadir secara fisik TIDAK
-    // boleh ikut membuka kunci device, sama seperti mereka tidak punya tombol
-    // Unlock di dashboard/APK master.
+    // staf tanpa izin devices.unlock hadir secara fisik TIDAK boleh ikut
+    // membuka kunci device, sama seperti backend menolak perintah Unlock-nya.
     if (!user.permissions.includes('devices.unlock')) return
 
+    // Admin & leader hanya untuk site yang diberikan -- sama dengan
+    // authorizedOrganizationId di backend, site "milik" akunnya tidak dihitung.
+    const grantBased = user.roles.some((role) => GRANT_BASED_ROLES.includes(role))
     activeBeacons.set(beaconUuid, {
         userId: user.id,
         username: user.username,
-        organizationId: user.organizationId,
+        organizationId: grantBased ? null : user.organizationId,
         isSuperAdmin: user.roles.includes('super_admin'),
+        grantedOrganizationIds: grantBased ? (user.accessibleOrganizationIds ?? []) : [],
         socketId,
     })
 }
@@ -63,11 +72,16 @@ export function unregisterMasterBeaconsForSocket(socketId: string) {
 /**
  * true kalau beaconUuid ini sedang aktif DAN pemiliknya berwenang atas
  * organizationId yang diberikan -- super_admin menghitung untuk site
- * MANA PUN (konsisten dengan ResolvesOrganizationScope di backend-api),
- * role lain cuma untuk organization_id miliknya sendiri.
+ * MANA PUN (konsisten dengan organization_scope di backend), admin & leader
+ * untuk site yang diberikan ke akunnya, role lain cuma untuk organization_id
+ * miliknya sendiri.
  */
 export function isAuthorizedMasterBeaconFor(beaconUuid: string, organizationId: number): boolean {
     const beacon = activeBeacons.get(beaconUuid)
     if (!beacon) return false
-    return beacon.isSuperAdmin || beacon.organizationId === organizationId
+    return (
+        beacon.isSuperAdmin ||
+        beacon.organizationId === organizationId ||
+        beacon.grantedOrganizationIds.includes(organizationId)
+    )
 }
