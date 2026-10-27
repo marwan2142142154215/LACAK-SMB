@@ -24,6 +24,7 @@ import {
 } from '#services/briefing_schedule'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
 import { liveKitConfig } from '#services/livekit'
+import { colleaguesOf as inviteCandidates } from '#services/people'
 import { DATE_PATTERN, localDate, TIME_PATTERN } from '#services/local_time'
 
 const AUDIENCE_KEYS = Object.keys(BRIEFING_AUDIENCE_ROLES) as Array<
@@ -541,55 +542,6 @@ function connection(briefing: BriefingRow, ctx: HttpContext, isHost: boolean) {
 }
 
 const invitedOf = (briefing: BriefingRow) => briefing.invited_user_ids ?? []
-
-/** Orang yang bisa diundang langsung: user aktif di site yang dipegang pemimpin. */
-async function inviteCandidates(access: Parameters<typeof sitesOf>[0]) {
-    const own = sitesOf(access)
-    const query = db
-        .from('users')
-        .leftJoin('organizations', 'organizations.id', 'users.organization_id')
-        .whereNull('users.deleted_at')
-        .where('users.is_active', true)
-        .whereNot('users.id', access.userId)
-        .orderBy('users.name')
-        .select(
-            'users.id',
-            'users.name',
-            'users.organization_id',
-            'organizations.name as site_name'
-        )
-    if (own !== 'all') {
-        // Staf & admin site di site itu, plus leader/admin yang diberi akses ke site itu.
-        query.where((scope) => {
-            scope
-                .whereIn('users.organization_id', own)
-                .orWhereIn(
-                    'users.id',
-                    db.from('user_site_access').whereIn('organization_id', own).select('user_id')
-                )
-        })
-    }
-    const rows = await query
-    const roles = await db
-        .from('model_has_roles')
-        .join('roles', 'roles.id', 'model_has_roles.role_id')
-        .whereIn(
-            'model_has_roles.model_id',
-            rows.map((row) => row.id)
-        )
-        .select('model_has_roles.model_id', 'roles.name')
-    const roleOf = new Map<number, string>()
-    for (const row of roles) {
-        const label = BRIEFING_AUDIENCE_ROLES[row.name as keyof typeof BRIEFING_AUDIENCE_ROLES]
-        if (label && !roleOf.has(Number(row.model_id))) roleOf.set(Number(row.model_id), label)
-    }
-    return rows.map((row) => ({
-        id: Number(row.id),
-        name: row.name as string,
-        role: roleOf.get(Number(row.id)) ?? null,
-        site: (row.site_name as string | null) ?? null,
-    }))
-}
 
 async function findBriefing(id: unknown): Promise<BriefingRow | null> {
     if (typeof id !== 'string' || !/^\d+$/.test(id)) return null

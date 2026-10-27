@@ -38,9 +38,10 @@ const IMAGE_URL_HOURS = 12
 const IMAGE_MIMES = ['jpg', 'jpeg', 'png', 'webp', 'gif']
 const IMAGE_MIMETYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
-type MessageRow = {
+export type MessageRow = {
     id: number
-    organization_id: number
+    organization_id: number | null
+    chat_group_id?: number | null
     user_id: number
     user_name: string | null
     reply_to_id: number | null
@@ -96,10 +97,24 @@ export default class ChatMessagesController {
         const row = await findMessage(ctx.params.chatMessage)
         if (!row) return notFound(ctx)
 
+        // Pesan grup: hanya anggota grupnya (lihat ChatGroupsController).
+        if (row.chat_group_id) {
+            const member = await db
+                .from('chat_group_members')
+                .where('chat_group_id', row.chat_group_id)
+                .where('user_id', ctx.authUser!.id)
+                .first()
+            if (!member) return forbidden(ctx)
+            return success('Pesan', toPayload(row))
+        }
+
         const access = await accessOf(ctx)
         if (!can(access, 'live.watch')) return forbidden(ctx)
 
-        if (authorizedOrganizationId(access, row.organization_id) !== row.organization_id) {
+        if (
+            row.organization_id === null ||
+            authorizedOrganizationId(access, row.organization_id) !== row.organization_id
+        ) {
             return ctx.response.status(403).send(fail('Anda tidak berwenang membuka chat site ini'))
         }
 
@@ -220,7 +235,7 @@ export default class ChatMessagesController {
     }
 }
 
-function messages() {
+export function messages() {
     // with(['user:id,name', 'replyTo.user:id,name']): user yang di-soft-delete
     // tidak ikut dimuat (nama jadi null), sama dengan Eloquent.
     return db
@@ -235,6 +250,7 @@ function messages() {
         .select(
             'm.id',
             'm.organization_id',
+            'm.chat_group_id',
             'm.user_id',
             'u.name as user_name',
             'm.reply_to_id',
@@ -251,7 +267,7 @@ function messages() {
         )
 }
 
-async function findMessage(id: unknown): Promise<MessageRow | null> {
+export async function findMessage(id: unknown): Promise<MessageRow | null> {
     const value = String(id ?? '')
     if (!/^\d{1,18}$/.test(value)) return null
     return (await messages().where('m.id', Number(value)).first()) ?? null
@@ -263,6 +279,7 @@ export function toPayload(row: MessageRow, now: Date = new Date()) {
     return {
         id: row.id,
         organization_id: row.organization_id,
+        chat_group_id: row.chat_group_id ?? null,
         user_id: row.user_id,
         user_name: row.user_name,
         body: row.body,
@@ -294,9 +311,9 @@ export function toPayload(row: MessageRow, now: Date = new Date()) {
  | dipakai backend-api, karena dashboard menampilkan errors[field][0].
  * ------------------------------------------------------------------- */
 
-type ValidationErrors = Record<string, string[]>
+export type ValidationErrors = Record<string, string[]>
 
-function invalid(ctx: HttpContext, errors: ValidationErrors) {
+export function invalid(ctx: HttpContext, errors: ValidationErrors) {
     return ctx.response.status(422).send(fail('Isian tidak lolos validasi', errors))
 }
 
@@ -316,7 +333,11 @@ export function laravelTrim(value: string): string {
 }
 
 /** Aturan `nullable|integer` (FILTER_VALIDATE_INT); '' dianggap null (ConvertEmptyStringsToNull). */
-function integerInput(value: unknown, field: string, errors: ValidationErrors): number | null {
+export function integerInput(
+    value: unknown,
+    field: string,
+    errors: ValidationErrors
+): number | null {
     if (typeof value === 'string') value = laravelTrim(value)
     if (value === null || value === undefined || value === '') return null
     if (typeof value === 'number' && Number.isSafeInteger(value)) return value
@@ -326,7 +347,7 @@ function integerInput(value: unknown, field: string, errors: ValidationErrors): 
 }
 
 /** `nullable|string|max:1000`, lalu trim() seperti controller Laravel. */
-function bodyInput(value: unknown, errors: ValidationErrors): string {
+export function bodyInput(value: unknown, errors: ValidationErrors): string {
     if (typeof value === 'string') value = laravelTrim(value)
     if (value === null || value === undefined || value === '') return ''
     if (typeof value !== 'string') {
@@ -348,7 +369,7 @@ type UploadedImage = {
 }
 
 /** Aturan image: nullable|file|mimes|mimetypes|max:5120|dimensions (tanpa bail). */
-async function imageInput(
+export async function imageInput(
     ctx: HttpContext,
     errors: ValidationErrors
 ): Promise<UploadedImage | null> {
