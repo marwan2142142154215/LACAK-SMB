@@ -229,46 +229,17 @@ export default class ApkBuildsController {
         // sini -- sebelum build Gradle dipicu -- dengan device_uuid & rahasia
         // device digenerate server, lalu keduanya ditanam ke APK. Begitu
         // dipasang, APK langsung bisa terhubung ke gateway tanpa klaim enrollment.
-        let consentId: number | null = null
-        if (input.apk_type === 'tracker') {
-            const consent = await db
-                .from('consent_documents')
-                .where('id', input.consent_document_id!)
-                .select(
-                    'id',
-                    'organization_id',
-                    'revoked_at',
-                    db.raw(`to_char(valid_until, 'YYYY-MM-DD') as valid_until`)
-                )
-                .first()
-
-            if (!consent || Number(consent.organization_id) !== organizationId) {
-                return ctx.response
-                    .status(422)
-                    .send(fail('Dokumen consent tidak ditemukan untuk site ini'))
-            }
-
-            if (!isConsentActive(consent.revoked_at, consent.valid_until)) {
-                return ctx.response
-                    .status(422)
-                    .send(
-                        fail(
-                            'Dokumen consent sudah dicabut/kedaluwarsa, tidak bisa dipakai membuat APK'
-                        )
-                    )
-            }
-            consentId = consent.id
-        }
-
         const version = input.version || '1.0.0'
         const now = new Date()
-        const plainDeviceSecret =
-            consentId !== null ? randomBytes(DEVICE_SECRET_BYTES).toString('hex') : null
+        const isTracker = input.apk_type === 'tracker'
+        const plainDeviceSecret = isTracker
+            ? randomBytes(DEVICE_SECRET_BYTES).toString('hex')
+            : null
 
         const created = await db.transaction(async (trx) => {
             let device: { id: number; device_name: string } | null = null
 
-            if (consentId !== null) {
+            if (isTracker) {
                 // Format sama dengan DeviceEnrollmentController::claim. Yang
                 // disimpan hanya hash-nya; token asli cuma ikut payload job
                 // build (terenkripsi) untuk ditanam ke APK.
@@ -276,7 +247,6 @@ export default class ApkBuildsController {
                     .table('devices')
                     .insert({
                         organization_id: organizationId,
-                        consent_document_id: consentId,
                         device_name: input.device_name,
                         device_uuid: randomUUID(),
                         secret_hash: createHash('sha256').update(plainDeviceSecret!).digest('hex'),
@@ -469,20 +439,6 @@ export function apkBuildResource(build: ApkBuildRow, now: Date = new Date()) {
                 : null,
         created_at: laravelDate(build.created_at),
     }
-}
-
-/**
- * ConsentDocument::isActive(): belum dicabut dan valid_until (cast 'date',
- * jadi pukul 00:00 UTC hari itu) belum lewat.
- */
-export function isConsentActive(
-    revokedAt: unknown,
-    validUntil: string | null,
-    now: Date = new Date()
-): boolean {
-    if (revokedAt !== null && revokedAt !== undefined) return false
-    if (validUntil !== null && Date.parse(`${validUntil}T00:00:00Z`) < now.getTime()) return false
-    return true
 }
 
 /**

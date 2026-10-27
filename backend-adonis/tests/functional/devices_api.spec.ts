@@ -114,38 +114,11 @@ async function makeUser(organizationId: number | null, role: string | null) {
     return { id: user.id as number, bearer: `${token.id}|${plain}` }
 }
 
-async function makeConsent(organizationId: number, createdBy: number, revoked = false) {
-    const [consent] = await db
-        .table('consent_documents')
-        .insert({
-            organization_id: organizationId,
-            subject_name: 'Subjek',
-            signer_name: 'Penanda Tangan',
-            signer_role: 'pemilik',
-            document_file_path: `consent-documents/${randomBytes(8).toString('hex')}.pdf`,
-            signed_at: new Date(Date.now() - 86_400_000),
-            valid_until: null,
-            revoked_at: revoked ? new Date() : null,
-            created_by: createdBy,
-            created_at: new Date(),
-            updated_at: new Date(),
-        })
-        .returning(['id'])
-    return consent.id as number
-}
-
-async function makeDevice(
-    organizationId: number,
-    overrides: Record<string, unknown> & { revokedConsent?: boolean } = {}
-) {
-    const { revokedConsent, ...values } = overrides
-    const owner = await makeUser(organizationId, null)
-    const consentId = await makeConsent(organizationId, owner.id, revokedConsent)
+async function makeDevice(organizationId: number, values: Record<string, unknown> = {}) {
     const [device] = await db
         .table('devices')
         .insert({
             organization_id: organizationId,
-            consent_document_id: consentId,
             device_name: 'HP Kasir',
             device_uuid: `uuid-${randomBytes(8).toString('hex')}`,
             android_version: '14',
@@ -157,8 +130,8 @@ async function makeDevice(
             updated_at: new Date(),
             ...values,
         })
-        .returning(['id', 'device_uuid', 'consent_document_id'])
-    return device as { id: number; device_uuid: string; consent_document_id: number }
+        .returning(['id', 'device_uuid'])
+    return device as { id: number; device_uuid: string }
 }
 
 async function statusOf(deviceId: number): Promise<string> {
@@ -248,16 +221,16 @@ test.group('Device: otorisasi perintah (DeviceCommandAuthorizationTest)', (group
         response.assertBodyContains({ message: 'Anda tidak berwenang melakukan tindakan ini' })
     })
 
-    test('unlock tetap diizinkan walau consent sudah dicabut, lock tidak', async ({ client }) => {
+    test('perintah lock & unlock tidak lagi butuh dokumen consent', async ({ client }) => {
         const org = await makeOrganization()
-        const device = await makeDevice(org, { status: 'locked', revokedConsent: true })
+        const device = await makeDevice(org, { status: 'online' })
         const admin = await makeUser(org, 'site_admin')
 
         const lock = await client
             .post(`/api/v1/devices/${device.id}/commands`)
             .bearerToken(admin.bearer)
             .json({ command_type: 'lock', issued_via: 'web_dashboard' })
-        lock.assertStatus(422)
+        lock.assertStatus(201)
 
         const unlock = await client
             .post(`/api/v1/devices/${device.id}/commands`)
@@ -322,14 +295,12 @@ test.group('Device: CRUD', (group) => {
     }) => {
         const org = await makeOrganization()
         const admin = await makeUser(org, 'site_admin')
-        const consentId = await makeConsent(org, admin.id)
 
         const response = await client
             .post('/api/v1/devices')
             .bearerToken(admin.bearer)
             .json({
                 organization_id: org,
-                consent_document_id: consentId,
                 device_name: 'HP Gudang',
                 device_uuid: `uuid-${randomBytes(6).toString('hex')}`,
                 android_version: '14',
@@ -343,6 +314,7 @@ test.group('Device: CRUD', (group) => {
         assert.isTrue(data.is_active)
         assert.notProperty(data, 'organization_name')
         assert.notProperty(data, 'latest_location')
+        assert.isNull(data.consent_document_id)
 
         const log = await db
             .from('activity_log')
@@ -351,29 +323,6 @@ test.group('Device: CRUD', (group) => {
         assert.deepEqual(log.properties, {
             attributes: { device_name: 'HP Gudang', status: 'pending_enrollment', is_active: true },
         })
-    })
-
-    test('consent site lain ditolak 422', async ({ client }) => {
-        const org = await makeOrganization()
-        const other = await makeOrganization()
-        const admin = await makeUser(org, 'site_admin')
-        const consentOther = await makeConsent(other, admin.id)
-
-        const response = await client
-            .post('/api/v1/devices')
-            .bearerToken(admin.bearer)
-            .json({
-                organization_id: org,
-                consent_document_id: consentOther,
-                device_name: 'HP',
-                device_uuid: `uuid-${randomBytes(6).toString('hex')}`,
-                android_version: '14',
-                app_build_version: '2.0.0',
-                site_code_embedded: 'SITE',
-            })
-
-        response.assertStatus(422)
-        response.assertBodyContains({ message: 'Dokumen consent tidak ditemukan untuk site ini' })
     })
 
     test('ubah nama device mencatat perubahan', async ({ client, assert }) => {

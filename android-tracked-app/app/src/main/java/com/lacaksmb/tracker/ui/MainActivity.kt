@@ -358,7 +358,7 @@ private fun EnrollmentScreen(
         Text("Lacak SMB", style = MaterialTheme.typography.headlineMedium)
         Text("Site: ${BuildConfig.SITE_NAME}", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Aplikasi pelacak resmi. Pendaftaran device hanya sah dengan dokumen consent yang berlaku.",
+            "Aplikasi pelacak resmi milik kantor untuk device ini.",
             style = MaterialTheme.typography.bodyMedium,
         )
 

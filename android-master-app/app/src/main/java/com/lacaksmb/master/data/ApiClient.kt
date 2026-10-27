@@ -4,13 +4,10 @@ import com.lacaksmb.master.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -177,41 +174,4 @@ class ApiClient(private val sessionStore: SessionStore) {
 
     suspend fun deleteGeofenceRule(id: Int): ApiResult =
         execute(authedBuilder("/geofence-rules/$id").delete().build())
-
-    // ---- Consent documents ----
-
-    suspend fun listConsentDocuments(organizationId: Int? = null): ApiResult {
-        val qp = organizationId?.let { "?organization_id=$it&per_page=100" } ?: "?per_page=100"
-        return execute(authedBuilder("/consent-documents$qp").get().build())
-    }
-
-    suspend fun createConsentDocument(
-        organizationId: Int,
-        subjectName: String,
-        signerName: String,
-        signerRole: String,
-        signedAt: String,
-        validUntil: String?,
-        documentFile: File,
-        documentMimeType: String,
-    ): ApiResult {
-        val multipart = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("organization_id", organizationId.toString())
-            .addFormDataPart("subject_name", subjectName)
-            .addFormDataPart("signer_name", signerName)
-            .addFormDataPart("signer_role", signerRole)
-            .addFormDataPart("signed_at", signedAt)
-            .apply { validUntil?.let { addFormDataPart("valid_until", it) } }
-            .addFormDataPart(
-                "document_file",
-                documentFile.name,
-                documentFile.asRequestBody(documentMimeType.toMediaType()),
-            )
-            .build()
-        return execute(authedBuilder("/consent-documents").post(multipart).build())
-    }
-
-    suspend fun revokeConsentDocument(id: Int): ApiResult =
-        execute(authedBuilder("/consent-documents/$id/revoke").post("".toRequestBody()).build())
 }

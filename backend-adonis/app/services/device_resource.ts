@@ -16,7 +16,7 @@ export const DEVICE_MORPH = 'App\\Models\\Device'
 export type DeviceRow = {
     id: number
     organization_id: number
-    consent_document_id: number
+    consent_document_id: number | null
     device_name: string
     device_uuid: string
     android_version: string
@@ -224,18 +224,6 @@ export async function latestLocationsOf(deviceIds: number[]) {
         .select('*')
     for (const row of rows) latest.set(Number(row.device_id), row as DeviceLocationRow)
     return latest
-}
-
-/** Status consent: ConsentDocument::isActive(). */
-export function isConsentActive(
-    consent: { revoked_at: Date | null; valid_until: Date | null } | null,
-    now = new Date()
-): boolean {
-    if (!consent) return false
-    if (consent.revoked_at !== null) return false
-    return !(
-        consent.valid_until !== null && new Date(consent.valid_until).getTime() < now.getTime()
-    )
 }
 
 // --- LogsActivity: logOnly(['device_name', 'status', 'is_active'])->logOnlyDirty()->dontSubmitEmptyLogs()

@@ -9,21 +9,11 @@ import {
     loggedAttributesOf,
     type GeofenceRuleRow,
 } from '#controllers/geofence_rules_controller'
-import {
-    CONSENT_DOCUMENT_MORPH,
-    consentDownloadName,
-    dateColumnValue,
-    isConsentActive,
-    laravelDateOnly,
-    type ConsentDocumentRow,
-} from '#controllers/consent_documents_controller'
 import { maskedTokenRef, stringInput } from '#controllers/telegram_bindings_controller'
 import { canManageStaffLink } from '#controllers/telegram_user_links_controller'
 import {
     paginationFrom,
-    parseLaravelDate,
     phpInteger,
-    storeConsentDocumentValidator,
     storeGeofenceRuleValidator,
     updateGeofenceRuleValidator,
 } from '#validators/rules'
@@ -52,7 +42,6 @@ async function validationErrorsOf(promise: Promise<unknown>) {
 test.group('Aturan: morph Laravel', () => {
     test('subject_type memakai satu backslash antar segmen', ({ assert }) => {
         assert.equal(GEOFENCE_RULE_MORPH, String.raw`App\Models\GeofenceRule`)
-        assert.equal(CONSENT_DOCUMENT_MORPH, String.raw`App\Models\ConsentDocument`)
     })
 })
 
@@ -63,16 +52,6 @@ test.group('Aturan: Str::slug & nama unduhan', () => {
         assert.equal(laravelSlug('José Ünïcode'), 'jose-unicode')
         assert.equal(laravelSlug('a@b'), 'a-at-b')
         assert.equal(laravelSlug('--x--'), 'x')
-    })
-
-    test('nama unduhan consent: slug-consent.ekstensi', ({ assert }) => {
-        assert.equal(
-            consentDownloadName({
-                subject_name: 'Siti Aminah',
-                document_file_path: 'consent-documents/3/AbC.pdf',
-            }),
-            'siti-aminah-consent.pdf'
-        )
     })
 
     test('Content-Disposition seperti HeaderUtils::makeDisposition', ({ assert }) => {
@@ -89,58 +68,6 @@ test.group('Aturan: Str::slug & nama unduhan', () => {
         assert.equal(mimeTypeFor('x/y.jpg'), 'image/jpeg')
         assert.equal(mimeTypeFor('x/y.bin'), 'application/octet-stream')
         assert.match(randomString(40), /^[A-Za-z0-9]{40}$/)
-    })
-})
-
-test.group('Aturan: dokumen consent', () => {
-    const base: ConsentDocumentRow = {
-        id: 1,
-        organization_id: 2,
-        subject_name: 'A',
-        signer_name: 'B',
-        signer_role: 'hrd',
-        document_file_path: 'consent-documents/2/x.pdf',
-        signed_at: '2026-10-01',
-        valid_until: null,
-        revoked_at: null,
-        created_at: null,
-    }
-
-    test('kolom date diserialisasi sebagai tengah malam UTC', ({ assert }) => {
-        assert.equal(laravelDateOnly('2026-10-01'), '2026-10-01T00:00:00.000000Z')
-        assert.equal(laravelDateOnly(new Date(2026, 9, 1)), '2026-10-01T00:00:00.000000Z')
-        assert.isNull(laravelDateOnly(null))
-    })
-
-    test('isActive: dicabut atau valid_until sudah lewat = tidak aktif', ({ assert }) => {
-        const now = new Date('2026-10-25T08:00:00Z')
-        assert.isTrue(isConsentActive(base, now))
-        assert.isTrue(isConsentActive({ ...base, valid_until: '2026-10-26' }, now))
-        // Tengah malam hari itu sudah lewat -> isPast() true.
-        assert.isFalse(isConsentActive({ ...base, valid_until: '2026-10-25' }, now))
-        assert.isFalse(isConsentActive({ ...base, revoked_at: new Date() }, now))
-    })
-
-    test('tanggal isian disimpan sebagai Y-m-d', ({ assert }) => {
-        assert.equal(dateColumnValue('2026-10-01'), '2026-10-01')
-        assert.equal(dateColumnValue('2026-10-01T23:00:00+07:00'), '2026-10-01')
-        assert.isNull(parseLaravelDate('bukan tanggal'))
-    })
-
-    test('validasi: pesan bawaan Laravel (en)', async ({ assert }) => {
-        const errors = await validationErrorsOf(
-            storeConsentDocumentValidator.validate({
-                subject_name: 'A',
-                signer_name: 'B',
-                signer_role: 'direktur',
-                signed_at: '2026-10-10',
-                valid_until: '2026-10-01',
-            })
-        )
-        assert.equal(errors.organization_id, 'The organization id field is required.')
-        assert.equal(errors.signer_role, 'The selected signer role is invalid.')
-        assert.equal(errors.document_file, 'The document file field is required.')
-        assert.equal(errors.valid_until, 'The valid until field must be a date after signed at.')
     })
 })
 

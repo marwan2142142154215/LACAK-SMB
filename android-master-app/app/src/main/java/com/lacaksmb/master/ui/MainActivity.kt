@@ -66,9 +66,6 @@ fun MasterApp(sessionStore: SessionStore, apiClient: ApiClient) {
         composable(Routes.GEOFENCE) {
             GeofenceScreen(apiClient = apiClient, sessionStore = sessionStore, navController = navController)
         }
-        composable(Routes.CONSENT) {
-            ConsentScreen(apiClient = apiClient, sessionStore = sessionStore, navController = navController)
-        }
         composable(Routes.DOWNLOAD_APK) {
             DownloadApkScreen(apiClient = apiClient, sessionStore = sessionStore, navController = navController)
         }
@@ -82,7 +79,6 @@ object Routes {
     const val DEVICE_DETAIL = "device_detail/{deviceId}"
     const val RADAR = "radar"
     const val GEOFENCE = "geofence"
-    const val CONSENT = "consent"
     const val DOWNLOAD_APK = "download_apk"
 
     fun deviceDetail(id: Int) = "device_detail/$id"

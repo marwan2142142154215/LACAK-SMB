@@ -1,14 +1,7 @@
 import { test } from '@japa/runner'
 import db from '@adonisjs/lucid/services/db'
 import testUtils from '@adonisjs/core/services/test_utils'
-import { laravelUrlSigner } from '#services/laravel/index'
-import {
-    bearerFor,
-    makeConsentDocument,
-    makeDevice,
-    makeOrganization,
-    makeUser,
-} from './rules_helpers.js'
+import { bearerFor, makeDevice, makeOrganization, makeUser } from './rules_helpers.js'
 
 /**
  * Padanan tests/Feature/GeofenceRuleAuthorizationTest.php: 'exists:devices,id'
@@ -134,42 +127,5 @@ test.group('Aturan geofence: anchor device lintas site', (group) => {
 
         response.assertStatus(403)
         response.assertBodyContains({ message: 'Anda tidak berwenang melakukan tindakan ini' })
-    })
-})
-
-test.group('Dokumen consent: scoping & unduhan bertanda tangan', (group) => {
-    group.each.setup(() => testUtils.db().withGlobalTransaction())
-
-    test('site_admin tidak bisa melihat dokumen site lain', async ({ client }) => {
-        const orgA = await makeOrganization()
-        const orgB = await makeOrganization()
-        const admin = await makeUser(orgA, 'site_admin')
-        const documentOfOrgB = await makeConsentDocument(orgB, admin)
-
-        const response = await client
-            .get(`/api/v1/consent-documents/${documentOfOrgB}`)
-            .bearerToken(await bearerFor(admin))
-
-        response.assertStatus(403)
-        response.assertBodyContains({ message: 'Anda tidak berwenang melihat dokumen ini' })
-    })
-
-    test('unduhan tanpa tanda tangan ditolak, bertanda tangan tapi berkas hilang 404', async ({
-        client,
-    }) => {
-        const org = await makeOrganization()
-        const admin = await makeUser(org, 'site_admin')
-        const documentId = await makeConsentDocument(org, admin)
-        const path = `/api/v1/consent-documents/${documentId}/download`
-
-        const unsigned = await client.get(path)
-        unsigned.assertStatus(403)
-
-        const signedUrl = new URL(
-            laravelUrlSigner.temporarySignedUrl(path, new Date(Date.now() + 60_000))
-        )
-        const signed = await client.get(`${path}${signedUrl.search}`)
-        signed.assertStatus(404)
-        signed.assertBodyContains({ message: 'Berkas tidak ditemukan' })
     })
 })
