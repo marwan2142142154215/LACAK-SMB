@@ -1,5 +1,5 @@
 <script setup>
-import { ChevronDown, ChevronLeft, ChevronRight, Download, LayoutGrid, ScanFace, Search, UserRound, X } from '@lucide/vue'
+import { ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, Search, UserRound, X } from '@lucide/vue'
 import dayjs from 'dayjs'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -9,14 +9,13 @@ import Readout from '@/components/ui/Readout.vue'
 import { useToast } from '@/composables/useToast'
 import { CHART_GROUPS, buildSegments, clipSegments, groupTotals } from '@/lib/activityTimeline'
 import api from '@/lib/api'
+import { FACE_LOG_MIN_MS, faceGaps } from '@/lib/faceLog'
 import { WORK_EVENT_LABELS, formatDuration, workStatus } from '@/lib/workStatus'
 
 const ALL_SITES = 'all'
 const DAYS_IN_CHART = 7
 const HOUR_TICKS = [0, 3, 6, 9, 12, 15, 18, 21, 24]
 const ATTENTION_EVENTS = ['disconnected', 'timeout', 'screen_stop', 'camera_stop']
-// Wajah hilang baru masuk log setelah 5 menit (FACE_LOG_MIN_SECONDS di server).
-const FACE_LOG_MIN_MS = 5 * 60_000
 
 const toast = useToast()
 
@@ -131,33 +130,6 @@ const rows = computed(() => {
         })
         .sort((a, b) => b.totals.working - a.totals.working || a.name.localeCompare(b.name))
 })
-
-/**
- * Selang "wajah hilang" di hari itu: face_lost -> face_back, atau sampai
- * sesi selesai. `back` = cara berakhirnya: 'face' (wajah terlihat lagi),
- * 'ended' (selesai kerja / logout), null (masih hilang sekarang).
- * Hanya selang minimal FACE_LOG_MIN_MS yang ditampilkan (sama dengan server,
- * yang menghapus catatan lebih singkat); yang masih berlangsung muncul begitu
- * mencapai batas itu.
- */
-function faceGaps(dayEvents, endMs) {
-    return allFaceGaps(dayEvents, endMs).filter((gap) => gap.end - gap.start >= FACE_LOG_MIN_MS)
-}
-
-function allFaceGaps(dayEvents, endMs) {
-    const gaps = []
-    let lostAt = null
-    for (const event of dayEvents) {
-        const at = new Date(event.occurred_at).getTime()
-        if (event.type === 'face_lost') lostAt ??= at
-        else if (lostAt !== null && (event.type === 'face_back' || event.status === 'offline')) {
-            gaps.push({ start: lostAt, end: at, back: event.type === 'face_back' ? 'face' : 'ended' })
-            lostAt = null
-        }
-    }
-    if (lostAt !== null) gaps.push({ start: lostAt, end: Math.max(lostAt, endMs), back: null })
-    return gaps
-}
 
 function inDay(event) {
     const at = new Date(event.occurred_at).getTime()
@@ -285,36 +257,6 @@ const selectedNotes = computed(() =>
 )
 
 // ---- Log kejadian (semua staf yang tampil, hari terpilih)
-// ---- Log wajah: siapa, jam berapa wajah tidak terlihat & kembali terlihat.
-const faceLog = computed(() =>
-    rows.value
-        .flatMap((row) => row.faceGaps.map((gap) => ({ ...gap, name: row.name, siteId: row.siteId, userId: row.id })))
-        .sort((a, b) => b.start - a.start),
-)
-
-function faceBackLabel(gap) {
-    if (gap.back === 'face') return dayjs(gap.end).format('HH:mm:ss')
-    if (gap.back === 'ended') return `Selesai kerja ${dayjs(gap.end).format('HH:mm')}`
-    return 'Belum terlihat'
-}
-
-function downloadFaceLog() {
-    const header = ['Tanggal', 'Staf', 'Site', 'Wajah tidak terlihat', 'Wajah kembali terlihat', 'Lama (menit)']
-    const lines = faceLog.value.map((gap) => [
-        dayjs(gap.start).format('YYYY-MM-DD'),
-        gap.name,
-        siteNames.value[gap.siteId] ?? '',
-        dayjs(gap.start).format('HH:mm:ss'),
-        faceBackLabel(gap),
-        Math.round((gap.end - gap.start) / 60_000),
-    ])
-    const csv = [header, ...lines].map((cells) => cells.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\r\n')
-    const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }))
-    const link = Object.assign(document.createElement('a'), { href: url, download: `log-wajah-${day.value.format('YYYY-MM-DD')}.csv` })
-    link.click()
-    URL.revokeObjectURL(url)
-}
-
 // Kejadian face_lost/face_back dari wajah hilang < 5 menit (catatan lama
 // sebelum aturan 5 menit, atau yang masih berlangsung): tidak ditampilkan.
 const shortFaceEventIds = computed(() => {
@@ -360,7 +302,13 @@ const dayLog = computed(() => {
                 <Readout v-if="workingNow !== null" label="Working sekarang" :value="workingNow" :led="workingNow ? 'accent' : 'muted'" />
                 <Readout label="Istirahat" :value="formatDuration(dayTotals.break / 1000)" />
                 <Readout label="Gangguan" :value="attentionCount" :led="attentionCount ? 'warning' : 'muted'" />
-                <Readout label="Wajah hilang" :value="faceLostToday" :led="faceLostToday ? 'warning' : 'muted'" />
+                <router-link
+                    :to="{ name: 'face-log' }"
+                    class="-m-1 rounded-lg p-1 hover:bg-base-850 focus-visible:outline-2 focus-visible:outline-accent-400"
+                    title="Buka Log wajah hilang"
+                >
+                    <Readout label="Wajah hilang" :value="faceLostToday" :led="faceLostToday ? 'warning' : 'muted'" />
+                </router-link>
             </div>
             <p class="text-[12px] text-base-500 font-semibold">{{ workedCount }} dari {{ people.length }} staf bekerja</p>
         </div>
@@ -643,68 +591,6 @@ const dayLog = computed(() => {
                     </dl>
                 </section>
             </div>
-
-            <!-- Log wajah: jam wajah tidak terlihat & kembali terlihat per staf -->
-            <section
-                class="overflow-hidden rounded-xl border border-base-800 bg-base-900 shadow-(--shadow-card)"
-                aria-labelledby="face-log-title"
-            >
-                <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
-                    <div>
-                        <h2
-                            id="face-log-title"
-                            class="flex items-center gap-2 font-display text-base font-bold text-base-50 tracking-[-0.015em]"
-                        >
-                            <ScanFace class="size-4 text-danger-400" />
-                            Log wajah hilang
-                            <span class="font-mono text-xs font-normal text-base-500 tabular-nums">{{ faceLog.length }}</span>
-                        </h2>
-                        <p class="mt-0.5 text-xs text-base-500">
-                            Kamera menyala tapi wajah tidak terlihat 5 menit atau lebih (yang lebih singkat tidak dicatat). Hanya catatan —
-                            jam kerja tetap dihitung.
-                        </p>
-                    </div>
-                    <BaseButton v-if="faceLog.length" variant="outline" size="sm" @click="downloadFaceLog">
-                        <Download class="size-4" />
-                        Unduh CSV
-                    </BaseButton>
-                </div>
-                <p v-if="!faceLog.length" class="border-t border-base-800 px-5 py-6 text-center text-sm text-base-500">
-                    Tidak ada wajah hilang di {{ dayLabel.toLowerCase() }}.
-                </p>
-                <div v-else class="max-h-[28rem] overflow-auto border-t border-base-800">
-                    <table class="data-table">
-                        <thead class="sticky top-0 bg-base-900">
-                            <tr>
-                                <th>Staf</th>
-                                <th v-if="siteFilter === ALL_SITES">Site</th>
-                                <th>Wajah tidak terlihat</th>
-                                <th>Wajah kembali terlihat</th>
-                                <th>Lama</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="gap in faceLog" :key="`${gap.userId}-${gap.start}`">
-                                <td>
-                                    <button
-                                        type="button"
-                                        class="font-medium text-base-100 hover:text-accent-400 hover:underline"
-                                        @click="selectedId = gap.userId"
-                                    >
-                                        {{ gap.name }}
-                                    </button>
-                                </td>
-                                <td v-if="siteFilter === ALL_SITES" class="text-base-400">{{ siteNames[gap.siteId] ?? '—' }}</td>
-                                <td class="font-mono text-danger-400 tabular-nums">{{ dayjs(gap.start).format('HH:mm:ss') }}</td>
-                                <td class="font-mono tabular-nums" :class="gap.back === 'face' ? 'text-base-100' : 'text-warning-400'">
-                                    {{ faceBackLabel(gap) }}
-                                </td>
-                                <td class="font-mono text-base-300 tabular-nums">{{ formatDuration((gap.end - gap.start) / 1000) }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
 
             <!-- Log kejadian mentah -->
             <section class="overflow-hidden rounded-xl border border-base-800 bg-base-900 shadow-(--shadow-card)">

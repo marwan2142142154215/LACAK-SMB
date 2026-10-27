@@ -57,6 +57,12 @@ const routes = [
                 name: 'activity',
                 component: () => import('@/views/ActivityView.vue'),
             },
+            {
+                path: 'wajah',
+                name: 'face-log',
+                component: () => import('@/views/FaceLogView.vue'),
+                meta: { permission: 'live.watch' },
+            },
             // Alamat lama "Log kerja" -- isinya sekarang bagian dari Aktivitas user.
             { path: 'live/log', name: 'work-log', redirect: { name: 'activity' } },
             {
