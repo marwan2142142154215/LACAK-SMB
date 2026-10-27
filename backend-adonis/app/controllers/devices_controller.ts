@@ -7,7 +7,6 @@ import {
     deviceResource,
     eloquentNow,
     findDeviceOrFail,
-    isConsentActive,
     latestLocationsOf,
     logDeviceCreated,
     logDeviceDeleted,
@@ -81,34 +80,11 @@ export default class DevicesController {
                 .send(fail('Anda tidak berwenang mendaftarkan device untuk site ini'))
         }
 
-        const consent = await db
-            .from('consent_documents')
-            .where('id', input.consent_document_id)
-            .first()
-
-        // Tidak ada device tanpa consent yang sah dan masih berlaku — ditegakkan
-        // di aplikasi, bukan cuma di skema DB (lihat docs/skema-database.md).
-        if (!consent || Number(consent.organization_id) !== organizationId) {
-            return ctx.response
-                .status(422)
-                .send(fail('Dokumen consent tidak ditemukan untuk site ini'))
-        }
-
-        if (!isConsentActive(consent)) {
-            return ctx.response
-                .status(422)
-                .send(
-                    fail(
-                        'Dokumen consent sudah dicabut/kedaluwarsa, tidak bisa dipakai mendaftarkan device'
-                    )
-                )
-        }
-
         const now = eloquentNow()
         const userId = ctx.authUser!.id
         const values = {
             organization_id: organizationId,
-            consent_document_id: Number(consent.id),
+            consent_document_id: null,
             device_name: input.device_name,
             device_uuid: input.device_uuid,
             android_version: input.android_version,

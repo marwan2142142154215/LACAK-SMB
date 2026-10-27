@@ -91,26 +91,6 @@ async function siteAdmin(organizationId: number) {
     return { userId: user.id as number, bearer: `${token.id}|${plain}` }
 }
 
-async function consent(organizationId: number, userId: number, revoked = false) {
-    const [row] = await db
-        .table('consent_documents')
-        .insert({
-            organization_id: organizationId,
-            subject_name: 'Pemegang HP',
-            signer_name: 'HRD',
-            signer_role: 'hrd',
-            document_file_path: 'consent-documents/uji.pdf',
-            signed_at: '2026-01-01',
-            valid_until: null,
-            revoked_at: revoked ? new Date() : null,
-            created_by: userId,
-            created_at: new Date(),
-            updated_at: new Date(),
-        })
-        .returning(['id'])
-    return row.id as number
-}
-
 /** Job build untuk apk_build ini (lalu dibuang dari antrean). */
 async function takeBuildJob(apkBuildId: number) {
     const jobs = await appQueue().getJobs(['waiting', 'delayed', 'prioritized'])
@@ -131,15 +111,13 @@ test.group('APK build: zero-touch (ApkBuildZeroTouchTest)', (group) => {
         assert,
     }) => {
         const org = await organization()
-        const { userId, bearer } = await siteAdmin(org)
-        const consentId = await consent(org, userId)
+        const { bearer } = await siteAdmin(org)
 
         const response = await client.post('/api/v1/apk-builds/generate').bearerToken(bearer).json({
             organization_id: org,
             apk_type: 'tracker',
             version: '1.0.0',
             device_name: 'HP Test Zero-Touch',
-            consent_document_id: consentId,
         })
 
         response.assertStatus(202)
@@ -152,7 +130,7 @@ test.group('APK build: zero-touch (ApkBuildZeroTouchTest)', (group) => {
         assert.isNotNull(device)
         assert.isNotEmpty(device.device_uuid)
         assert.match(device.secret_hash, /^[0-9a-f]{64}$/)
-        assert.equal(device.consent_document_id, consentId)
+        assert.isNull(device.consent_document_id)
         assert.equal(device.status, 'pending_enrollment')
 
         const buildId = response.body().data.id
@@ -164,42 +142,6 @@ test.group('APK build: zero-touch (ApkBuildZeroTouchTest)', (group) => {
         const secret = decodeDeviceSecret(payload!)
         assert.isNotNull(secret)
         assert.equal(createHash('sha256').update(secret!).digest('hex'), device.secret_hash)
-    })
-
-    test('build APK tracker ditolak kalau consent sudah dicabut', async ({ client, assert }) => {
-        const org = await organization()
-        const { userId, bearer } = await siteAdmin(org)
-        const consentId = await consent(org, userId, true)
-
-        const response = await client.post('/api/v1/apk-builds/generate').bearerToken(bearer).json({
-            organization_id: org,
-            apk_type: 'tracker',
-            device_name: 'HP Test Dicabut',
-            consent_document_id: consentId,
-        })
-
-        response.assertStatus(422)
-        response.assertBodyContains({
-            message: 'Dokumen consent sudah dicabut/kedaluwarsa, tidak bisa dipakai membuat APK',
-        })
-        assert.isNull(await db.from('devices').where('device_name', 'HP Test Dicabut').first())
-    })
-
-    test('build APK tracker ditolak kalau consent milik site lain', async ({ client }) => {
-        const orgA = await organization()
-        const orgB = await organization()
-        const { userId, bearer } = await siteAdmin(orgA)
-        const consentOfOrgB = await consent(orgB, userId)
-
-        const response = await client.post('/api/v1/apk-builds/generate').bearerToken(bearer).json({
-            organization_id: orgA,
-            apk_type: 'tracker',
-            device_name: 'HP Test',
-            consent_document_id: consentOfOrgB,
-        })
-
-        response.assertStatus(422)
-        response.assertBodyContains({ message: 'Dokumen consent tidak ditemukan untuk site ini' })
     })
 
     test('build APK master TIDAK membuat device sama sekali', async ({ client, assert }) => {
@@ -221,7 +163,7 @@ test.group('APK build: zero-touch (ApkBuildZeroTouchTest)', (group) => {
         assert.isNull(payload!.deviceSecret)
     })
 
-    test('build APK live diterima tanpa device & consent', async ({ client, assert }) => {
+    test('build APK live diterima tanpa device', async ({ client, assert }) => {
         const org = await organization()
         const { bearer } = await siteAdmin(org)
 
@@ -252,9 +194,6 @@ test.group('APK build: zero-touch (ApkBuildZeroTouchTest)', (group) => {
             errors: {
                 version: ['The version field format is invalid.'],
                 device_name: ['The device name field is required when apk type is tracker.'],
-                consent_document_id: [
-                    'The consent document id field is required when apk type is tracker.',
-                ],
             },
         })
     })

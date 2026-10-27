@@ -86,11 +86,6 @@ const routes = [
                 meta: { requiresSuperAdmin: true },
             },
             {
-                path: 'consent-documents',
-                name: 'consent-documents',
-                component: () => import('@/views/ConsentDocumentsView.vue'),
-            },
-            {
                 path: 'geofence-rules',
                 name: 'geofence-rules',
                 component: () => import('@/views/GeofenceRulesView.vue'),

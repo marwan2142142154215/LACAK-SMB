@@ -3,7 +3,6 @@ import { DateTime } from 'luxon'
 import logger from '#services/log'
 import Device from '#models/device'
 import Organization from '#models/organization'
-import ConsentDocument from '#models/consent_document'
 import ApkBuild from '#models/apk_build'
 import DeviceLocation from '#models/device_location'
 import GeofenceRule from '#models/geofence_rule'
@@ -219,14 +218,6 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                         socket.emit('device:rejected', { message: PIRACY_WARNING })
                         return socket.disconnect(true)
                     }
-                }
-
-                const consent = await ConsentDocument.find(device.consentDocumentId)
-                if (!consent || !consent.isActive()) {
-                    socket.emit('device:rejected', {
-                        message: 'Dokumen consent sudah tidak berlaku, hubungi admin',
-                    })
-                    return socket.disconnect(true)
                 }
 
                 clearTimeout(helloTimeout)

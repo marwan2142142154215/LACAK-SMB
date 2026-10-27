@@ -30,7 +30,7 @@ const CATEGORIES = {
     staf: { label: 'Staf', icon: Users, tone: 'text-accent-400 bg-accent-500/10' },
     device: { label: 'Device', icon: Smartphone, tone: 'text-copper-400 bg-copper-400/10' },
     perintah: { label: 'Perintah device', icon: Lock, tone: 'text-danger-400 bg-danger-500/10' },
-    aturan: { label: 'Aturan & consent', icon: MapPinned, tone: 'text-st-camera bg-st-camera/10' },
+    aturan: { label: 'Aturan', icon: MapPinned, tone: 'text-st-camera bg-st-camera/10' },
     apk: { label: 'Build APK', icon: PackageOpen, tone: 'text-st-idle bg-st-idle/10' },
     telegram: { label: 'Telegram', icon: Send, tone: 'text-st-break bg-st-break/10' },
     site: { label: 'Site', icon: Building2, tone: 'text-base-300 bg-base-800' },

@@ -17,7 +17,7 @@ export default class Device extends BaseModel {
     declare organizationId: number
 
     @column()
-    declare consentDocumentId: number
+    declare consentDocumentId: number | null
 
     @column()
     declare deviceName: string

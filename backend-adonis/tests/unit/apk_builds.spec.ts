@@ -4,7 +4,6 @@ import {
     DEVICE_MORPH,
     downloadFilename,
     guessExtension,
-    isConsentActive,
     laravelRandomString,
     laravelSlug,
     phpIntval,
@@ -222,15 +221,6 @@ test.group('APK build: resource & unduhan', () => {
         assert.equal(laravelSlug('Café Ünïcode'), 'cafe-unicode')
         assert.equal(laravelSlug('a@b'), 'a-at-b')
         assert.equal(laravelSlug('--Site--'), 'site')
-    })
-
-    test('consent aktif: belum dicabut dan valid_until belum lewat', ({ assert }) => {
-        const now = new Date('2026-10-25T10:00:00Z')
-        assert.isTrue(isConsentActive(null, null, now))
-        assert.isTrue(isConsentActive(null, '2026-10-26', now))
-        // cast 'date' = pukul 00:00 hari itu -> sudah lewat siang harinya.
-        assert.isFalse(isConsentActive(null, '2026-10-25', now))
-        assert.isFalse(isConsentActive(new Date(), null, now))
     })
 
     test('intval PHP, Str::random, dan tebakan ekstensi', ({ assert }) => {

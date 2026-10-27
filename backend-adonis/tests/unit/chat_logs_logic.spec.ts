@@ -369,7 +369,7 @@ test.group('Log aktivitas: middleware RecordApiActivity', () => {
             ),
             'Menyalakan 2FA wajib untuk semua akun'
         )
-        assert.equal(Object.keys(ACTIONS).length, 39)
+        assert.equal(Object.keys(ACTIONS).length, 37)
     })
 
     test('input aman, hasil, site catatan', ({ assert }) => {

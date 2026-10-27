@@ -29,7 +29,6 @@ data class DeviceLocation(
 data class Device(
     val id: Int,
     val organizationId: Int,
-    val consentDocumentId: Int?,
     val deviceName: String,
     val deviceUuid: String,
     val androidVersion: String,
@@ -45,7 +44,6 @@ data class Device(
         fun fromJson(json: JSONObject): Device = Device(
             id = json.optInt("id"),
             organizationId = json.optInt("organization_id"),
-            consentDocumentId = if (json.isNull("consent_document_id")) null else json.optInt("consent_document_id"),
             deviceName = json.optString("device_name"),
             deviceUuid = json.optString("device_uuid"),
             androidVersion = json.optString("android_version"),
@@ -77,34 +75,6 @@ data class GeofenceRule(
             allowedSsid = if (json.isNull("allowed_ssid")) null else json.optString("allowed_ssid"),
             allowedIpCidr = if (json.isNull("allowed_ip_cidr")) null else json.optString("allowed_ip_cidr"),
             maxDistanceMeters = if (json.isNull("max_distance_meters")) null else json.optInt("max_distance_meters"),
-            isActive = json.optBoolean("is_active", true),
-        )
-    }
-}
-
-data class ConsentDocument(
-    val id: Int,
-    val organizationId: Int,
-    val subjectName: String,
-    val signerName: String,
-    val signerRole: String,
-    val documentUrl: String?,
-    val signedAt: String?,
-    val validUntil: String?,
-    val revokedAt: String?,
-    val isActive: Boolean,
-) {
-    companion object {
-        fun fromJson(json: JSONObject): ConsentDocument = ConsentDocument(
-            id = json.optInt("id"),
-            organizationId = json.optInt("organization_id"),
-            subjectName = json.optString("subject_name"),
-            signerName = json.optString("signer_name"),
-            signerRole = json.optString("signer_role"),
-            documentUrl = if (json.isNull("document_url")) null else json.optString("document_url"),
-            signedAt = if (json.isNull("signed_at")) null else json.optString("signed_at"),
-            validUntil = if (json.isNull("valid_until")) null else json.optString("valid_until"),
-            revokedAt = if (json.isNull("revoked_at")) null else json.optString("revoked_at"),
             isActive = json.optBoolean("is_active", true),
         )
     }

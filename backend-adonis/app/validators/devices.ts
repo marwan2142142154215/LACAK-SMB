@@ -117,10 +117,6 @@ export const storeDeviceValidator = compile(
             .number()
             .withoutDecimals()
             .use(existsIn({ table: 'organizations' })),
-        consent_document_id: vine
-            .number()
-            .withoutDecimals()
-            .use(existsIn({ table: 'consent_documents' })),
         device_name: vine.string().maxLength(255),
         device_uuid: vine
             .string()
@@ -132,7 +128,6 @@ export const storeDeviceValidator = compile(
     }),
     [
         'organization_id',
-        'consent_document_id',
         'device_name',
         'device_uuid',
         'android_version',

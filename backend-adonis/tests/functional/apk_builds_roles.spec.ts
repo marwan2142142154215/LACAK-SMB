@@ -175,12 +175,6 @@ test.group('Build APK: peran yang boleh', (group) => {
             const list = await client.get('/api/v1/apk-builds').bearerToken(bearer)
             list.assertStatus(200)
 
-            const consents = await client
-                .get('/api/v1/consent-documents')
-                .qs({ organization_id: mine })
-                .bearerToken(bearer)
-            consents.assertStatus(200)
-
             const foreign = await client
                 .post('/api/v1/apk-builds/generate')
                 .json({ organization_id: other, apk_type: 'live', version: '1.0.0' })
@@ -191,8 +185,6 @@ test.group('Build APK: peran yang boleh', (group) => {
         const staff = await userWithRole('staff_viewer', mine)
         const denied = await client.get('/api/v1/apk-builds').bearerToken(staff)
         denied.assertStatus(403)
-        const deniedConsents = await client.get('/api/v1/consent-documents').bearerToken(staff)
-        deniedConsents.assertStatus(403)
     })
 
     test('SMB Live Kerja cukup satu: build kedua ditolak selama yang lama ada', async ({

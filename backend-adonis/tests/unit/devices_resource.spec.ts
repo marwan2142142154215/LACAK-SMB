@@ -5,7 +5,6 @@ import {
     deviceCommandResource,
     deviceResource,
     dirtyChanges,
-    isConsentActive,
     laravelDecimal,
     pageOf,
     perPageOf,
@@ -210,25 +209,6 @@ test.group('Device: paginate & intval seperti Laravel', () => {
 })
 
 test.group('Device: aturan model', () => {
-    test('consent aktif = belum dicabut dan belum lewat valid_until', ({ assert }) => {
-        const now = new Date('2026-10-25T00:00:00Z')
-        assert.isTrue(isConsentActive({ revoked_at: null, valid_until: null }, now))
-        assert.isFalse(isConsentActive({ revoked_at: new Date(), valid_until: null }, now))
-        assert.isFalse(
-            isConsentActive(
-                { revoked_at: null, valid_until: new Date('2026-10-24T00:00:00Z') },
-                now
-            )
-        )
-        assert.isTrue(
-            isConsentActive(
-                { revoked_at: null, valid_until: new Date('2026-10-26T00:00:00Z') },
-                now
-            )
-        )
-        assert.isFalse(isConsentActive(null, now))
-    })
-
     test('isDirty: nilai sama tidak dihitung berubah', ({ assert }) => {
         const device = deviceRow()
         assert.deepEqual(dirtyChanges(device, { status: 'online', updated_by: 1 }), {})

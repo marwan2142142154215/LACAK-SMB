@@ -7,7 +7,6 @@ import {
     deviceCommandResource,
     eloquentNow,
     findDeviceOrFail,
-    isConsentActive,
     logDeviceUpdated,
     paginate,
     updateDevice,
@@ -70,22 +69,6 @@ export default class DeviceCommandsController {
             return ctx.response
                 .status(403)
                 .send(fail('Anda tidak berwenang mengirim perintah ke device ini'))
-        }
-
-        // 'unlock' tetap diizinkan walau consent sudah dicabut/kedaluwarsa,
-        // supaya device tidak pernah terkunci permanen tanpa jalan keluar.
-        const consent = await db
-            .from('consent_documents')
-            .where('id', device.consent_document_id)
-            .first()
-        if (data.command_type !== 'unlock' && !isConsentActive(consent ?? null)) {
-            return ctx.response
-                .status(422)
-                .send(
-                    fail(
-                        'Dokumen consent device ini sudah tidak berlaku. Hanya perintah unlock yang diizinkan.'
-                    )
-                )
         }
 
         if (!device.is_active) {

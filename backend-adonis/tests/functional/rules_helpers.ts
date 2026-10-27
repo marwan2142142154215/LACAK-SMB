@@ -44,13 +44,8 @@ export async function makeUser(organizationId: number | null, role?: string): Pr
 
 /** Izin minimal per peran yang dipakai tes ini (subset RolesAndPermissionsSeeder). */
 const ROLE_PERMISSIONS: Record<string, string[]> = {
-    super_admin: ['geofence-rules.manage', 'consent-documents.manage', 'telegram.manage'],
-    site_admin: [
-        'geofence-rules.manage',
-        'consent-documents.manage',
-        'telegram.manage',
-        'devices.lock',
-    ],
+    super_admin: ['geofence-rules.manage', 'telegram.manage'],
+    site_admin: ['geofence-rules.manage', 'telegram.manage', 'devices.lock'],
     staff_viewer: [],
     telegram_bot_service: [],
 }
@@ -100,31 +95,11 @@ export async function bearerFor(userId: number): Promise<string> {
     return `${row.id}|${plain}`
 }
 
-export async function makeConsentDocument(organizationId: number, createdBy: number) {
-    const [row] = await db
-        .table('consent_documents')
-        .insert({
-            organization_id: organizationId,
-            subject_name: 'Subjek Uji',
-            signer_name: 'Penanda Tangan',
-            signer_role: 'hrd',
-            document_file_path: `consent-documents/${organizationId}/tidak-ada-${suffix()}.pdf`,
-            signed_at: '2026-10-01',
-            created_by: createdBy,
-            created_at: new Date(),
-            updated_at: new Date(),
-        })
-        .returning(['id'])
-    return row.id as number
-}
-
 export async function makeDevice(organizationId: number, createdBy: number): Promise<number> {
-    const consentDocumentId = await makeConsentDocument(organizationId, createdBy)
     const [row] = await db
         .table('devices')
         .insert({
             organization_id: organizationId,
-            consent_document_id: consentDocumentId,
             device_name: `Device ${suffix()}`,
             device_uuid: `uuid-${suffix()}-${suffix()}`,
             android_version: '14',
@@ -132,6 +107,7 @@ export async function makeDevice(organizationId: number, createdBy: number): Pro
             site_code_embedded: `SITE-${suffix()}`,
             status: 'online',
             is_active: true,
+            created_by: createdBy,
             created_at: new Date(),
             updated_at: new Date(),
         })
