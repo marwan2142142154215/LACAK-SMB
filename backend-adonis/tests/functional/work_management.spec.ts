@@ -479,3 +479,77 @@ test.group('Peringatan belum Mulai kerja', (group) => {
         )
     })
 })
+
+test.group('Batas site: izin staf pindah & pengingat briefing', (group) => {
+    group.each.setup(() => testUtils.db().withGlobalTransaction())
+
+    test('pengajuan staf yang pindah site ditinjau pengelola site barunya', async ({ client }) => {
+        const oldSite = await site('Site Lama')
+        const newSite = await site('Site Baru')
+        const oldLeader = await person('leader', null, [oldSite])
+        const newLeader = await person('leader', null, [newSite])
+        const staff = await person('staff_viewer', oldSite)
+        const day = localDate(new Date(Date.now() + 3 * 86_400_000))
+
+        const submitted = await client
+            .post('/api/v1/leave-requests')
+            .json({ type: 'cuti', start_date: day, end_date: day, reason: 'Urusan keluarga' })
+            .bearerToken(staff.bearer)
+        submitted.assertStatus(201)
+        await db.from('users').where('id', staff.id).update({ organization_id: newSite })
+
+        const byOld = await client
+            .post(`/api/v1/leave-requests/${submitted.body().data.id}/review`)
+            .json({ status: 'approved' })
+            .bearerToken(oldLeader.bearer)
+        byOld.assertStatus(403)
+        const byNew = await client
+            .post(`/api/v1/leave-requests/${submitted.body().data.id}/review`)
+            .json({ status: 'approved' })
+            .bearerToken(newLeader.bearer)
+        byNew.assertStatus(200)
+    })
+
+    test('pengingat briefing hanya ke chat site yang dipegang pemimpin', async ({
+        client,
+        assert,
+    }) => {
+        const mine = await site('Site Pemimpin')
+        const other = await site('Site Rumah Tamu')
+        const host = await person('leader', null, [mine])
+        const staff = await person('staff_viewer', mine)
+        // Leader dari site lain yang diberi akses ke site pemimpin: bisa diundang.
+        const guest = await person('leader', other, [mine])
+        const tomorrow = localDate(new Date(Date.now() + 86_400_000))
+
+        const scheduled = await client
+            .post('/api/v1/briefings')
+            .json({
+                title: 'Rapat rahasia',
+                user_ids: [staff.id, guest.id],
+                schedule: {
+                    date: tomorrow,
+                    time: '09:00',
+                    recurrence: 'once',
+                    duration_minutes: 30,
+                },
+            })
+            .bearerToken(host.bearer)
+        scheduled.assertStatus(201)
+        const schedule = await db
+            .from('briefing_schedules')
+            .where('id', scheduled.body().data.schedule.id)
+            .first()
+
+        await runBriefingSchedules(new Date(schedule.next_run_at.getTime() - 5 * 60_000))
+        const reminders = await db
+            .from('work_alerts')
+            .where('type', 'briefing_reminder')
+            .whereIn('organization_id', [mine, other])
+            .select('organization_id')
+        assert.deepEqual(
+            reminders.map((row) => row.organization_id),
+            [mine]
+        )
+    })
+})
