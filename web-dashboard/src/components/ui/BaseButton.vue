@@ -13,8 +13,8 @@ const props = defineProps({
 const variantClasses = computed(
     () =>
         ({
-            // Tombol utama = tinta (navy di tema terang, putih di tema gelap)
-            primary: 'bg-base-50 text-base-950 shadow-(--shadow-card) hover:bg-base-200',
+            // Tombol utama = biru aksen, satu-satunya isian berwarna di halaman
+            primary: 'bg-accent-500 text-white shadow-sm hover:bg-accent-600',
             outline: 'border border-base-700 bg-base-900 text-base-100 shadow-(--shadow-card) hover:border-base-600 hover:bg-base-850',
             ghost: 'text-base-300 hover:bg-base-850 hover:text-base-50',
             danger: 'bg-danger-500 text-white hover:bg-danger-600',
@@ -37,7 +37,7 @@ const sizeClasses = computed(
     <button
         :type="type"
         :disabled="disabled || loading"
-        class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg font-semibold whitespace-nowrap transition-[background-color,border-color,color,transform] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+        class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg font-medium whitespace-nowrap transition-[background-color,border-color,color,transform] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
         :class="[variantClasses, sizeClasses]"
     >
         <Loader2 v-if="loading" class="size-4 animate-spin" />

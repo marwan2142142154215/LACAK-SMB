@@ -22,6 +22,6 @@ const ledClass = {
             <span v-if="led" class="led" :class="ledClass[led]" />
             {{ label }}
         </p>
-        <p class="mt-1 font-display text-2xl font-bold tracking-[-0.02em] text-base-50 tabular-nums">{{ value }}</p>
+        <p class="mt-1 font-display text-2xl font-semibold tracking-[-0.02em] text-base-50 tabular-nums">{{ value }}</p>
     </div>
 </template>

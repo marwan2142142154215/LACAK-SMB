@@ -1,10 +1,10 @@
 @import 'tailwindcss';
 
 /*
- * Palet & token desain "Lacak SMB" -- arah "Field Ops": tinta navy tua,
- * oranye hi-vis (rompi & beacon lapangan) sebagai penanda, kanvas kabut yang
- * lembut. Huruf Plus Jakarta Sans (karya Tokotype, Jakarta) untuk judul &
- * teks, Geist Mono hanya untuk angka. Semua warna didefinisikan sebagai CSS
+ * Palet & token desain "Lacak SMB" -- arah modern & bersih: kanvas abu sangat
+ * muda, kartu putih bergaris tipis, teks hampir hitam, dan SATU aksen biru
+ * tegas untuk tindakan utama & penanda aktif. Huruf Geist untuk judul & teks,
+ * Geist Mono hanya untuk angka. Semua warna didefinisikan sebagai CSS
  * variable di sini, dipakai lewat @theme supaya kelas Tailwind (bg-base-900,
  * text-accent-400, dst) ikut konsisten di seluruh aplikasi.
  *
@@ -12,44 +12,43 @@
  * tegas. Tema terang (bawaan) & gelap memakai nama yang sama.
  */
 @theme {
-    --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
-    --font-display: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Geist', ui-sans-serif, system-ui, sans-serif;
     --font-mono: 'Geist Mono', ui-monospace, monospace;
 
-    /* Sudut lebih lapang dari bawaan Tailwind -- kartu & tombol terasa modern */
     --radius-md: 0.5rem;
-    --radius-lg: 0.75rem;
-    --radius-xl: 1rem;
-    --radius-2xl: 1.375rem;
+    --radius-lg: 0.625rem;
+    --radius-xl: 0.75rem;
+    --radius-2xl: 1rem;
 
-    /* Tema gelap: navy malam */
-    --color-base-950: #070c14;
-    --color-base-900: #0e1520;
-    --color-base-850: #141d2a;
-    --color-base-800: #1b2635;
-    --color-base-700: #283547;
-    --color-base-600: #3a495e;
-    --color-base-500: #5d6c82;
-    --color-base-400: #8593a8;
-    --color-base-300: #aab5c6;
-    --color-base-200: #cdd5e1;
-    --color-base-100: #e6ebf2;
-    --color-base-50: #f6f8fb;
+    /* Tema gelap: grafit netral */
+    --color-base-950: #09090b;
+    --color-base-900: #111113;
+    --color-base-850: #18181b;
+    --color-base-800: #222226;
+    --color-base-700: #2e2e33;
+    --color-base-600: #3f3f46;
+    --color-base-500: #71717a;
+    --color-base-400: #a1a1aa;
+    --color-base-300: #c4c4cb;
+    --color-base-200: #dcdce1;
+    --color-base-100: #ececef;
+    --color-base-50: #fafafa;
 
-    /* Aksen = oranye beacon */
-    --color-accent-600: #d9480f;
-    --color-accent-500: #f2621f;
-    --color-accent-400: #ff7a3d;
-    --color-accent-300: #ffa070;
+    /* Aksen = biru tegas */
+    --color-accent-600: #3b6cf6;
+    --color-accent-500: #4f7dff;
+    --color-accent-400: #7aa0ff;
+    --color-accent-300: #a6c0ff;
 
-    /* Pendamping = biru navy terang (dulu tembaga) */
-    --color-copper-600: #2f5aa8;
-    --color-copper-500: #3d6cc4;
-    --color-copper-400: #6f97e3;
+    /* Pendamping = hijau-toska (nama lama "copper" dipertahankan) */
+    --color-copper-600: #0d9488;
+    --color-copper-500: #14b8a6;
+    --color-copper-400: #2dd4bf;
 
-    --color-danger-600: #c0281e;
-    --color-danger-500: #e5483b;
-    --color-danger-400: #ff6b5e;
+    --color-danger-600: #dc2626;
+    --color-danger-500: #ef4444;
+    --color-danger-400: #f87171;
 
     --color-warning-500: #e0a12e;
     --color-warning-400: #f5bd4f;
@@ -63,43 +62,43 @@
     --color-st-camera: #a78bfa;
     --color-st-online: #2dd4bf;
 
-    --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 1px 2px rgb(0 0 0 / 0.3);
-    --shadow-raised: 0 16px 40px -20px rgb(0 0 0 / 0.7);
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-raised: 0 20px 48px -16px rgb(0 0 0 / 0.7);
 }
 
 /*
- * Tema terang (bawaan): kanvas kabut, kartu putih, tinta navy. Oranye untuk
- * TEKS digelapkan supaya kontras >= 4.5:1 di atas putih; area video tetap
- * hitam (monitor gelap di atas meja terang).
+ * Tema terang (bawaan): kanvas abu sangat muda, kartu putih, teks hampir
+ * hitam. Biru & merah untuk TEKS digelapkan supaya kontras >= 4.5:1 di atas
+ * putih; area video tetap hitam.
  */
 :root[data-theme='light'] {
     color-scheme: light;
 
-    --color-base-950: #eef1f5;
+    --color-base-950: #f6f7f9;
     --color-base-900: #ffffff;
-    --color-base-850: #f4f6f9;
-    --color-base-800: #e5e9ef;
-    --color-base-700: #d3d9e2;
-    --color-base-600: #b2bcca;
-    --color-base-500: #66738a;
-    --color-base-400: #4f5b70;
-    --color-base-300: #37425a;
-    --color-base-200: #222c42;
-    --color-base-100: #131c2e;
-    --color-base-50: #0b1322;
+    --color-base-850: #f3f4f6;
+    --color-base-800: #e8eaee;
+    --color-base-700: #dcdfe5;
+    --color-base-600: #b8bdc7;
+    --color-base-500: #6b7280;
+    --color-base-400: #525866;
+    --color-base-300: #3b404b;
+    --color-base-200: #272b34;
+    --color-base-100: #16191f;
+    --color-base-50: #0a0b0d;
 
-    --color-accent-600: #a8380a;
-    --color-accent-500: #e0560f;
-    --color-accent-400: #b9450c;
-    --color-accent-300: #9a3a0b;
+    --color-accent-600: #1d48d8;
+    --color-accent-500: #2b5cf0;
+    --color-accent-400: #1f4fd6;
+    --color-accent-300: #1a43b8;
 
-    --color-copper-600: #1f417f;
-    --color-copper-500: #2c5398;
-    --color-copper-400: #284b8a;
+    --color-copper-600: #0b5f58;
+    --color-copper-500: #0f766e;
+    --color-copper-400: #0d6b64;
 
-    --color-danger-600: #a32019;
-    --color-danger-500: #cc3529;
-    --color-danger-400: #b42c22;
+    --color-danger-600: #b91c1c;
+    --color-danger-500: #dc2626;
+    --color-danger-400: #c42121;
 
     --color-warning-500: #b7790b;
     --color-warning-400: #8f5d00;
@@ -112,8 +111,8 @@
     --color-st-camera: #6d28d9;
     --color-st-online: #0f766e;
 
-    --shadow-card: 0 1px 2px rgb(11 19 34 / 0.04), 0 2px 8px -2px rgb(11 19 34 / 0.05);
-    --shadow-raised: 0 20px 44px -22px rgb(11 19 34 / 0.28);
+    --shadow-card: 0 1px 2px rgb(10 11 13 / 0.04);
+    --shadow-raised: 0 24px 56px -24px rgb(10 11 13 / 0.28);
 }
 
 @layer base {
@@ -124,6 +123,8 @@
     body {
         background-color: var(--color-base-950);
         color: var(--color-base-100);
+        font-family: var(--font-sans);
+        font-feature-settings: 'ss01';
         -webkit-font-smoothing: antialiased;
         text-rendering: optimizeLegibility;
     }
@@ -146,17 +147,16 @@
  * deretan class Tailwind yang sama (dan diam-diam mulai berbeda).
  */
 @layer components {
-    /* Label kecil di atas angka/judul bagian: huruf biasa, bukan KAPITAL MONO */
+    /* Label kecil di atas angka/judul bagian: huruf biasa, abu tenang */
     .eyebrow {
         font-family: var(--font-sans);
         font-size: 0.75rem;
-        font-weight: 600;
-        letter-spacing: 0.01em;
+        font-weight: 500;
         color: var(--color-base-500);
     }
 
     /*
-     * Ciri khas: beacon oranye yang berdenyut seperti sinyal BLE. Hanya untuk
+     * Beacon biru yang berdenyut seperti sinyal BLE. Hanya untuk
      * hal yang benar-benar "hidup" (menu aktif, siaran live, logo) -- jangan
      * ditabur di tempat lain.
      */
@@ -207,10 +207,11 @@
 
     .field-control {
         width: 100%;
-        border-radius: 0.75rem;
+        border-radius: 0.625rem;
         border: 1px solid var(--color-base-700);
         background-color: var(--color-base-900);
-        padding: 0.65rem 0.9rem;
+        padding: 0.6rem 0.85rem;
+        box-shadow: 0 1px 2px rgb(10 11 13 / 0.03);
         font-size: 0.875rem;
         color: var(--color-base-50);
         outline: none;
@@ -232,7 +233,7 @@
 
     .field-control:focus {
         border-color: var(--color-accent-500);
-        box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-accent-500) 16%, transparent);
+        box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent-500) 20%, transparent);
     }
 
     .field-control:disabled {
@@ -265,7 +266,7 @@
         cursor: pointer;
     }
 
-    /* Tabel data: header mono kecil, baris bergaris tipis, hover halus */
+    /* Tabel data: header kecil abu, baris bergaris tipis, hover halus */
     .data-table {
         width: 100%;
         border-collapse: collapse;
@@ -278,7 +279,7 @@
         border-bottom: 1px solid var(--color-base-800);
         background-color: color-mix(in oklab, var(--color-base-850) 60%, transparent);
         font-size: 0.75rem;
-        font-weight: 600;
+        font-weight: 500;
         color: var(--color-base-500);
         white-space: nowrap;
     }
