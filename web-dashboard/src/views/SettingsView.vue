@@ -2,6 +2,7 @@
 import { ShieldAlert, ShieldCheck } from '@lucide/vue'
 import { onMounted, ref } from 'vue'
 
+import IpWhitelistCard from '@/components/settings/IpWhitelistCard.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -60,7 +61,7 @@ onMounted(loadSettings)
             subtitle="Aturan keamanan yang berlaku untuk semua akun. Hanya Super Admin yang bisa mengubahnya."
         />
 
-        <div class="max-w-3xl p-4 sm:p-8">
+        <div class="max-w-3xl space-y-6 p-4 sm:p-8">
             <BaseCard title="Keamanan login">
                 <div v-if="loading" class="py-6 text-center text-sm text-base-500">Memuat pengaturan…</div>
                 <div v-else class="flex items-start justify-between gap-6">
@@ -114,6 +115,8 @@ onMounted(loadSettings)
                     </button>
                 </div>
             </BaseCard>
+
+            <IpWhitelistCard />
         </div>
 
         <ConfirmDialog

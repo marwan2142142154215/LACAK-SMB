@@ -4,6 +4,7 @@ import type { NextFn } from '@adonisjs/core/types/http'
 import PersonalAccessToken from '#models/personal_access_token'
 import User from '#models/user'
 import UnauthenticatedException from '#exceptions/unauthenticated_exception'
+import { ipRejectionBody, ipRejectionFor } from '#services/ip_whitelist'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
 import { parseSanctumToken, sanctumHashMatches } from '#services/laravel/sanctum_token'
 
@@ -39,6 +40,12 @@ export default class AuthMiddleware {
             .first()
         if (!user) {
             throw new UnauthenticatedException()
+        }
+
+        // Whitelist IP berlaku di setiap request, bukan hanya saat login.
+        const rejection = await ipRejectionFor(ctx, user.id)
+        if (rejection) {
+            return ctx.response.status(403).send(ipRejectionBody(rejection, ctx))
         }
 
         // Sanctum mencatat last_used_at di setiap request terautentikasi.

@@ -67,6 +67,16 @@ api.interceptors.response.use(
             }
             router.push({ name: 'login' })
         }
+        // Whitelist IP: jaringan ini tidak terdaftar -> keluar dengan pesan
+        // jelas (sesi yang sama tetap ditolak sampai kembali ke jaringan kantor).
+        if (error.response?.status === 403 && error.response.data?.errors?.reason === 'ip_not_allowed' && auth.isAuthenticated) {
+            auth.clearSession()
+            useLiveStore(pinia)
+                .disconnect()
+                .catch(() => {})
+            useToast().error('Akses ditolak dari jaringan ini', error.response.data.message)
+            router.push({ name: 'login' })
+        }
         return Promise.reject(error)
     },
 )
