@@ -22,6 +22,9 @@ export function useBriefingCall() {
     const connecting = ref(false)
     const endedByHost = ref(false)
     let audioContainer = null
+
+    const bump = () => revision.value++
+
     // Background kamera (blur / gambar), diingat per browser.
     const cameraBackground = createCameraBackground(
         'lacak.briefing.background',
