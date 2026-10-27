@@ -28,6 +28,11 @@ const routes = [
                 component: () => import('@/views/BriefingView.vue'),
             },
             {
+                path: 'chat',
+                name: 'chat',
+                component: () => import('@/views/ChatView.vue'),
+            },
+            {
                 path: 'absensi',
                 name: 'attendance',
                 component: () => import('@/views/AttendanceView.vue'),

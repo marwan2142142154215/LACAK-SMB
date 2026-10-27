@@ -35,6 +35,8 @@ export type ChatHistory = {
 
 type BackendResult<T> = { ok: true; data: T } | { ok: false; status: number; message: string }
 
+const GROUPS_PATH = '/api/v1/chat/groups'
+
 export function chatRoom(organizationId: number) {
     return `chat:org:${organizationId}`
 }
@@ -43,12 +45,13 @@ async function callBackend<T>(
     token: string,
     method: 'get' | 'post',
     params: Record<string, unknown>,
-    path = ''
+    path = '',
+    base = '/api/v1/chat/messages'
 ): Promise<BackendResult<T>> {
     try {
         const response = await axios.request({
             method,
-            url: `${env.get('BACKEND_API_URL')}/api/v1/chat/messages${path}`,
+            url: `${env.get('BACKEND_API_URL')}${base}${path}`,
             headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
             ...(method === 'get' ? { params } : { data: params }),
             timeout: 10_000,
@@ -102,4 +105,62 @@ export function postChatMessage(
  */
 export function fetchChatMessage(token: string, messageId: number) {
     return callBackend<ChatMessagePayload>(token, 'get', {}, `/${messageId}`)
+}
+
+/* ---------------------------------------------------------------------
+ | Grup chat buatan user (ChatGroupsController di backend). Jawaban pesan
+ | membawa member_ids: gateway hanya menyiarkan ke socket milik anggota
+ | yang masih tercatat, lalu mengeluarkan socket lain dari ruangnya.
+ * ------------------------------------------------------------------- */
+
+export type GroupMessagePayload = Omit<ChatMessagePayload, 'organization_id'> & {
+    organization_id: null
+    chat_group_id: number
+    member_ids?: number[]
+}
+
+export type GroupHistory = {
+    chat_group_id: number
+    messages: ChatMessagePayload[]
+    has_more: boolean
+    member_ids: number[]
+}
+
+export function groupRoom(groupId: number) {
+    return `chat:group:${groupId}`
+}
+
+export function fetchGroupHistory(token: string, groupId: number, beforeId?: number) {
+    return callBackend<GroupHistory>(
+        token,
+        'get',
+        beforeId ? { before_id: beforeId } : {},
+        `/${groupId}/messages`,
+        GROUPS_PATH
+    )
+}
+
+export function postGroupMessage(token: string, groupId: number, body: string, replyToId?: number) {
+    return callBackend<GroupMessagePayload>(
+        token,
+        'post',
+        { body, ...(replyToId ? { reply_to_id: replyToId } : {}) },
+        `/${groupId}/messages`,
+        GROUPS_PATH
+    )
+}
+
+export function fetchGroupMessage(token: string, groupId: number, messageId: number) {
+    return callBackend<GroupMessagePayload>(
+        token,
+        'get',
+        {},
+        `/${groupId}/messages/${messageId}`,
+        GROUPS_PATH
+    )
+}
+
+/** Anggota grup saat ini (sekaligus cek: pemanggil masih anggota). */
+export function fetchGroupMembers(token: string, groupId: number) {
+    return callBackend<{ member_ids: number[] }>(token, 'get', {}, `/${groupId}`, GROUPS_PATH)
 }

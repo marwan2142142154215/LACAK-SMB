@@ -11,6 +11,7 @@ import {
     MapPinned,
     Megaphone,
     Menu,
+    MessagesSquare,
     Moon,
     PackageOpen,
     Presentation,
@@ -77,6 +78,7 @@ const navGroups = computed(() => [
     {
         label: 'Kerja',
         items: [
+            { to: { name: 'chat' }, label: 'Chat', icon: MessagesSquare, count: chat.totalUnread },
             { to: { name: 'attendance' }, label: 'Absensi', icon: CalendarClock },
             { to: { name: 'leave' }, label: 'Izin & cuti', icon: CalendarOff, count: leavePending.value },
             { to: { name: 'announcements' }, label: 'Pengumuman', icon: Megaphone, count: announcementUnread.value },
@@ -405,7 +407,7 @@ async function handleLogout() {
             </router-link>
 
             <!-- pb-24: ruang untuk tombol chat mengambang supaya tidak menutup baris terakhir -->
-            <main class="min-w-0 flex-1 pb-24">
+            <main class="min-w-0 flex-1" :class="route.name !== 'chat' && 'pb-24'">
                 <div
                     v-if="briefingInvite"
                     class="mx-4 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-accent-500/30 bg-accent-500/10 px-4 py-3 sm:mx-8"
