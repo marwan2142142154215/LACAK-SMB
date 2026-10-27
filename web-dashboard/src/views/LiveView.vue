@@ -17,6 +17,7 @@ import {
     Search,
     Smartphone,
     Square,
+    TriangleAlert,
     Video,
     VolumeX,
     Wallpaper,
@@ -34,6 +35,7 @@ import LoginDeviceIcon from '@/components/live/LoginDeviceIcon.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import WarnStaffDialog from '@/components/work/WarnStaffDialog.vue'
 import { formatElapsed, useNow } from '@/composables/useNow'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
@@ -60,6 +62,16 @@ const page = ref(0)
 // tidak punya track lagi -- tampilan besar harus ikut objek yang baru.
 const focusedIdentity = ref(null)
 const focused = computed(() => live.remoteParticipants.find((p) => p.identity === focusedIdentity.value) ?? null)
+
+// Leader ke atas bisa memberi peringatan ke staf yang sedang dibuka (popup di dashboard staf itu).
+const MANAGER_ROLES = ['super_admin', 'admin', 'leader', 'site_admin']
+const canWarn = computed(() => MANAGER_ROLES.some((role) => auth.user?.roles?.includes(role)))
+const focusedStaff = computed(() => {
+    if (!focused.value) return null
+    const staff = [...roster.value, ...leadersRoster.value].find((item) => item.participant_identity === focused.value.identity)
+    return staff && staff.user_id !== auth.user?.id ? staff : null
+})
+const warnOpen = ref(false)
 const confirmStartOpen = ref(false)
 const confirmEndOpen = ref(false)
 // Catatan kerja yang ditulis saat Selesai kerja (tampil di Aktivitas user).
@@ -1434,6 +1446,10 @@ onBeforeUnmount(() => {
                                 <ArrowLeftRight class="size-4" />
                                 Tukar
                             </BaseButton>
+                            <BaseButton v-if="canWarn && focusedStaff" variant="danger" size="sm" @click="warnOpen = true">
+                                <TriangleAlert class="size-4" />
+                                Beri peringatan
+                            </BaseButton>
                             <button
                                 type="button"
                                 class="flex size-8 items-center justify-center rounded-md text-white/70 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-accent-400"
@@ -1464,6 +1480,8 @@ onBeforeUnmount(() => {
                 </DialogContent>
             </DialogPortal>
         </DialogRoot>
+
+        <WarnStaffDialog v-model:open="warnOpen" :staff="focusedStaff" />
 
         <BackgroundPicker
             :open="backgroundOpen"

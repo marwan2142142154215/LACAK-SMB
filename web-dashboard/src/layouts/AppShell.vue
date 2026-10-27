@@ -32,6 +32,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ChatWidget from '@/components/chat/ChatWidget.vue'
 import CameraLock from '@/components/live/CameraLock.vue'
 import ScreenShareLock from '@/components/live/ScreenShareLock.vue'
+import WarningPopup from '@/components/work/WarningPopup.vue'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useTheme } from '@/composables/useTheme'
 import api from '@/lib/api'
@@ -469,6 +470,7 @@ async function handleLogout() {
                 <ScreenShareLock />
                 <CameraLock />
                 <ChatWidget />
+                <WarningPopup />
             </main>
         </div>
     </div>
