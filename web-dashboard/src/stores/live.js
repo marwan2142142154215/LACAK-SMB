@@ -893,11 +893,12 @@ export const useLiveStore = defineStore('live', () => {
         await sendHeartbeat()
     }
 
-    async function endWork() {
+    /** @param {string} [note] catatan kerja hari ini (opsional) */
+    async function endWork(note) {
         cancelRejoin()
         connecting.value = true
         try {
-            await api.post('/live/sessions/end').catch((err) => {
+            await api.post('/live/sessions/end', note ? { note } : {}).catch((err) => {
                 if (err.response?.status !== 404) throw err
             })
             await disconnect()

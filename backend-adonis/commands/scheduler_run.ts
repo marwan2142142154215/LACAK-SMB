@@ -7,7 +7,9 @@ import {
     recordHeartbeat,
     SCHEDULER_HEARTBEAT_KEY,
 } from '#services/queue'
+import { runBriefingSchedules } from '#services/briefing_schedule'
 import { pruneRecordings, rotateRecordings } from '#services/recording'
+import { runWorkAlerts } from '#services/work_alerts'
 import { closeStaleWorkSessions } from './close_stale_work_sessions.js'
 
 /** Milidetik sampai awal menit berikutnya (jadwal Laravel jalan tepat di detik 0). */
@@ -23,8 +25,10 @@ export function msUntilNextMinute(now: Date = new Date()): number {
  *    sebelumnya belum selesai),
  * 2. rekaman Live Kerja: potong per jam & hapus yang lewat masa simpan
  *    (lihat app/services/recording.ts; tidak melakukan apa pun kalau rekaman mati),
- * 3. detak scheduler (ditulis langsung),
- * 4. job detak antrean (baru tercatat kalau queue worker memprosesnya).
+ * 3. jadwal briefing: pengingat, buka tepat waktu, tutup otomatis,
+ * 4. peringatan kerja & laporan harian/mingguan ke Telegram,
+ * 5. detak scheduler (ditulis langsung),
+ * 6. job detak antrean (baru tercatat kalau queue worker memprosesnya).
  */
 export default class SchedulerRun extends BaseCommand {
     static commandName = 'scheduler:run'
@@ -37,6 +41,7 @@ export default class SchedulerRun extends BaseCommand {
 
     #timer: NodeJS.Timeout | null = null
     #closingStale = false
+    #runningWork = false
     #stopping = false
 
     async run() {
@@ -84,6 +89,31 @@ export default class SchedulerRun extends BaseCommand {
                 this.logger.info(`Rekaman: ${rotated} dipotong per jam, ${pruned} dihapus.`)
         } catch (error) {
             this.logger.error(`Rekaman Live Kerja gagal diproses: ${String(error)}`)
+        }
+
+        // Briefing & peringatan kerja: dilewati kalau putaran sebelumnya belum selesai.
+        if (!this.#runningWork) {
+            this.#runningWork = true
+            try {
+                const briefings = await runBriefingSchedules()
+                if (briefings.started || briefings.ended)
+                    this.logger.info(
+                        `Briefing terjadwal: ${briefings.started} dibuka, ${briefings.ended} ditutup.`
+                    )
+            } catch (error) {
+                this.logger.error(`Jadwal briefing gagal diproses: ${String(error)}`)
+            }
+            try {
+                const work = await runWorkAlerts()
+                if (work.alerts || work.reports)
+                    this.logger.info(
+                        `Peringatan kerja: ${work.alerts} peringatan, ${work.reports} laporan.`
+                    )
+            } catch (error) {
+                this.logger.error(`Peringatan kerja gagal diproses: ${String(error)}`)
+            } finally {
+                this.#runningWork = false
+            }
         }
 
         try {

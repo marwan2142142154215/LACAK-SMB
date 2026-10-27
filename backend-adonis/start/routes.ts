@@ -60,6 +60,11 @@ router
                 router.post('/briefings/:id/join', [BriefingsController, 'join'])
                 router.post('/briefings/:id/end', [BriefingsController, 'end'])
                 router
+                    .post('/briefings/:id/presence', [BriefingsController, 'presence'])
+                    .use(middleware.throttle({ max: 10, minutes: 1 }))
+                router.get('/briefings/:id/attendance', [BriefingsController, 'attendance'])
+                router.delete('/briefing-schedules/:id', [BriefingsController, 'cancelSchedule'])
+                router
                     .post('/live/watch-token', [WorkSessionsController, 'watchToken'])
                     .use(middleware.throttle({ max: 30, minutes: 1 }))
             })
@@ -75,3 +80,4 @@ await import('#start/routes/devices')
 await import('#start/routes/rules')
 await import('#start/routes/chat_logs')
 await import('#start/routes/apk')
+await import('#start/routes/work')
