@@ -1,10 +1,19 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import { checkIpAccess } from '@/lib/ipAccess'
+
 const routes = [
     {
         path: '/login',
         name: 'login',
         component: () => import('@/views/LoginView.vue'),
+        meta: { guestOnly: true },
+    },
+    {
+        // Pengganti halaman login untuk IP di luar whitelist (lihat beforeEach).
+        path: '/akses-dibatasi',
+        name: 'ip-restricted',
+        component: () => import('@/views/IpRestrictedView.vue'),
         meta: { guestOnly: true },
     },
     {
@@ -150,7 +159,7 @@ const TOKEN_STORAGE_KEY = 'lacak_master_token'
 const USER_STORAGE_KEY = 'lacak_master_user'
 export const LOGIN_REDIRECT_KEY = 'lacak_master_login_redirect'
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
     const token = localStorage.getItem(TOKEN_STORAGE_KEY)
     const isAuthenticated = !!token
     let isSuperAdmin = false
@@ -174,6 +183,15 @@ router.beforeEach((to) => {
 
     if (to.meta.guestOnly && isAuthenticated) {
         return { name: 'radar' }
+    }
+
+    // Whitelist IP: dari IP yang tidak terdaftar, form login tidak ditampilkan.
+    // Backend tidak bisa dihubungi (null) -> login tetap tampil; penolakan
+    // sebenarnya tetap terjadi di backend saat login.
+    if (to.name === 'login' || to.name === 'ip-restricted') {
+        const access = await checkIpAccess()
+        if (to.name === 'login' && access?.allowed === false) return { name: 'ip-restricted' }
+        if (to.name === 'ip-restricted' && access?.allowed !== false) return { name: 'login' }
     }
 
     if (to.meta.requiresSuperAdmin && !isSuperAdmin) {
