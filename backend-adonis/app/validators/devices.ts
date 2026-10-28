@@ -141,6 +141,13 @@ export const storeDeviceValidator = compile(
  * null) tetap gagal di rule string/boolean, sama seperti Laravel -- tanpa ini
  * null lolos dari .optional() Vine dan tersimpan ke kolom NOT NULL.
  */
+export const moveDeviceSiteValidator = compile(
+    vine.object({
+        organization_id: vine.number().withoutDecimals().positive(),
+    }),
+    ['organization_id']
+)
+
 export const updateDeviceValidator = compile(
     vine.object({
         device_name: vine

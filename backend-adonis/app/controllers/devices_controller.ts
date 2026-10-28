@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import { accessOf, can } from '#services/access'
+import { writeActivity } from '#services/activity_log'
 import { fail, success } from '#services/api_response'
 import { authorizedOrganizationId, organizationFilter } from '#services/organization_scope'
 import {
@@ -10,12 +11,17 @@ import {
     latestLocationsOf,
     logDeviceCreated,
     logDeviceDeleted,
+    DEVICE_MORPH,
     paginate,
     phpIntval,
     saveDevice,
     type DeviceRow,
 } from '#services/device_resource'
-import { storeDeviceValidator, updateDeviceValidator } from '#validators/devices'
+import {
+    moveDeviceSiteValidator,
+    storeDeviceValidator,
+    updateDeviceValidator,
+} from '#validators/devices'
 
 /**
  * Padanan DeviceController (apiResource 'devices') di backend-api, kontrak sama.
@@ -155,6 +161,67 @@ export default class DevicesController {
         })
 
         return success('Device berhasil diperbarui', deviceResource(updated))
+    }
+
+    /**
+     * Pindahkan device ke site lain tanpa pasang ulang APK. site_code_embedded
+     * sengaja TIDAK diubah -- gateway mencocokkan kode APK ke nilai itu, jadi
+     * device tetap bisa terhubung. Butuh wewenang atas site asal DAN tujuan.
+     */
+    async moveSite(ctx: HttpContext) {
+        const device = await findDeviceOrFail(ctx.params.device)
+        const access = await accessOf(ctx)
+        if (!can(access, 'devices.manage')) return forbidden(ctx)
+
+        if (authorizedOrganizationId(access, device.organization_id) === null) {
+            return ctx.response
+                .status(403)
+                .send(fail('Anda tidak berwenang memindahkan device ini'))
+        }
+
+        const input = await ctx.request.validateUsing(moveDeviceSiteValidator, {
+            messagesProvider: moveDeviceSiteValidator.messagesProvider,
+        })
+
+        const target = authorizedOrganizationId(access, input.organization_id)
+        if (target === null) {
+            return ctx.response
+                .status(403)
+                .send(fail('Anda tidak berwenang memindahkan ke site tujuan'))
+        }
+        if (target === device.organization_id) {
+            return ctx.response.status(422).send(fail('Device sudah berada di site ini'))
+        }
+
+        const org = await db
+            .from('organizations')
+            .where('id', target)
+            .whereNull('deleted_at')
+            .select('id', 'name', 'is_active')
+            .first()
+        if (!org || !org.is_active) {
+            return ctx.response.status(422).send(fail('Site tujuan tidak ditemukan atau nonaktif'))
+        }
+
+        const now = eloquentNow()
+        await db
+            .from('devices')
+            .where('id', device.id)
+            .update({ organization_id: target, updated_by: ctx.authUser!.id, updated_at: now })
+        await writeActivity(ctx, {
+            logName: 'devices',
+            description: `Memindahkan device "${device.device_name}" ke site ${org.name}`,
+            event: 'updated',
+            subjectType: DEVICE_MORPH,
+            subjectId: device.id,
+            properties: {
+                from_organization_id: device.organization_id,
+                to_organization_id: target,
+            },
+            organizationId: target,
+        })
+
+        return success('Device dipindahkan ke site lain', { organization_id: target })
     }
 
     async destroy(ctx: HttpContext) {
