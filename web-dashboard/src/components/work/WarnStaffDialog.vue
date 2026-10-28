@@ -28,10 +28,14 @@ const sending = ref(false)
 const history = ref([])
 const loadingHistory = ref(false)
 
+// Kunci berupa user_id staf saat dialog terbuka (null kalau tertutup). Hanya
+// reset & muat riwayat saat dialog dibuka atau staf berganti -- BUKAN tiap kali
+// data staf yang dipantau diperbarui dari gateway, yang dulu menghapus kalimat
+// yang sedang diketik.
 watch(
-    () => [props.open, props.staff?.user_id],
-    async ([open, userId]) => {
-        if (!open || !userId) return
+    () => (props.open ? (props.staff?.user_id ?? null) : null),
+    async (userId, previousUserId) => {
+        if (!userId || userId === previousUserId) return
         level.value = 'teguran'
         message.value = ''
         loadingHistory.value = true
