@@ -79,7 +79,7 @@ test.group('Admin & leader: kunci device dan geofence', (group) => {
             const device = await makeDevice(mine, manager.id)
             const foreignDevice = await makeDevice(other, manager.id)
 
-            for (const command of ['lock', 'unlock']) {
+            for (const command of ['lock', 'unlock', 'locate_now']) {
                 const sent = await client
                     .post(`/api/v1/devices/${device}/commands`)
                     .json({ command_type: command, issued_via: 'web_dashboard' })
