@@ -2,6 +2,7 @@ import { randomBytes, randomUUID, createHash } from 'node:crypto'
 import { extname } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import type { HttpContext } from '@adonisjs/core/http'
+import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 import { accessOf, can } from '#services/access'
 import { fail, success } from '#services/api_response'
@@ -355,14 +356,33 @@ export default class ApkBuildsController {
                 .send(fail('Anda tidak berwenang menghapus APK build site ini'))
         }
 
-        const documentsDisk = disk(documentsDiskName())
-        if (build.file_path && (await documentsDisk.exists(build.file_path))) {
-            await documentsDisk.delete(build.file_path)
+        // Berkas yang gagal dihapus dari penyimpanan (izin berkas, kunci
+        // Spaces tanpa hak hapus, jaringan) tidak boleh menahan penghapusan
+        // datanya: catat penyebabnya di log server, lalu tetap hapus build.
+        let fileRemoved = true
+        if (build.file_path) {
+            try {
+                const documentsDisk = disk(documentsDiskName())
+                if (await documentsDisk.exists(build.file_path)) {
+                    await documentsDisk.delete(build.file_path)
+                }
+            } catch (error) {
+                fileRemoved = false
+                logger.warn(
+                    { err: error, apkBuildId: build.id, filePath: build.file_path },
+                    'Berkas APK build gagal dihapus dari penyimpanan'
+                )
+            }
         }
 
         await db.from('apk_builds').where('id', build.id).delete()
 
-        return success('APK build dihapus dan tempat penyimpanannya dibersihkan', null)
+        return success(
+            fileRemoved
+                ? 'APK build dihapus dan tempat penyimpanannya dibersihkan'
+                : 'APK build dihapus, tetapi berkasnya belum terhapus dari penyimpanan (lihat log server)',
+            null
+        )
     }
 
     /** Tautan bertanda tangan dari ApkBuildResource.download_url (tanpa login). */
