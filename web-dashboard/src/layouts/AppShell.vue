@@ -37,6 +37,7 @@ import { useTelemetry } from '@/composables/useTelemetry'
 import { useTheme } from '@/composables/useTheme'
 import api from '@/lib/api'
 import { refreshWorkCounters, workCountersVersion } from '@/lib/workCounters'
+import { useBriefingCall } from '@/composables/useBriefingCall'
 import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
@@ -48,6 +49,14 @@ const canSeeStaff = computed(() => auth.isSuperAdmin || ['admin', 'leader'].some
 const live = useLiveStore()
 const chat = useChatStore()
 const toast = useToast()
+// Briefing kini bertahan saat pindah menu: banner di bawah mengajak kembali,
+// dan toast ini muncul walau user sedang di menu lain saat pemimpin mengakhiri.
+const briefingCall = useBriefingCall()
+const briefingActive = briefingCall.active
+watch(
+    () => briefingCall.endedByHost.value,
+    (ended) => ended && toast.info('Briefing selesai', 'Pemimpin mengakhiri briefing.'),
+)
 const router = useRouter()
 const route = useRoute()
 const loggingOut = ref(false)
@@ -244,6 +253,7 @@ async function handleLogout() {
         // atas nama akun yang sudah keluar.
         if (live.isBroadcasting) await live.endWork().catch(() => {})
         await live.disconnect()
+        if (briefingCall.inCall.value) await briefingCall.leave().catch(() => {})
         chat.stop()
         await auth.logout()
         router.push({ name: 'login' })
@@ -408,6 +418,17 @@ async function handleLogout() {
             >
                 <span class="led animate-pulse" />
                 Kamera Anda sedang disiarkan ke rekan se-site. Buka Live Kerja untuk berhenti.
+            </router-link>
+
+            <!-- Briefing tetap tersambung saat pindah menu: ajak kembali ke ruangnya -->
+            <router-link
+                v-if="briefingActive && route.name !== 'briefing'"
+                :to="{ name: 'briefing' }"
+                class="flex items-center gap-2.5 border-b border-accent-500/30 bg-accent-500/10 px-4 py-2 text-xs font-medium text-accent-400 sm:px-8"
+            >
+                <span class="beacon" />
+                <span class="min-w-0 truncate">Briefing berlangsung: <span class="font-semibold text-base-100">{{ briefingActive.title }}</span></span>
+                <span class="ml-auto shrink-0 font-semibold">Kembali →</span>
             </router-link>
 
             <!-- pb-24: ruang untuk tombol chat mengambang supaya tidak menutup baris terakhir -->

@@ -53,7 +53,7 @@ const upcoming = ref([])
 const recent = ref([])
 const recurrenceOptions = ref([])
 const loaded = ref(false)
-const current = ref(null) // briefing yang sedang diikuti
+const current = call.active // briefing yang sedang diikuti (state global, bertahan saat pindah menu)
 let refreshTimer = null
 
 const startOpen = ref(false)
@@ -175,35 +175,12 @@ async function joinBriefing(briefing) {
     }
 }
 
-// Detak kehadiran selama di dalam ruang (daftar hadir), tiap 30 detik.
-const PRESENCE_MS = 30_000
-let presenceTimer = null
-function startPresence(briefingId) {
-    stopPresence()
-    const ping = () => api.post(`/briefings/${briefingId}/presence`).catch(() => {})
-    ping()
-    presenceTimer = setInterval(ping, PRESENCE_MS)
-}
-function stopPresence() {
-    clearInterval(presenceTimer)
-    presenceTimer = null
-}
-
 async function enter(connection, asHost) {
-    current.value = connection.briefing
-    try {
-        await call.join(connection, { asHost, cameraOn: connection.briefing.camera_on_join })
-        startPresence(connection.briefing.id)
-    } catch (err) {
-        current.value = null
-        throw err
-    }
+    await call.join(connection, { asHost })
 }
 
 async function leaveBriefing() {
-    stopPresence()
     await call.leave()
-    current.value = null
     load()
 }
 
@@ -260,9 +237,7 @@ async function endBriefing() {
     try {
         await api.post(`/briefings/${target.id}/end`)
         if (current.value?.id === target.id) {
-            stopPresence()
             await call.leave()
-            current.value = null
         }
         toast.success('Briefing diakhiri', 'Semua peserta sudah dikeluarkan.')
         load()
@@ -282,19 +257,16 @@ async function runToggle(action, failTitle) {
     }
 }
 
-// Pemimpin mengakhiri briefing -> room dihapus server.
+// Briefing berakhir (keluar / diakhiri pemimpin): segarkan daftar. Pembersihan
+// room, presence, dan toast "selesai" ditangani composable + AppShell.
 watch(
-    () => call.endedByHost.value,
-    (ended) => {
-        if (!ended || !current.value) return
-        toast.info('Briefing selesai', 'Pemimpin mengakhiri briefing.')
-        stopPresence()
-        current.value = null
-        load()
+    () => call.inCall.value,
+    (nowInCall, wasInCall) => {
+        if (wasInCall && !nowInCall) load()
     },
 )
 
-const inCall = computed(() => !!call.room.value)
+const inCall = call.inCall
 const isHost = computed(() => !!current.value?.is_host)
 const gridClass = computed(() => {
     const count = call.participants.value.length
@@ -343,7 +315,6 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
     clearInterval(refreshTimer)
-    stopPresence()
 })
 </script>
 
