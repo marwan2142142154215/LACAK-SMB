@@ -448,3 +448,63 @@ test.group('Device: OTP & pendaftaran', (group) => {
         assert.equal(row.status, 'pending_enrollment')
     })
 })
+
+test.group('Device: pindah site', (group) => {
+    group.each.setup(() => testUtils.db().withGlobalTransaction())
+
+    test('super_admin memindahkan device ke site lain; site_code_embedded tetap', async ({
+        client,
+        assert,
+    }) => {
+        const asal = await makeOrganization()
+        const tujuan = await makeOrganization()
+        const superAdmin = await makeUser(null, 'super_admin')
+        const device = await makeDevice(asal, { site_code_embedded: 'KODE-ASAL' })
+
+        const moved = await client
+            .put(`/api/v1/devices/${device.id}/site`)
+            .json({ organization_id: tujuan })
+            .bearerToken(superAdmin.bearer)
+        moved.assertStatus(200)
+
+        const row = await db.from('devices').where('id', device.id).first()
+        assert.equal(Number(row.organization_id), tujuan)
+        // Kode APK yang tertanam tidak berubah -> device tetap bisa terhubung.
+        assert.equal(row.site_code_embedded, 'KODE-ASAL')
+    })
+
+    test('tidak bisa memindahkan ke site yang sama', async ({ client }) => {
+        const org = await makeOrganization()
+        const superAdmin = await makeUser(null, 'super_admin')
+        const device = await makeDevice(org)
+        const res = await client
+            .put(`/api/v1/devices/${device.id}/site`)
+            .json({ organization_id: org })
+            .bearerToken(superAdmin.bearer)
+        res.assertStatus(422)
+    })
+
+    test('admin site tidak bisa memindahkan ke site yang tidak dikelola', async ({ client }) => {
+        const asal = await makeOrganization()
+        const tujuan = await makeOrganization()
+        const admin = await makeUser(asal, 'site_admin')
+        const device = await makeDevice(asal)
+        const res = await client
+            .put(`/api/v1/devices/${device.id}/site`)
+            .json({ organization_id: tujuan })
+            .bearerToken(admin.bearer)
+        res.assertStatus(403)
+    })
+
+    test('staf tidak bisa memindahkan device', async ({ client }) => {
+        const asal = await makeOrganization()
+        const tujuan = await makeOrganization()
+        const staff = await makeUser(asal, 'staff_viewer')
+        const device = await makeDevice(asal)
+        const res = await client
+            .put(`/api/v1/devices/${device.id}/site`)
+            .json({ organization_id: tujuan })
+            .bearerToken(staff.bearer)
+        res.assertStatus(403)
+    })
+})

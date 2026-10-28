@@ -199,9 +199,13 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                     return socket.disconnect(true)
                 }
 
-                // Kode site yang ditanam di APK harus cocok dengan site aslinya.
-                // Mismatch -> kemungkinan APK hasil tempel/clone dari site lain.
-                if (payload.siteCode !== organization.uniqueSiteCode) {
+                // Kode site yang ditanam di APK harus cocok dengan yang tercatat
+                // untuk device ini (site_code_embedded) -- mismatch = kemungkinan
+                // APK hasil tempel/clone dari provisioning lain. Dibandingkan ke
+                // kode device, BUKAN ke kode site saat ini, supaya device yang
+                // dipindahkan ke site lain dari dashboard tetap bisa terhubung
+                // tanpa pasang ulang APK (uuid + secret_hash tetap penjaga utama).
+                if (payload.siteCode !== device.siteCodeEmbedded) {
                     socket.emit('device:rejected', { message: PIRACY_WARNING })
                     return socket.disconnect(true)
                 }
