@@ -104,6 +104,7 @@ fun DeviceDetailScreen(deviceId: Int, apiClient: ApiClient, navController: NavHo
                     color = Base400,
                 )
                 Text("Baterai: ${currentDevice.batteryLevel ?: "-"}%", style = MaterialTheme.typography.bodySmall, color = Base400)
+                Text("WiFi: ${currentDevice.lastSsid ?: "-"}", style = MaterialTheme.typography.bodySmall, color = Base400)
                 currentDevice.latestLocation?.let { loc ->
                     Text(
                         "Posisi: ${loc.latitude ?: "-"}, ${loc.longitude ?: "-"} (${loc.source}, ${loc.recordedAt ?: "-"})",

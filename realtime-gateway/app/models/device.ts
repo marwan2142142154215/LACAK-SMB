@@ -44,6 +44,9 @@ export default class Device extends BaseModel {
     @column()
     declare batteryLevel: number | null
 
+    @column()
+    declare lastSsid: string | null
+
     @column.dateTime()
     declare lastSeenAt: DateTime | null
 

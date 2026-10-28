@@ -106,6 +106,7 @@ export default class DevicesController {
             id: Number(id),
             ...values,
             battery_level: null,
+            last_ssid: null,
             last_seen_at: null,
         }
         await logDeviceCreated(ctx, device)

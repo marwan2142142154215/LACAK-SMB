@@ -314,6 +314,13 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                     if (payload.batteryLevel !== undefined && payload.batteryLevel !== null) {
                         reportingDevice.batteryLevel = payload.batteryLevel
                     }
+                    // SSID yang dikirim APK Pelacak (nama jaringan WiFi, bukan
+                    // password). null = tidak terhubung WiFi; string kosong
+                    // diabaikan supaya nama terakhir tidak terhapus tanpa data.
+                    if (payload.ssid !== undefined) {
+                        reportingDevice.lastSsid =
+                            payload.ssid && payload.ssid.trim() !== '' ? payload.ssid : null
+                    }
                     await reportingDevice.save()
 
                     return reportingDevice
