@@ -1,5 +1,5 @@
 <script setup>
-import { KeyRound, Lock, MapPin, Pencil, PlayCircle, RefreshCw, Search, Smartphone, StopCircle, Trash2, Unlock } from '@lucide/vue'
+import { KeyRound, Lock, MapPin, Pencil, PlayCircle, RefreshCw, Search, Smartphone, StopCircle, Trash2, Unlock, Wifi } from '@lucide/vue'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import { computed, onMounted, ref } from 'vue'
@@ -246,6 +246,7 @@ onMounted(loadDevices)
                                 <th class="hidden lg:table-cell">Site</th>
                                 <th class="hidden sm:table-cell">Status</th>
                                 <th class="hidden sm:table-cell">Baterai</th>
+                                <th class="hidden lg:table-cell">WiFi</th>
                                 <th class="hidden md:table-cell">Terakhir terlihat</th>
                                 <th class="w-0"><span class="sr-only">Aksi</span></th>
                             </tr>
@@ -272,6 +273,13 @@ onMounted(loadDevices)
                                         </span>
                                         <span class="font-mono text-xs text-base-300 tabular-nums">{{ d.battery_level }}%</span>
                                     </div>
+                                    <span v-else class="text-base-600">—</span>
+                                </td>
+                                <td class="hidden text-xs lg:table-cell">
+                                    <span v-if="d.last_ssid" class="inline-flex items-center gap-1.5 text-base-300">
+                                        <Wifi class="size-3.5 text-base-500" />
+                                        <span class="max-w-36 truncate" :title="d.last_ssid">{{ d.last_ssid }}</span>
+                                    </span>
                                     <span v-else class="text-base-600">—</span>
                                 </td>
                                 <td class="hidden text-xs text-base-400 md:table-cell">

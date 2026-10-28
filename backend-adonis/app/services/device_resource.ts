@@ -24,6 +24,7 @@ export type DeviceRow = {
     site_code_embedded: string
     status: string
     battery_level: number | null
+    last_ssid: string | null
     last_seen_at: Date | null
     enrolled_at: Date | null
     is_active: boolean
@@ -69,6 +70,7 @@ export function deviceResource(device: DeviceRow, relations: DeviceRelations = {
         app_build_version: device.app_build_version,
         status: device.status,
         battery_level: device.battery_level ?? null,
+        last_ssid: device.last_ssid ?? null,
         last_seen_at: laravelDate(device.last_seen_at ?? null),
         enrolled_at: laravelDate(device.enrolled_at ?? null),
         is_active: Boolean(device.is_active),
