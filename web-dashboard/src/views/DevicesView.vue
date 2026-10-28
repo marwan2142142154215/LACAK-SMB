@@ -1,5 +1,5 @@
 <script setup>
-import { KeyRound, Lock, MapPin, Pencil, PlayCircle, RefreshCw, Search, Smartphone, StopCircle, Trash2, Unlock, Wifi } from '@lucide/vue'
+import { ArrowRightLeft, KeyRound, Lock, MapPin, Pencil, PlayCircle, RefreshCw, Search, Smartphone, StopCircle, Trash2, Unlock, Wifi } from '@lucide/vue'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import { computed, onMounted, ref } from 'vue'
@@ -8,6 +8,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -16,6 +17,7 @@ import RowMenu from '@/components/ui/RowMenu.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
+import { useAuthStore } from '@/stores/auth'
 
 const devices = ref([])
 const loading = ref(true)
@@ -30,6 +32,13 @@ const deleteTarget = ref(null)
 const deleting = ref(false)
 const reEnrollTarget = ref(null)
 const reEnrolling = ref(false)
+// Pindah device ke site lain (tanpa pasang ulang APK).
+const auth = useAuthStore()
+const sites = ref([])
+const canPickSite = computed(() => auth.isSuperAdmin || ['admin', 'leader'].some((role) => auth.user?.roles?.includes(role)))
+const moveTarget = ref(null)
+const moveSiteId = ref(null)
+const moving = ref(false)
 const reEnrollTitle = computed(() => (reEnrollTarget.value ? `Daftarkan ulang device "${reEnrollTarget.value.device_name}"?` : ''))
 const deleteTitle = computed(() => (deleteTarget.value ? `Hapus device "${deleteTarget.value.device_name}" dari sistem?` : ''))
 
@@ -73,6 +82,12 @@ function menuItems(device) {
         { label: 'Hentikan pantau', icon: StopCircle, onSelect: () => issueCommand(device, 'stop_monitor'), disabled: busy },
         { label: 'Buat OTP buka kunci', icon: KeyRound, onSelect: () => generateOtp(device), disabled: busy },
         { label: 'Ubah nama', icon: Pencil, onSelect: () => openRename(device) },
+        {
+            label: 'Pindahkan ke site lain',
+            icon: ArrowRightLeft,
+            onSelect: () => openMove(device),
+            hidden: sites.value.length < 2,
+        },
         { label: 'Daftar ulang', icon: RefreshCw, onSelect: () => (reEnrollTarget.value = device), disabled: device.status === 'locked' },
         { label: 'Hapus device', icon: Trash2, onSelect: () => (deleteTarget.value = device), danger: true },
     ]
@@ -173,7 +188,45 @@ async function saveRename() {
     }
 }
 
-onMounted(loadDevices)
+async function loadSites() {
+    if (!canPickSite.value) return
+    try {
+        // /organizations khusus root; admin & leader memakai site yang diberikan.
+        const response = await api.get(auth.isSuperAdmin ? '/organizations' : '/live/sites')
+        sites.value = (auth.isSuperAdmin ? response.data.data.items : response.data.data).map((site) => ({
+            id: site.id,
+            name: site.name,
+        }))
+    } catch {
+        sites.value = []
+    }
+}
+
+function openMove(device) {
+    moveTarget.value = device
+    moveSiteId.value = sites.value.find((site) => site.id !== device.organization_id)?.id ?? null
+}
+
+async function saveMove() {
+    if (!moveTarget.value || !moveSiteId.value) return
+    moving.value = true
+    try {
+        await api.put(`/devices/${moveTarget.value.id}/site`, { organization_id: moveSiteId.value })
+        const siteName = sites.value.find((site) => site.id === moveSiteId.value)?.name ?? 'site baru'
+        toast.success('Device dipindahkan', `${moveTarget.value.device_name} kini di ${siteName}.`)
+        moveTarget.value = null
+        await loadDevices()
+    } catch (err) {
+        toast.error('Gagal memindahkan device', err.response?.data?.message)
+    } finally {
+        moving.value = false
+    }
+}
+
+onMounted(() => {
+    loadDevices()
+    loadSites()
+})
 </script>
 
 <template>
@@ -332,6 +385,27 @@ onMounted(loadDevices)
             <template #footer>
                 <BaseButton variant="ghost" @click="editDialogOpen = false">Batal</BaseButton>
                 <BaseButton type="submit" form="rename-form" :loading="renaming">Simpan nama</BaseButton>
+            </template>
+        </BaseDialog>
+
+        <BaseDialog
+            :open="!!moveTarget"
+            title="Pindahkan device ke site lain"
+            :description="moveTarget?.device_name"
+            size="sm"
+            @update:open="(v) => !v && (moveTarget = null)"
+        >
+            <form id="move-form" @submit.prevent="saveMove">
+                <BaseSelect v-model="moveSiteId" label="Site tujuan" required>
+                    <option v-for="site in sites.filter((s) => s.id !== moveTarget?.organization_id)" :key="site.id" :value="site.id">
+                        {{ site.name }}
+                    </option>
+                </BaseSelect>
+                <p class="field-hint mt-3">Device tetap terhubung tanpa pasang ulang APK. Aturan geofence yang berlaku ikut site tujuan.</p>
+            </form>
+            <template #footer>
+                <BaseButton variant="ghost" @click="moveTarget = null">Batal</BaseButton>
+                <BaseButton type="submit" form="move-form" :loading="moving" :disabled="!moveSiteId">Pindahkan</BaseButton>
             </template>
         </BaseDialog>
 
