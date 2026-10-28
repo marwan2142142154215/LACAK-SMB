@@ -46,12 +46,13 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         'live.watch',
     ],
     // admin & leader: lintas site lewat user_site_access; melihat, kunci &
-    // buka kunci device, kelola geofence, plus build & unduh APK -- semuanya
+    // buka kunci device, minta lokasi sekarang, kelola geofence, plus build & unduh APK -- semuanya
     // hanya untuk site yang dipegang.
     admin: [
         'devices.view',
         'devices.lock',
         'devices.unlock',
+        'devices.locate',
         'geofence-rules.manage',
         'live.watch',
         'apk-builds.manage',
@@ -60,6 +61,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         'devices.view',
         'devices.lock',
         'devices.unlock',
+        'devices.locate',
         'geofence-rules.manage',
         'live.watch',
         'apk-builds.manage',
