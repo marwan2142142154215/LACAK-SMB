@@ -1,5 +1,6 @@
 package com.lacaksmb.master.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,8 +9,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.lacaksmb.master.BuildConfig
@@ -51,16 +54,24 @@ class MasterAnchorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, buildNotification("Menghubungkan..."))
+        // Android 14+ menolak foreground service "connectedDevice" kalau izin
+        // Bluetooth belum diberikan (SecurityException), dan Android 12+
+        // menolak foreground service yang dihidupkan ulang sistem dari latar
+        // belakang (START_STICKY). Tanpa try/catch, keduanya membuat app
+        // "keeps stopping" berulang -- bahkan saat app tidak sedang dibuka.
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification("Menghubungkan..."))
+        } catch (e: Exception) {
+            Log.w(TAG, "Anchor master tidak bisa dijalankan: ${e.message}")
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
+        // Belum login, tidak punya izin lock/unlock, atau izin Bluetooth
+        // belum diberikan -- jangan jalan diam-diam, tidak ada gunanya jadi
+        // anchor (gateway juga menolaknya, ini supaya baterai tidak terbuang).
         val token = sessionStore.accessToken()
-        val user = sessionStore.user()
-        // Belum login, atau login tapi tidak punya izin lock/unlock sama
-        // sekali (staff_viewer/admin/leader view-only) -- jangan jalan diam-
-        // diam, tidak ada gunanya jadi anchor kalau memang tidak berwenang
-        // membuka kunci apa pun (gateway juga menolaknya, ini cuma jaga-jaga
-        // supaya baterai tidak terbuang untuk sesi yang pasti ditolak).
-        if (token.isNullOrBlank() || user == null || !user.can("devices.unlock")) {
+        if (token.isNullOrBlank() || !canRun(applicationContext, sessionStore)) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -162,14 +173,42 @@ class MasterAnchorService : Service() {
     }
 
     companion object {
+        private const val TAG = "MasterAnchorService"
         private const val CHANNEL_ID = "master_anchor_active"
         private const val NOTIFICATION_ID = 2001
         private const val PREFS_NAME = "master_anchor"
         private const val KEY_BEACON_UUID = "beacon_uuid"
 
+        /** Izin runtime yang dibutuhkan untuk memancarkan beacon (Android 12+). */
+        val requiredPermissions: Array<String> =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                arrayOf(Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT)
+            } else {
+                emptyArray()
+            }
+
+        fun hasPermissions(context: Context): Boolean = requiredPermissions.all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+
+        /** Akun yang login boleh membuka kunci DAN izin Bluetooth sudah diberikan. */
+        fun canRun(context: Context, sessionStore: SessionStore = SessionStore(context)): Boolean {
+            val user = sessionStore.user() ?: return false
+            return user.can("devices.unlock") && hasPermissions(context)
+        }
+
+        /**
+         * Nyalakan anchor hanya kalau memang boleh -- service yang dimulai
+         * lewat startForegroundService tapi berhenti tanpa startForeground
+         * membuat app crash, jadi syaratnya dicek di sini, sebelum dimulai.
+         */
         fun start(context: Context) {
-            val intent = Intent(context, MasterAnchorService::class.java)
-            ContextCompat.startForegroundService(context, intent)
+            if (!canRun(context)) return
+            try {
+                ContextCompat.startForegroundService(context, Intent(context, MasterAnchorService::class.java))
+            } catch (e: Exception) {
+                Log.w(TAG, "Anchor master tidak bisa dimulai: ${e.message}")
+            }
         }
 
         fun stop(context: Context) {

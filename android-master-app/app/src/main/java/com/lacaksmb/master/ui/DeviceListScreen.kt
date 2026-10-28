@@ -1,5 +1,7 @@
 package com.lacaksmb.master.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -65,10 +67,26 @@ fun DeviceListScreen(apiClient: ApiClient, sessionStore: SessionStore, navContro
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
+    // Anchor buka kunci (MasterAnchorService) butuh izin Bluetooth di
+    // Android 12+: minta sekali setelah login, lalu nyalakan anchor-nya.
+    val bluetoothLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        MasterAnchorService.start(context.applicationContext)
+    }
+    LaunchedEffect(Unit) {
+        val canUnlock = sessionStore.user()?.can("devices.unlock") == true
+        if (canUnlock && !MasterAnchorService.hasPermissions(context)) {
+            bluetoothLauncher.launch(MasterAnchorService.requiredPermissions)
+        }
+    }
+
     LaunchedEffect(refreshTick) {
         loading = true
         val user = sessionStore.user()
-        when (val result = apiClient.listDevices(user?.organizationId)) {
+        // Admin & leader melihat semua site yang diberikan ke akunnya, bukan
+        // site "milik" akunnya (yang bisa saja tidak termasuk di dalamnya).
+        val grantBased = user != null && "super_admin" !in user.roles &&
+            user.roles.any { it == "admin" || it == "leader" }
+        when (val result = apiClient.listDevices(if (grantBased) null else user?.organizationId)) {
             is ApiResult.Ok -> {
                 val items = result.data?.optJSONArray("items")
                 devices = (0 until (items?.length() ?: 0)).map { Device.fromJson(items!!.getJSONObject(it)) }
