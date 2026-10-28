@@ -537,7 +537,7 @@ function connection(briefing: BriefingRow, ctx: HttpContext, isHost: boolean) {
         },
         livekit_url: liveKitConfig().url,
         room: roomForBriefing(briefing.id),
-        token: briefingToken(briefing, { id: user.id, name: user.name }, isHost),
+        token: briefingToken(briefing, { id: user.id, name: user.name }),
     }
 }
 

@@ -304,6 +304,13 @@ const gridClass = computed(() => {
     return 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-4'
 })
 
+// Lama briefing berjalan (jam:menit:detik), untuk indikator LIVE di header.
+const elapsed = computed(() => (current.value?.started_at ? formatElapsed(current.value.started_at, now.value) : '00:00:00'))
+// Siapa yang sedang presentasi -- dipakai untuk banner & badge di ubin.
+const presenter = computed(() => call.screenShare.value?.participant ?? null)
+const isLocal = (participant) => participant === call.room.value?.localParticipant
+const nameOf = (participant) => participant.name || participant.identity
+
 // Ganti background kamera (blur / gambar) -- hanya di briefing.
 const canChangeBackground = ref(false)
 const backgroundOpen = ref(false)
@@ -343,26 +350,32 @@ onBeforeUnmount(() => {
 <template>
     <div>
         <!-- ===== Di dalam panggilan ===== -->
-        <div v-if="inCall" class="flex min-h-[calc(100dvh-5.5rem)] flex-col px-4 pt-5 pb-4 sm:px-8">
-            <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div class="min-w-0">
-                    <p class="eyebrow flex items-center gap-2">
-                        <span class="beacon" />
-                        Briefing berlangsung
-                    </p>
-                    <h1 class="truncate font-display text-2xl font-extrabold tracking-[-0.03em] text-base-50">{{ current?.title }}</h1>
+        <div v-if="inCall" class="briefing-room flex min-h-[calc(100dvh-3.5rem)] flex-col px-4 pt-5 pb-4 sm:px-8">
+            <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex min-w-0 items-center gap-3.5">
+                    <span class="live-chip">
+                        <span class="live-dot" />
+                        LIVE
+                        <span class="live-time">{{ elapsed }}</span>
+                    </span>
+                    <h1 class="truncate font-display text-xl font-semibold tracking-[-0.02em] text-white sm:text-2xl">
+                        {{ current?.title }}
+                    </h1>
                 </div>
-                <span
-                    class="inline-flex items-center gap-2 rounded-full bg-base-900 px-3 py-1.5 text-sm font-semibold text-base-300 shadow-(--shadow-card)"
-                >
+                <span class="count-pill">
                     <Users class="size-4" />
-                    {{ call.participants.value.length }} peserta
+                    {{ call.participants.value.length }} di ruang
                 </span>
             </div>
 
-            <!-- Presentasi (layar pemimpin) besar, peserta di sampingnya -->
-            <div v-if="call.screenShare.value" class="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_16rem]">
-                <div class="overflow-hidden rounded-2xl bg-black">
+            <!-- Layar yang sedang dipresentasikan besar, peserta jadi filmstrip di sampingnya -->
+            <div v-if="call.screenShare.value" class="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_17rem]">
+                <div class="relative overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
+                    <div class="presenter-banner">
+                        <MonitorUp class="size-3.5" />
+                        {{ nameOf(call.screenShare.value.participant)
+                        }}<template v-if="isLocal(call.screenShare.value.participant)"> (Anda)</template> sedang presentasi
+                    </div>
                     <LiveVideoTile
                         :track="call.screenShare.value.track"
                         :label="`Layar ${call.screenShare.value.participant.name}`"
@@ -375,18 +388,23 @@ onBeforeUnmount(() => {
                     <div
                         v-for="participant in call.participants.value"
                         :key="participant.identity"
-                        class="relative aspect-video overflow-hidden rounded-xl bg-[#0e1520]"
-                        :class="participant.isSpeaking && 'ring-2 ring-accent-500'"
+                        class="tile"
+                        :class="participant.isSpeaking && 'is-speaking'"
                     >
                         <LiveVideoTile
                             v-if="call.cameraOf(participant)"
                             :track="call.cameraOf(participant)"
-                            :label="participant.name || participant.identity"
-                            :mirrored="participant === call.room.value.localParticipant"
+                            :label="nameOf(participant)"
+                            :mirrored="isLocal(participant)"
                             bare
                             class="!rounded-none !border-0"
                         />
-                        <span class="absolute bottom-1.5 left-2 truncate text-xs font-semibold text-white">{{ participant.name }}</span>
+                        <div v-else class="tile-avatar"><span class="avatar">{{ (nameOf(participant) || '?').charAt(0).toUpperCase() }}</span></div>
+                        <div class="tile-chip">
+                            <MonitorUp v-if="participant === presenter" class="size-3 shrink-0 text-accent-400" />
+                            <span class="tile-name">{{ nameOf(participant) }}</span>
+                            <component :is="call.micOn(participant) ? Mic : MicOff" class="ml-auto size-3.5 shrink-0" :class="call.micOn(participant) ? 'text-white/85' : 'text-danger-400'" />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -396,87 +414,85 @@ onBeforeUnmount(() => {
                 <div
                     v-for="participant in call.participants.value"
                     :key="participant.identity"
-                    class="relative aspect-video overflow-hidden rounded-2xl bg-[#0e1520] transition-shadow"
-                    :class="participant.isSpeaking && 'ring-2 ring-accent-500 ring-offset-2 ring-offset-base-950'"
+                    class="tile"
+                    :class="participant.isSpeaking && 'is-speaking'"
                 >
                     <LiveVideoTile
                         v-if="call.cameraOf(participant)"
                         :track="call.cameraOf(participant)"
-                        :label="participant.name || participant.identity"
-                        :mirrored="participant === call.room.value.localParticipant"
+                        :label="nameOf(participant)"
+                        :mirrored="isLocal(participant)"
                         bare
                         class="!rounded-none !border-0"
                     />
-                    <div v-else class="flex size-full items-center justify-center">
-                        <span
-                            class="flex size-16 items-center justify-center rounded-full bg-white/10 font-display text-2xl font-extrabold text-white"
-                        >
-                            {{ (participant.name || '?').charAt(0).toUpperCase() }}
-                        </span>
+                    <div v-else class="tile-avatar">
+                        <span class="avatar avatar-lg">{{ (nameOf(participant) || '?').charAt(0).toUpperCase() }}</span>
                     </div>
-                    <div
-                        class="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/80 to-transparent px-3 pt-6 pb-2"
-                    >
-                        <span class="truncate text-sm font-semibold text-white">
-                            {{ participant.name || participant.identity }}
-                            <template v-if="participant === call.room.value.localParticipant"> (Anda)</template>
+                    <span v-if="participant === presenter" class="presenting-tag"><MonitorUp class="size-3" /> Presentasi</span>
+                    <div class="tile-chip tile-chip-lg">
+                        <span class="tile-name">
+                            {{ nameOf(participant) }}<template v-if="isLocal(participant)"> (Anda)</template>
                         </span>
-                        <component
-                            :is="call.micOn(participant) ? Mic : MicOff"
-                            class="ml-auto size-4 shrink-0"
-                            :class="call.micOn(participant) ? 'text-white' : 'text-white/50'"
-                        />
+                        <component :is="call.micOn(participant) ? Mic : MicOff" class="ml-auto size-4 shrink-0" :class="call.micOn(participant) ? 'text-white' : 'text-danger-400'" />
                     </div>
                 </div>
             </div>
 
-            <!-- Dok kendali -->
-            <div
-                class="sticky bottom-4 mx-auto mt-5 flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-base-800 bg-base-900/90 p-2 shadow-(--shadow-raised) backdrop-blur"
-                role="toolbar"
-                aria-label="Kendali briefing"
-            >
-                <BaseButton
-                    :variant="call.local.value.micOn ? 'outline' : 'primary'"
-                    :aria-pressed="call.local.value.micOn"
-                    @click="runToggle(call.toggleMic, 'Mikrofon belum menyala')"
-                >
-                    <component :is="call.local.value.micOn ? Mic : MicOff" class="size-4" />
-                    {{ call.local.value.micOn ? 'Bisukan' : 'Nyalakan mikrofon' }}
-                </BaseButton>
-                <BaseButton
-                    :variant="call.local.value.cameraOn ? 'outline' : 'primary'"
-                    :aria-pressed="call.local.value.cameraOn"
-                    @click="runToggle(call.toggleCamera, 'Kamera belum menyala')"
-                >
-                    <component :is="call.local.value.cameraOn ? VideoOff : Video" class="size-4" />
-                    {{ call.local.value.cameraOn ? 'Matikan kamera' : 'Nyalakan kamera' }}
-                </BaseButton>
-                <BaseButton v-if="canChangeBackground" variant="outline" @click="backgroundOpen = true">
-                    <Wallpaper class="size-4" />
-                    Background
-                </BaseButton>
-                <BaseButton
-                    v-if="isHost"
-                    variant="outline"
-                    :aria-pressed="call.local.value.screenOn"
-                    @click="runToggle(call.toggleScreen, 'Layar belum dibagikan')"
-                >
-                    <component :is="call.local.value.screenOn ? MonitorX : MonitorUp" class="size-4" />
-                    {{ call.local.value.screenOn ? 'Hentikan presentasi' : 'Presentasikan layar' }}
-                </BaseButton>
-                <BaseButton variant="ghost" @click="leaveBriefing">
-                    <PhoneOff class="size-4" />
-                    Keluar
-                </BaseButton>
-                <BaseButton v-if="isHost || auth.isSuperAdmin" variant="outline" @click="openAttendance(current)">
-                    <ClipboardList class="size-4" />
-                    Daftar hadir
-                </BaseButton>
-                <BaseButton v-if="isHost" variant="danger" @click="endTarget = current">
-                    <Square class="size-4" />
-                    Akhiri untuk semua
-                </BaseButton>
+            <!-- Konsol kendali: media di kiri, aksi sesi di kanan -->
+            <div class="console" role="toolbar" aria-label="Kendali briefing">
+                <div class="console-group">
+                    <button
+                        type="button"
+                        class="ctl"
+                        :class="!call.local.value.micOn && 'is-off'"
+                        :aria-pressed="call.local.value.micOn"
+                        @click="runToggle(call.toggleMic, 'Mikrofon belum menyala')"
+                    >
+                        <component :is="call.local.value.micOn ? Mic : MicOff" class="size-5" />
+                        <span class="ctl-label">{{ call.local.value.micOn ? 'Mikrofon' : 'Bisu' }}</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="ctl"
+                        :class="!call.local.value.cameraOn && 'is-off'"
+                        :aria-pressed="call.local.value.cameraOn"
+                        @click="runToggle(call.toggleCamera, 'Kamera belum menyala')"
+                    >
+                        <component :is="call.local.value.cameraOn ? Video : VideoOff" class="size-5" />
+                        <span class="ctl-label">Kamera</span>
+                    </button>
+                    <button v-if="canChangeBackground" type="button" class="ctl" @click="backgroundOpen = true">
+                        <Wallpaper class="size-5" />
+                        <span class="ctl-label">Background</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="ctl"
+                        :class="call.local.value.screenOn && 'is-live'"
+                        :aria-pressed="call.local.value.screenOn"
+                        @click="runToggle(call.toggleScreen, 'Layar belum dibagikan')"
+                    >
+                        <component :is="call.local.value.screenOn ? MonitorX : MonitorUp" class="size-5" />
+                        <span class="ctl-label">{{ call.local.value.screenOn ? 'Stop bagi' : 'Bagikan layar' }}</span>
+                    </button>
+                </div>
+
+                <span class="console-divider" aria-hidden="true" />
+
+                <div class="console-group">
+                    <button v-if="isHost || auth.isSuperAdmin" type="button" class="ctl ctl-wide" @click="openAttendance(current)">
+                        <ClipboardList class="size-5" />
+                        <span class="ctl-label">Kehadiran</span>
+                    </button>
+                    <button type="button" class="ctl ctl-wide" @click="leaveBriefing">
+                        <PhoneOff class="size-5" />
+                        <span class="ctl-label">Keluar</span>
+                    </button>
+                    <button v-if="isHost" type="button" class="ctl ctl-danger ctl-wide" @click="endTarget = current">
+                        <Square class="size-5" />
+                        <span class="ctl-label">Akhiri</span>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -848,3 +864,300 @@ onBeforeUnmount(() => {
         />
     </div>
 </template>
+
+<style scoped>
+/*
+ * Ruang briefing: selalu gelap (video tetap terbaca di tema terang maupun
+ * gelap). Aksen biru dari sistem dipakai untuk "sedang bicara" & "berbagi
+ * layar"; merah untuk keadaan mati (mik/kamera) & aksi mengakhiri -- bahasa
+ * warna yang sama dengan aplikasi rapat pada umumnya.
+ */
+.briefing-room {
+    background-color: #0a0b0d;
+    color: #fafafa;
+    margin: -0.75rem -1rem 0; /* tutupi gutter main supaya ruang terasa penuh */
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+
+@media (width >= 40rem) {
+    .briefing-room {
+        margin-left: -2rem;
+        margin-right: -2rem;
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+}
+
+/* Indikator LIVE: titik berdenyut + jam berjalan (mono) */
+.live-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    background-color: color-mix(in oklab, var(--color-danger-500) 16%, transparent);
+    padding: 0.3rem 0.7rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #ff6a5f;
+}
+
+.live-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    background-color: currentColor;
+    box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 60%, transparent);
+    animation: live-pulse 2s ease-out infinite;
+}
+
+.live-time {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    letter-spacing: 0;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+}
+
+@keyframes live-pulse {
+    0% {
+        box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 55%, transparent);
+    }
+    70%,
+    100% {
+        box-shadow: 0 0 0 0.5rem transparent;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .live-dot {
+        animation: none;
+    }
+}
+
+.count-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    border: 1px solid rgb(255 255 255 / 0.12);
+    background-color: rgb(255 255 255 / 0.04);
+    padding: 0.35rem 0.85rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: rgb(255 255 255 / 0.85);
+}
+
+/* Banner nama presenter di atas layar yang dibagikan */
+.presenter-banner {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 10;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border-radius: 9999px;
+    background-color: color-mix(in oklab, var(--color-accent-500) 85%, black);
+    padding: 0.3rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+    box-shadow: 0 6px 18px -8px rgb(0 0 0 / 0.8);
+}
+
+/* Ubin peserta */
+.tile {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1rem;
+    background-color: #141418;
+    aspect-ratio: 16 / 9;
+    transition: box-shadow 150ms;
+}
+
+.tile.is-speaking {
+    box-shadow:
+        0 0 0 2px #0a0b0d,
+        0 0 0 4px var(--color-accent-500);
+}
+
+.tile-avatar {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+}
+
+.avatar {
+    display: flex;
+    width: 2.5rem;
+    height: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    background-color: rgb(255 255 255 / 0.08);
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.avatar-lg {
+    width: 4rem;
+    height: 4rem;
+    font-size: 1.5rem;
+}
+
+.presenting-tag {
+    position: absolute;
+    top: 0.6rem;
+    left: 0.6rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-radius: 0.5rem;
+    background-color: color-mix(in oklab, var(--color-accent-500) 85%, black);
+    padding: 0.2rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.tile-chip {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 1.25rem 0.6rem 0.45rem;
+    background: linear-gradient(to top, rgb(0 0 0 / 0.78), transparent);
+}
+
+.tile-chip-lg {
+    padding: 1.5rem 0.75rem 0.55rem;
+}
+
+.tile-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.tile-chip .tile-name {
+    font-size: 0.75rem;
+}
+
+/* Konsol kendali */
+.console {
+    position: sticky;
+    bottom: 1rem;
+    z-index: 20;
+    margin: 1.25rem auto 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    border-radius: 1rem;
+    border: 1px solid rgb(255 255 255 / 0.1);
+    background-color: rgb(18 18 22 / 0.92);
+    padding: 0.4rem;
+    box-shadow: 0 20px 50px -18px rgb(0 0 0 / 0.85);
+    backdrop-filter: blur(12px);
+}
+
+.console-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.console-divider {
+    align-self: stretch;
+    width: 1px;
+    margin: 0.3rem 0.4rem;
+    background-color: rgb(255 255 255 / 0.12);
+}
+
+@media (width < 32rem) {
+    .console-divider {
+        display: none;
+    }
+}
+
+.ctl {
+    display: inline-flex;
+    min-width: 4.25rem;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    border-radius: 0.75rem;
+    border: 1px solid transparent;
+    background-color: rgb(255 255 255 / 0.06);
+    padding: 0.5rem 0.65rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: rgb(255 255 255 / 0.88);
+    cursor: pointer;
+    transition:
+        background-color 140ms,
+        color 140ms,
+        border-color 140ms;
+}
+
+.ctl:hover {
+    background-color: rgb(255 255 255 / 0.12);
+    color: #fff;
+}
+
+.ctl:focus-visible {
+    outline: 2px solid var(--color-accent-400);
+    outline-offset: 2px;
+}
+
+.ctl-label {
+    line-height: 1;
+}
+
+.ctl-wide {
+    min-width: 4.75rem;
+}
+
+/* Mik/kamera mati -> isian merah (bahasa rapat yang biasa) */
+.ctl.is-off {
+    background-color: var(--color-danger-500);
+    color: #fff;
+}
+
+.ctl.is-off:hover {
+    background-color: var(--color-danger-600);
+}
+
+/* Sedang berbagi layar -> isian aksen */
+.ctl.is-live {
+    background-color: var(--color-accent-500);
+    color: #fff;
+}
+
+.ctl.is-live:hover {
+    background-color: var(--color-accent-600);
+}
+
+/* Akhiri untuk semua -> merah hanya saat disorot, agar tidak tertekan sengaja */
+.ctl-danger {
+    color: #ff8078;
+}
+
+.ctl-danger:hover {
+    background-color: var(--color-danger-500);
+    color: #fff;
+}
+</style>
