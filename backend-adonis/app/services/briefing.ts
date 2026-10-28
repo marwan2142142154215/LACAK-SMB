@@ -69,21 +69,18 @@ export function canJoinBriefing(access: Access, briefing: BriefingRow): boolean 
 }
 
 /**
- * Token bergabung: kamera & mikrofon untuk semua peserta, berbagi layar hanya
- * pemimpin (untuk presentasi).
+ * Token bergabung: kamera, mikrofon, dan berbagi layar untuk semua peserta.
  */
 export function briefingToken(
     briefing: BriefingRow,
-    user: { id: number; name: string },
-    isHost: boolean
+    user: { id: number; name: string }
 ): string {
     return issue(`user-${user.id}`, user.name, {
         room: roomForBriefing(briefing.id),
         roomJoin: true,
         canPublish: true,
-        canPublishSources: isHost
-            ? ['camera', 'microphone', 'screen_share']
-            : ['camera', 'microphone'],
+        // Semua peserta boleh presentasi layar, bukan hanya pemimpin.
+        canPublishSources: ['camera', 'microphone', 'screen_share'],
         canSubscribe: true,
         canPublishData: false,
         canUpdateOwnMetadata: false,
