@@ -23,8 +23,8 @@ const ACCOUNTS: DemoAccount[] = [
 
 /** Staf tambahan per site, untuk menguji dinding Live Kerja & log kerja dengan banyak orang. */
 const EXTRA_STAFF: Record<SiteKey, [number, number]> = { A: [3, 262], B: [2, 11] }
-/** Root tambahan (super_admin) selain `root`: root2, root3. */
-const EXTRA_ROOTS = [2, 3]
+/** Root tambahan (super_admin) selain `root`: root2 - root15 (total 15 akun root). */
+const EXTRA_ROOTS: [number, number] = [2, 15]
 /** Akun admin tim audit LC: auditlc1 - auditlc10, akses Site Uji A & B. */
 const AUDITLC_ADMINS: [number, number] = [1, 10]
 /** Akun leader: leader1 - leader20, menonton Site Uji A & B. */
@@ -35,7 +35,9 @@ const range = ([from, to]: [number, number]) =>
 
 function accounts(): DemoAccount[] {
     const list = [...ACCOUNTS]
-    for (const n of EXTRA_ROOTS) list.push([`root${n}`, `Root ${n} (uji)`, 'super_admin', null, []])
+    for (const n of range(EXTRA_ROOTS)) {
+        list.push([`root${n}`, `Root ${n} (uji)`, 'super_admin', null, []])
+    }
     for (const n of range(AUDITLC_ADMINS)) {
         list.push([`auditlc${n}`, `Audit LC ${n}`, 'admin', null, ['A', 'B']])
     }
