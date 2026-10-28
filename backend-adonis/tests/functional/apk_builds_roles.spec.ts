@@ -220,3 +220,35 @@ test.group('Build APK: peran yang boleh', (group) => {
         assert.equal(Number(count.total), 1)
     })
 })
+
+test.group('Build APK: hapus', (group) => {
+    group.each.setup(() => testUtils.db().withGlobalTransaction())
+
+    test('root menghapus build SMB Admin walau berkasnya sudah tidak ada', async ({
+        client,
+        assert,
+    }) => {
+        const org = await site('Site Hapus Build')
+        const bearer = await userWithRole('super_admin', org)
+        const token = await db
+            .from('personal_access_tokens')
+            .where('id', Number(bearer.split('|')[0]))
+            .first()
+        const [build] = await db
+            .table('apk_builds')
+            .insert({
+                organization_id: org,
+                version: '1.0.0',
+                file_path: 'apk-builds/tidak-ada/master-0.apk',
+                embedded_site_code: 'UNIVERSAL',
+                built_by: token.tokenable_id,
+                apk_type: 'master',
+                status: 'success',
+            })
+            .returning(['id'])
+
+        const response = await client.delete(`/api/v1/apk-builds/${build.id}`).bearerToken(bearer)
+        response.assertStatus(200)
+        assert.isNull(await db.from('apk_builds').where('id', build.id).first())
+    })
+})
