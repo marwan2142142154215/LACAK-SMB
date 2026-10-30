@@ -1,8 +1,8 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { accessOf, can } from '#services/access'
-import { fail, success } from '#services/api_response'
-import { authorizedOrganizationId } from '#services/organization_scope'
+import { accessOf, can } from '#services/Access'
+import { fail, success } from '#services/ApiResponse'
+import { authorizedOrganizationId } from '#services/OrganizationScope'
 import {
     deviceCommandResource,
     eloquentNow,
@@ -10,8 +10,8 @@ import {
     logDeviceUpdated,
     paginate,
     updateDevice,
-} from '#services/device_resource'
-import { storeDeviceCommandValidator, type COMMAND_TYPES } from '#validators/devices'
+} from '#services/DeviceResource'
+import { storeDeviceCommandValidator, type COMMAND_TYPES } from '#validators/Devices'
 
 /** Izin yang dibutuhkan per jenis perintah. */
 export const COMMAND_PERMISSIONS: Record<(typeof COMMAND_TYPES)[number], string> = {

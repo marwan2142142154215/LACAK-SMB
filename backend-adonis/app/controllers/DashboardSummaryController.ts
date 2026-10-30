@@ -1,9 +1,9 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { accessOf } from '#services/access'
-import { fail, success } from '#services/api_response'
+import { accessOf } from '#services/Access'
+import { fail, success } from '#services/ApiResponse'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
-import { organizationFilter } from '#services/organization_scope'
+import { organizationFilter } from '#services/OrganizationScope'
 
 /**
  * Angka ringkas strip telemetri dashboard -- padanan DashboardSummaryController

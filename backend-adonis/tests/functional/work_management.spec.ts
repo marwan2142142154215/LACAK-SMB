@@ -3,11 +3,11 @@ import { test } from '@japa/runner'
 import { DateTime } from 'luxon'
 import db from '@adonisjs/lucid/services/db'
 import testUtils from '@adonisjs/core/services/test_utils'
-import PersonalAccessToken from '#models/personal_access_token'
-import { runBriefingSchedules } from '#services/briefing_schedule'
+import PersonalAccessToken from '#models/PersonalAccessToken'
+import { runBriefingSchedules } from '#services/BriefingSchedule'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
-import { localDate } from '#services/local_time'
-import { runWorkAlerts } from '#services/work_alerts'
+import { localDate } from '#services/LocalTime'
+import { runWorkAlerts } from '#services/WorkAlerts'
 
 async function site(name: string) {
     const [org] = await db

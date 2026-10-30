@@ -2,15 +2,15 @@ import { BaseCommand } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
 import db from '@adonisjs/lucid/services/db'
 import env from '#start/env'
-import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/activity_log'
-import { removeBroadcaster } from '#services/livekit'
+import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/ActivityLog'
+import { removeBroadcaster } from '#services/Livekit'
 import {
     closeSession,
     DISCONNECTED_AFTER_SECONDS,
     openSessions,
     record,
     type WorkSessionRow,
-} from '#services/work_presence'
+} from '#services/WorkPresence'
 
 /** lacaksmb.livekit.heartbeat_timeout_seconds di backend-api. */
 export const heartbeatTimeoutSeconds = () => env.get('LIVE_HEARTBEAT_TIMEOUT_SECONDS', 120)

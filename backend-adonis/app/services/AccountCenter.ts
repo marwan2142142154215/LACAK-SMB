@@ -1,6 +1,6 @@
 import log from '@adonisjs/core/services/logger'
 import env from '#start/env'
-import * as AesCbc256 from '#services/aes_cbc256'
+import * as AesCbc256 from '#services/AesCbc256'
 
 /**
  * Klien login Account Center (layanan akun terpusat perusahaan), padanan

@@ -1,11 +1,11 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { accessOf, can } from '#services/access'
-import { fail, success } from '#services/api_response'
-import { authorizedOrganizationId } from '#services/organization_scope'
-import { eloquentNow, findDeviceOrFail, saveDevice } from '#services/device_resource'
-import { claimDeviceValidator } from '#validators/devices'
+import { accessOf, can } from '#services/Access'
+import { fail, success } from '#services/ApiResponse'
+import { authorizedOrganizationId } from '#services/OrganizationScope'
+import { eloquentNow, findDeviceOrFail, saveDevice } from '#services/DeviceResource'
+import { claimDeviceValidator } from '#validators/Devices'
 
 /** 32 byte acak = 256 bit; cukup tinggi entropinya sehingga SHA-256 tanpa salt aman dipakai. */
 const SECRET_BYTES = 32
@@ -20,7 +20,7 @@ export function generatePlainSecret(): string {
 
 /**
  * hash('sha256', $plain) Laravel: hex huruf kecil. WAJIB sama dengan yang
- * dicocokkan realtime-gateway (app/services/device_credentials.ts).
+ * dicocokkan realtime-gateway (app/services/DeviceCredentials.ts).
  */
 export function hashDeviceSecret(plainSecret: string): string {
     return createHash('sha256').update(plainSecret, 'utf8').digest('hex')

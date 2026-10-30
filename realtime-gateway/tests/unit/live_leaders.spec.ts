@@ -1,12 +1,12 @@
 import { test } from '@japa/runner'
-import type { AuthenticatedUser } from '#services/backend_api_client'
+import type { AuthenticatedUser } from '#services/BackendApiClient'
 import {
     canBroadcast,
     canWatchLeaders,
     canWatchSite,
     liveRoom,
     seesOnlySelf,
-} from '#services/live_hub'
+} from '#services/LiveHub'
 
 function user(roles: string[], permissions: string[] = ['live.watch']): AuthenticatedUser {
     return {

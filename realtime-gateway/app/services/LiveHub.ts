@@ -1,14 +1,14 @@
 import type { Server as SocketIoServer } from 'socket.io'
-import logger from '#services/log'
-import type { AuthenticatedUser } from '#services/backend_api_client'
-import { parseReportedState, statusOf, type WorkStatus } from '#services/live_status'
+import logger from '#services/Log'
+import type { AuthenticatedUser } from '#services/BackendApiClient'
+import { parseReportedState, statusOf, type WorkStatus } from '#services/LiveStatus'
 import {
     applyReportedState,
     hasActiveLogin,
     openSessionsIn,
     sessionPayload,
     type LiveSession,
-} from '#services/live_presence'
+} from '#services/LivePresence'
 
 /**
  * Live Kerja lewat socket /ops, menggantikan dua polling HTTP:

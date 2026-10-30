@@ -1,13 +1,13 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
-import { accessOf, type Access } from '#services/access'
-import { writeActivity } from '#services/activity_log'
-import { fail, success } from '#services/api_response'
-import { BRIEFING_AUDIENCE_ROLES, sitesOf as userSitesOf } from '#services/briefing'
-import { isManager, managedSites } from '#services/managed_sites'
-import { raiseAlert } from '#services/work_alerts'
-import { sitesOf } from '#controllers/work_shifts_controller'
+import { accessOf, type Access } from '#services/Access'
+import { writeActivity } from '#services/ActivityLog'
+import { fail, success } from '#services/ApiResponse'
+import { BRIEFING_AUDIENCE_ROLES, sitesOf as userSitesOf } from '#services/Briefing'
+import { isManager, managedSites } from '#services/ManagedSites'
+import { raiseAlert } from '#services/WorkAlerts'
+import { sitesOf } from '#controllers/WorkShiftsController'
 
 const AUDIENCE_KEYS = Object.keys(BRIEFING_AUDIENCE_ROLES) as Array<
     keyof typeof BRIEFING_AUDIENCE_ROLES

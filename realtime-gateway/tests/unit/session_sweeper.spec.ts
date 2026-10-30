@@ -1,5 +1,5 @@
 import { test } from '@japa/runner'
-import { tokenIdOf } from '#services/session_sweeper'
+import { tokenIdOf } from '#services/SessionSweeper'
 
 test.group('Pemeriksaan sesi socket', () => {
     test('id token Sanctum dibaca dari "{id}|{plain}"', ({ assert }) => {

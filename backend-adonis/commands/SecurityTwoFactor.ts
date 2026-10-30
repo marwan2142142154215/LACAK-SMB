@@ -1,6 +1,6 @@
 import { args, BaseCommand } from '@adonisjs/core/ace'
 import type { CommandOptions } from '@adonisjs/core/types/ace'
-import { isTwoFactorRequired, setTwoFactorRequired } from '#services/two_factor_policy'
+import { isTwoFactorRequired, setTwoFactorRequired } from '#services/TwoFactorPolicy'
 
 /**
  * Menyalakan/mematikan kewajiban 2FA dari server (padanan

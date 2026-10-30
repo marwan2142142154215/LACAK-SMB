@@ -60,7 +60,7 @@ const ignitor = new Ignitor(APP_ROOT, { importer: IMPORTER }).tap((app) => {
 // butuh singleton app container sudah ada (lihat Ignitor constructor),
 // walau app belum selesai boot sepenuhnya.
 const { registerSocketHandlers } = await import('#start/socket')
-const { startCommandDispatcher } = await import('#services/command_dispatcher')
+const { startCommandDispatcher } = await import('#services/CommandDispatcher')
 
 ignitor
     .httpServer()

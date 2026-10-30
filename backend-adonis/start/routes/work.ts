@@ -1,11 +1,11 @@
 import router from '@adonisjs/core/services/router'
 import { middleware } from '#start/kernel'
 
-const WorkShiftsController = () => import('#controllers/work_shifts_controller')
-const AttendanceController = () => import('#controllers/attendance_controller')
-const LeaveRequestsController = () => import('#controllers/leave_requests_controller')
-const AnnouncementsController = () => import('#controllers/announcements_controller')
-const StaffWarningsController = () => import('#controllers/staff_warnings_controller')
+const WorkShiftsController = () => import('#controllers/WorkShiftsController')
+const AttendanceController = () => import('#controllers/AttendanceController')
+const LeaveRequestsController = () => import('#controllers/LeaveRequestsController')
+const AnnouncementsController = () => import('#controllers/AnnouncementsController')
+const StaffWarningsController = () => import('#controllers/StaffWarningsController')
 
 /** Pengelolaan kerja: shift, absensi, peringatan, izin/cuti, pengumuman, peringatan staf. */
 router

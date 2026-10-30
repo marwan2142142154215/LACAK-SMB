@@ -5,10 +5,10 @@ import {
     shiftRow,
     staffOfSites,
     type AttendanceDay,
-} from '#services/attendance'
-import { addDays, isoWeekday, localDate, localTime } from '#services/local_time'
-import { sendToSite } from '#services/telegram'
-import { FACE_LOG_MIN_SECONDS } from '#services/work_presence'
+} from '#services/Attendance'
+import { addDays, isoWeekday, localDate, localTime } from '#services/LocalTime'
+import { sendToSite } from '#services/Telegram'
+import { FACE_LOG_MIN_SECONDS } from '#services/WorkPresence'
 
 /**
  * Peringatan langsung & laporan kerja per site, dijalankan scheduler tiap

@@ -1,5 +1,5 @@
 import { test } from '@japa/runner'
-import { parseTransport } from '#services/live_hub'
+import { parseTransport } from '#services/LiveHub'
 
 test.group('Live Kerja: jalur video dari live:state', () => {
     test('hanya udp/tcp yang diterima', ({ assert }) => {

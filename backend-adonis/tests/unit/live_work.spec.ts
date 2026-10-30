@@ -1,13 +1,13 @@
 import { test } from '@japa/runner'
-import { broadcasterToken } from '#services/livekit'
-import type { Access } from '#services/access'
-import { authorizedOrganizationId, organizationFilter } from '#services/organization_scope'
+import { broadcasterToken } from '#services/Livekit'
+import type { Access } from '#services/Access'
+import { authorizedOrganizationId, organizationFilter } from '#services/OrganizationScope'
 import {
     statusOf,
     summarize,
     type PresenceEvent,
     type WorkSessionRow,
-} from '#services/work_presence'
+} from '#services/WorkPresence'
 
 /**
  * Token dibuat LiveKitTokenIssuer::broadcasterToken(3, 42, 'Staf Ünïcode / A1')

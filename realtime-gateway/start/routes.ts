@@ -6,7 +6,7 @@
 | Gateway ini sengaja tidak punya route login/signup sendiri: semua login
 | wajib lewat backend-api Laravel (Sanctum + 2FA), dan gateway hanya
 | memvalidasi Bearer token dengan memanggil balik GET /api/v1/auth/me ke
-| Laravel (lihat app/services/backend_api_client.ts dan start/socket.ts
+| Laravel (lihat app/services/BackendApiClient.ts dan start/socket.ts
 | namespace /ops).
 |
 */

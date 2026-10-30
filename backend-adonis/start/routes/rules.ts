@@ -12,9 +12,9 @@
 import router from '@adonisjs/core/services/router'
 import { middleware } from '#start/kernel'
 
-const GeofenceRulesController = () => import('#controllers/geofence_rules_controller')
-const TelegramBindingsController = () => import('#controllers/telegram_bindings_controller')
-const TelegramUserLinksController = () => import('#controllers/telegram_user_links_controller')
+const GeofenceRulesController = () => import('#controllers/GeofenceRulesController')
+const TelegramBindingsController = () => import('#controllers/TelegramBindingsController')
+const TelegramUserLinksController = () => import('#controllers/TelegramUserLinksController')
 
 // Id selain angka tidak pernah cocok dengan baris mana pun (404).
 const id = router.matchers.number()

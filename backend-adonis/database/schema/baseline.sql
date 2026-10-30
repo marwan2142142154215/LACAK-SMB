@@ -2,7 +2,10 @@
 -- 2026_10_25_160000_create_briefings_table), dibuat dengan pg_dump --schema-only.
 -- Dipakai migrasi 0000_baseline_schema untuk database KOSONG; database lama
 -- (produksi/server uji) sudah punya skema ini dan tidak dijalankan ulang.
--- Jangan diubah: perubahan skema baru ditulis sebagai migrasi Lucid.
+-- Sudah termasuk kolom dari migrasi lanjutan yang digabung ke sini:
+-- work_sessions.face_missing, briefings.invited_user_ids,
+-- devices.consent_document_id (boleh kosong) dan devices.last_ssid.
+-- Tabel baru tetap ditulis sebagai migrasi Lucid terpisah.
 
 CREATE TABLE public.activity_log (
     id bigint NOT NULL,
@@ -73,7 +76,8 @@ CREATE TABLE public.briefings (
     started_at timestamp(0) without time zone NOT NULL,
     ended_at timestamp(0) without time zone,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    invited_user_ids json DEFAULT '[]'::json NOT NULL
 );
 
 CREATE SEQUENCE public.briefings_id_seq
@@ -217,7 +221,7 @@ ALTER SEQUENCE public.device_otps_id_seq OWNED BY public.device_otps.id;
 CREATE TABLE public.devices (
     id bigint NOT NULL,
     organization_id bigint NOT NULL,
-    consent_document_id bigint NOT NULL,
+    consent_document_id bigint,
     device_name character varying(255) NOT NULL,
     device_uuid character varying(255) NOT NULL,
     android_version character varying(10) NOT NULL,
@@ -234,6 +238,7 @@ CREATE TABLE public.devices (
     updated_at timestamp(0) without time zone,
     deleted_at timestamp(0) without time zone,
     secret_hash character varying(64),
+    last_ssid character varying(255),
     CONSTRAINT devices_status_check CHECK (((status)::text = ANY ((ARRAY['online'::character varying, 'offline'::character varying, 'locked'::character varying, 'pending_enrollment'::character varying])::text[])))
 );
 
@@ -604,7 +609,8 @@ CREATE TABLE public.work_sessions (
     screen_active boolean DEFAULT false NOT NULL,
     on_break boolean DEFAULT false NOT NULL,
     idle boolean DEFAULT false NOT NULL,
-    disconnected_at timestamp(0) without time zone
+    disconnected_at timestamp(0) without time zone,
+    face_missing boolean DEFAULT false NOT NULL
 );
 
 CREATE SEQUENCE public.work_sessions_id_seq

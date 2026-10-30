@@ -2,9 +2,9 @@ import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import redis from '@adonisjs/redis/services/main'
 import vine from '@vinejs/vine'
-import { accessOf, can, hasRole, seesOnlySelf, type Access } from '#services/access'
-import { fail, success } from '#services/api_response'
-import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/activity_log'
+import { accessOf, can, hasRole, seesOnlySelf, type Access } from '#services/Access'
+import { fail, success } from '#services/ApiResponse'
+import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/ActivityLog'
 import { laravelUrlSigner, LARAVEL_USER_MORPH } from '#services/laravel/index'
 import {
     broadcasterToken,
@@ -13,12 +13,12 @@ import {
     removeBroadcaster,
     roomForSession,
     viewerToken,
-} from '#services/livekit'
+} from '#services/Livekit'
 import {
     authorizedOrganizationId,
     hasCrossOrganizationAccess,
     hasGrantBasedAccess,
-} from '#services/organization_scope'
+} from '#services/OrganizationScope'
 import {
     applyState,
     closeSession,
@@ -30,8 +30,8 @@ import {
     summarize,
     type PresenceEvent,
     type WorkSessionRow,
-} from '#services/work_presence'
-import { leaveToday } from '#controllers/leave_requests_controller'
+} from '#services/WorkPresence'
+import { leaveToday } from '#controllers/LeaveRequestsController'
 
 /** Umur cache GET /live/overview per kumpulan site, sama dengan backend-api. */
 const OVERVIEW_CACHE_SECONDS = 5

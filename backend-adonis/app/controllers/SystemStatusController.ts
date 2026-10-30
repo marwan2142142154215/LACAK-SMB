@@ -1,7 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
-import { accessOf, can } from '#services/access'
-import { fail, success } from '#services/api_response'
-import { snapshot } from '#services/server_status'
+import { accessOf, can } from '#services/Access'
+import { fail, success } from '#services/ApiResponse'
+import { snapshot } from '#services/ServerStatus'
 
 /**
  * Status semua layanan server (menu Akses > Status server) -- hanya

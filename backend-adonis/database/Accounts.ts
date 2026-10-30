@@ -5,7 +5,7 @@ import { LARAVEL_USER_MORPH } from '#services/laravel/index'
 
 /**
  * Peran, izin, dan akun bawaan sistem (padanan seeder Laravel lama).
- * Dipakai database/seeders/main_seeder.ts, command demo:seed-accounts, dan
+ * Dipakai database/seeders/MainSeeder.ts, command demo:seed-accounts, dan
  * persiapan tes fungsional.
  */
 export const PERMISSIONS = [

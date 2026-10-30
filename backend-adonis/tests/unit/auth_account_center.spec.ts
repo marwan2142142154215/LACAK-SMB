@@ -1,6 +1,6 @@
 import { test } from '@japa/runner'
-import * as AesCbc256 from '#services/aes_cbc256'
-import { AUTHENTICATED, REJECTED, isConfigured, readIdentity } from '#services/account_center'
+import * as AesCbc256 from '#services/AesCbc256'
+import { AUTHENTICATED, REJECTED, isConfigured, readIdentity } from '#services/AccountCenter'
 
 /**
  * Vektor dari pustaka PHP Account Center yang asli (disalin dari

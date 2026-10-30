@@ -607,7 +607,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         private const val NOTIFICATION_ID = 1001
         // 15 detik (dulu 30) -- auto-unlock butuh beberapa heartbeat berturut
         // yang semuanya aman (lihat UNLOCK_SAFE_STREAK_REQUIRED di
-        // geofence_evaluator.ts); dengan heartbeat 30 detik, waktu tunggu
+        // GeofenceEvaluator.ts); dengan heartbeat 30 detik, waktu tunggu
         // unlock setelah benar-benar kembali bisa sampai ~90 detik, terasa
         // "macet"/tidak pernah terbuka buat user yang menunggu di depan HP --
         // 15 detik memangkas itu jadi ~30 detik tanpa mengorbankan konfirmasi

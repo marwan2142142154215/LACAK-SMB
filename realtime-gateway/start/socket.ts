@@ -1,25 +1,25 @@
 import type { Server as SocketIoServer } from 'socket.io'
 import { DateTime } from 'luxon'
-import logger from '#services/log'
-import Device from '#models/device'
-import Organization from '#models/organization'
-import ApkBuild from '#models/apk_build'
-import DeviceLocation from '#models/device_location'
-import GeofenceRule from '#models/geofence_rule'
-import socketManager from '#services/socket_manager'
-import { extendSession, isSessionStillValid, verifyBearerToken } from '#services/backend_api_client'
-import { registerLiveHandlers, startLiveSweeper } from '#services/live_hub'
-import { startSessionSweeper } from '#services/session_sweeper'
-import { evaluateGeofence } from '#services/geofence_evaluator'
-import { markCommandAcknowledged } from '#services/command_dispatcher'
-import { beaconUuidFor, isDeviceSecretValid } from '#services/device_credentials'
+import logger from '#services/Log'
+import Device from '#models/Device'
+import Organization from '#models/Organization'
+import ApkBuild from '#models/ApkBuild'
+import DeviceLocation from '#models/DeviceLocation'
+import GeofenceRule from '#models/GeofenceRule'
+import socketManager from '#services/SocketManager'
+import { extendSession, isSessionStillValid, verifyBearerToken } from '#services/BackendApiClient'
+import { registerLiveHandlers, startLiveSweeper } from '#services/LiveHub'
+import { startSessionSweeper } from '#services/SessionSweeper'
+import { evaluateGeofence } from '#services/GeofenceEvaluator'
+import { markCommandAcknowledged } from '#services/CommandDispatcher'
+import { beaconUuidFor, isDeviceSecretValid } from '#services/DeviceCredentials'
 import {
     registerMasterBeacon,
     unregisterMasterBeaconsForSocket,
-} from '#services/master_anchor_registry'
-import { chatRoom, fetchChatHistory, fetchChatMessage, postChatMessage } from '#services/chat_relay'
-import { registerGroupChatHandlers } from '#services/group_chat_hub'
-import { clientIpOf, forgetClientIp, rememberClientIp } from '#services/client_ip'
+} from '#services/MasterAnchorRegistry'
+import { chatRoom, fetchChatHistory, fetchChatMessage, postChatMessage } from '#services/ChatRelay'
+import { registerGroupChatHandlers } from '#services/GroupChatHub'
+import { clientIpOf, forgetClientIp, rememberClientIp } from '#services/ClientIp'
 
 type DeviceHelloPayload = {
     deviceUuid: string
@@ -462,7 +462,7 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
 
         // super_admin lintas site — tidak terikat satu organizationId, jadi
         // di-join ke room khusus yang ikut menerima semua broadcast org
-        // (lihat socket_manager.ts broadcastRadarUpdate/broadcastViolation/
+        // (lihat SocketManager.ts broadcastRadarUpdate/broadcastViolation/
         // broadcastDeviceStatus). Tanpa ini radar super_admin cuma dapat
         // snapshot awal lewat REST lalu tidak pernah live-update lagi.
         if (isSuperAdmin) {
@@ -493,7 +493,7 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
         // APK Master jadi "anchor bergerak": selama socket /ops ini hidup dan
         // APK Master memanggil master:beacon:start, APK Lacak yang mendeteksinya
         // lewat BLE dalam radius aman dianggap berada di tempat aman (lihat
-        // master_anchor_registry.ts, yang juga memeriksa izin devices.unlock).
+        // MasterAnchorRegistry.ts, yang juga memeriksa izin devices.unlock).
         socket.on('master:beacon:start', (payload: { beaconUuid?: string }) => {
             if (typeof payload?.beaconUuid !== 'string' || payload.beaconUuid === '') return
             registerMasterBeacon(payload.beaconUuid, user, socket.id)
@@ -535,7 +535,7 @@ type OpsSocket = Parameters<Parameters<OpsNamespace['on']>[1]>[0]
 type ChatAck = (response: Record<string, unknown>) => void
 
 /**
- * Floating chat staf per site (lihat app/services/chat_relay.ts). Izin masuk
+ * Floating chat staf per site (lihat app/services/ChatRelay.ts). Izin masuk
  * ruang & penyimpanan pesan selalu lewat backend-api dengan token user ini;
  * gateway hanya menyiarkan ke socket lain di ruang yang sama.
  */

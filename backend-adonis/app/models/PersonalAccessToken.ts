@@ -4,7 +4,7 @@ import { BaseModel, column } from '@adonisjs/lucid/orm'
 /**
  * Token Sanctum (tabel personal_access_tokens). Token login punya expires_at
  * (idle timeout 2 jam, digeser tiap request); token akun layanan tidak.
- * Lihat app/middleware/auth_middleware.ts.
+ * Lihat app/middleware/AuthMiddleware.ts.
  */
 export default class PersonalAccessToken extends BaseModel {
     static table = 'personal_access_tokens'

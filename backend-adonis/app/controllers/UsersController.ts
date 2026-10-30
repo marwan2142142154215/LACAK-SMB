@@ -1,13 +1,13 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
-import { accessOf, can, type Access } from '#services/access'
-import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/activity_log'
-import { removeBroadcaster } from '#services/livekit'
-import { hasGrantBasedAccess } from '#services/organization_scope'
-import { closeSession, openSessionOf } from '#services/work_presence'
-import { fail, success } from '#services/api_response'
-import { hashLaravelPassword } from '#services/laravel/bcrypt'
+import { accessOf, can, type Access } from '#services/Access'
+import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/ActivityLog'
+import { removeBroadcaster } from '#services/Livekit'
+import { hasGrantBasedAccess } from '#services/OrganizationScope'
+import { closeSession, openSessionOf } from '#services/WorkPresence'
+import { fail, success } from '#services/ApiResponse'
+import { hashLaravelPassword } from '#services/laravel/Bcrypt'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
 import {
     findUser,
@@ -20,7 +20,7 @@ import {
     userResources,
     usersQuery,
     type UserRow,
-} from '#services/user_resource'
+} from '#services/UserResource'
 import {
     laravelInput,
     laravelMessages,
@@ -32,7 +32,7 @@ import {
     syncSiteAccessValidator,
     UPDATE_USER_SOMETIMES,
     updateUserValidator,
-} from '#validators/users'
+} from '#validators/Users'
 
 /**
  * Kelola staf yang bisa login ke web dashboard & APK master (permission

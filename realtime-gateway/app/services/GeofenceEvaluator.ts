@@ -1,12 +1,12 @@
 import { DateTime } from 'luxon'
-import GeofenceRule from '#models/geofence_rule'
-import ViolationLog from '#models/violation_log'
-import DeviceCommand from '#models/device_command'
-import socketManager from '#services/socket_manager'
-import { getSystemUserId } from '#services/system_user'
-import { notifyTelegramViolation } from '#services/telegram_notifier'
-import Device from '#models/device'
-import { isAuthorizedMasterBeaconFor } from '#services/master_anchor_registry'
+import GeofenceRule from '#models/GeofenceRule'
+import ViolationLog from '#models/ViolationLog'
+import DeviceCommand from '#models/DeviceCommand'
+import socketManager from '#services/SocketManager'
+import { getSystemUserId } from '#services/SystemUser'
+import { notifyTelegramViolation } from '#services/TelegramNotifier'
+import Device from '#models/Device'
+import { isAuthorizedMasterBeaconFor } from '#services/MasterAnchorRegistry'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 type LocationReport = {
@@ -21,7 +21,7 @@ type LocationReport = {
 
 /**
  * Radius aman untuk anchor bergerak (APK Master yang login, lihat
- * master_anchor_registry.ts). Sengaja konstanta tetap, tidak ikut
+ * MasterAnchorRegistry.ts). Sengaja konstanta tetap, tidak ikut
  * max_distance_meters GeofenceRule, supaya tetap berfungsi saat anchor fisik
  * hilang/rusak -- kasus yang memicu fitur ini.
  */

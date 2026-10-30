@@ -4,21 +4,21 @@ import { readFile } from 'node:fs/promises'
 import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
-import { accessOf, can } from '#services/access'
-import { fail, success } from '#services/api_response'
-import { laravelDate, logModelEvent } from '#services/activity_log'
+import { accessOf, can } from '#services/Access'
+import { fail, success } from '#services/ApiResponse'
+import { laravelDate, logModelEvent } from '#services/ActivityLog'
 import { laravelUrlSigner } from '#services/laravel/index'
-import { authorizedOrganizationId, organizationFilter } from '#services/organization_scope'
-import { serveDocumentsDiskFile } from '#services/documents'
-import { disk, documentsDiskName } from '#services/storage'
-import { sha256File } from '#services/apk_builder'
+import { authorizedOrganizationId, organizationFilter } from '#services/OrganizationScope'
+import { serveDocumentsDiskFile } from '#services/Documents'
+import { disk, documentsDiskName } from '#services/Storage'
+import { sha256File } from '#services/ApkBuilder'
 import {
     validateGenerateApkBuild,
     validateStoreApkBuild,
     type UploadedApk,
-} from '#validators/apk_builds'
+} from '#validators/ApkBuilds'
 // Belum ada alias #jobs/* di package.json (lihat laporan modul apk).
-import { dispatchBuildApk } from '#jobs/build_apk_job'
+import { dispatchBuildApk } from '#jobs/BuildApkJob'
 
 export const DEVICE_MORPH = 'App\\Models\\Device'
 

@@ -2,7 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import type { NextFn } from '@adonisjs/core/types/http'
 import db from '@adonisjs/lucid/services/db'
-import { endBatch, startBatch, writeActivity } from '#services/activity_log'
+import { endBatch, startBatch, writeActivity } from '#services/ActivityLog'
 
 /**
  * Log aktivitas sistem (audit trail) -- padanan RecordApiActivity di

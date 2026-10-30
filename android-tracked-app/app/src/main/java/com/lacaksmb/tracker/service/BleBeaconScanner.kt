@@ -15,7 +15,7 @@ import android.util.Log
  *  1. Anchor tetap (device referensi diam di lokasi, UUID-nya dikirim server
  *     lewat device:accepted) -- lihat latestReading()/setRadiusMeters().
  *  2. APK Master yang kebetulan lewat/berada dekat (anchor BERGERAK, lihat
- *     realtime-gateway master_anchor_registry.ts) -- lihat
+ *     realtime-gateway MasterAnchorRegistry.ts) -- lihat
  *     strongestOtherReading(). UUID-nya TIDAK diketahui device ini
  *     sebelumnya (siapa pun yang sedang login APK Master bisa jadi anchor),
  *     makanya scan harus tanpa filter dan server-lah yang memutuskan

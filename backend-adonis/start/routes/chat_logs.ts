@@ -7,10 +7,10 @@
 import router from '@adonisjs/core/services/router'
 import { middleware } from '#start/kernel'
 
-const ChatMessagesController = () => import('#controllers/chat_messages_controller')
-const ChatGroupsController = () => import('#controllers/chat_groups_controller')
-const ActivityLogsController = () => import('#controllers/activity_logs_controller')
-const SystemStatusController = () => import('#controllers/system_status_controller')
+const ChatMessagesController = () => import('#controllers/ChatMessagesController')
+const ChatGroupsController = () => import('#controllers/ChatGroupsController')
+const ActivityLogsController = () => import('#controllers/ActivityLogsController')
+const SystemStatusController = () => import('#controllers/SystemStatusController')
 
 router
     .group(() => {

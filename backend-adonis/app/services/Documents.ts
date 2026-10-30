@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import type { HttpContext } from '@adonisjs/core/http'
 import type { MultipartFile } from '@adonisjs/core/bodyparser'
-import { disk, documentsDiskName, type DiskName } from '#services/storage'
+import { disk, documentsDiskName, type DiskName } from '#services/Storage'
 
 /**
  * Padanan trait ServesDocumentsDiskFiles di backend-api: berkas penting

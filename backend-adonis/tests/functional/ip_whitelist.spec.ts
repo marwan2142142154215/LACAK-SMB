@@ -1,9 +1,9 @@
 import { test } from '@japa/runner'
 import db from '@adonisjs/lucid/services/db'
 import testUtils from '@adonisjs/core/services/test_utils'
-import { hashLaravelPassword } from '#services/laravel/bcrypt'
-import { forgetIpWhitelistCache, normalizeEntry } from '#services/ip_whitelist'
-import { setTwoFactorRequired } from '#services/two_factor_policy'
+import { hashLaravelPassword } from '#services/laravel/Bcrypt'
+import { forgetIpWhitelistCache, normalizeEntry } from '#services/IpWhitelist'
+import { setTwoFactorRequired } from '#services/TwoFactorPolicy'
 import { clearAppRedisKeys } from '#tests/helpers/setup'
 import { assignRole, bearerFor, makeOrganization, makeUser } from './rules_helpers.js'
 

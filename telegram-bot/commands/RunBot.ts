@@ -13,7 +13,7 @@ export default class RunBot extends BaseCommand {
         // Diimpor di dalam run(), bukan di top-level: modul-modul ini membaca env
         // dan logger yang baru siap setelah aplikasi selesai boot (startApp).
         const { default: env } = await import('#start/env')
-        const { createTelegramBot } = await import('#services/telegram_bot')
+        const { createTelegramBot } = await import('#services/TelegramBot')
         const { run } = await import('node-telegram-bot-api/node')
         const logger = await this.app.container.make('logger')
 

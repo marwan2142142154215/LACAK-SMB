@@ -10,7 +10,7 @@ import java.util.UUID
  * device_uuid apa adanya (itu identitas login ke gateway), jadi radar harus
  * menurunkan UUID yang sama dari daftar device untuk mencocokkan sinyal.
  * WAJIB sama persis dengan BeaconUuid.kt di android-tracked-app dan
- * beaconUuidFor() di realtime-gateway/app/services/device_credentials.ts.
+ * beaconUuidFor() di realtime-gateway/app/services/DeviceCredentials.ts.
  */
 object BeaconUuid {
 

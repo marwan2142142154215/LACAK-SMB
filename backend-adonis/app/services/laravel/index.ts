@@ -1,6 +1,6 @@
 import env from '#start/env'
-import { LaravelEncrypter } from '#services/laravel/crypt'
-import { LaravelUrlSigner } from '#services/laravel/signed_url'
+import { LaravelEncrypter } from '#services/laravel/Crypt'
+import { LaravelUrlSigner } from '#services/laravel/SignedUrl'
 
 /** Encrypter & signer dengan APP_KEY backend-api, siap pakai. */
 export const laravelEncrypter = new LaravelEncrypter(env.get('LARAVEL_APP_KEY').release())

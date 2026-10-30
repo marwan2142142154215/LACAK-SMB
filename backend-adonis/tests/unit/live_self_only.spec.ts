@@ -1,7 +1,7 @@
 import { test } from '@japa/runner'
-import type { Access } from '#services/access'
-import { seesOnlySelf } from '#services/access'
-import { broadcasterToken } from '#services/livekit'
+import type { Access } from '#services/Access'
+import { seesOnlySelf } from '#services/Access'
+import { broadcasterToken } from '#services/Livekit'
 
 const CONFIG = {
     url: 'wss://live.test',

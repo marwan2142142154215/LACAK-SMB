@@ -10,7 +10,7 @@ import java.util.UUID
  * device_uuid adalah identitas login ke realtime-gateway, jadi tidak boleh
  * dipancarkan apa adanya ke siapa pun di sekitar. Turunan ini boleh publik
  * karena login sekarang juga butuh rahasia device. WAJIB sama persis dengan
- * beaconUuidFor() di realtime-gateway/app/services/device_credentials.ts dan
+ * beaconUuidFor() di realtime-gateway/app/services/DeviceCredentials.ts dan
  * BeaconUuid.kt di android-master-app — kalau berbeda, scan anchor & radar
  * tidak akan menemukan beacon-nya.
  */

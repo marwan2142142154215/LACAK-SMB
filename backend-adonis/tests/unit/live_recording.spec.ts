@@ -1,6 +1,6 @@
 import { createHash, createHmac } from 'node:crypto'
 import { test } from '@japa/runner'
-import { recordingEnabled, recordingPath, verifyWebhook } from '#services/recording'
+import { recordingEnabled, recordingPath, verifyWebhook } from '#services/Recording'
 
 // Sama dengan LIVEKIT_API_KEY / LIVEKIT_API_SECRET di .env.test.
 const API_KEY = 'kunci-uji'

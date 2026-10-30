@@ -1,9 +1,9 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
-import { accessOf } from '#services/access'
-import { writeActivity } from '#services/activity_log'
-import { fail, success } from '#services/api_response'
+import { accessOf } from '#services/Access'
+import { writeActivity } from '#services/ActivityLog'
+import { fail, success } from '#services/ApiResponse'
 import {
     BRIEFING_AUDIENCE_ROLES,
     briefingToken,
@@ -12,7 +12,7 @@ import {
     roomForBriefing,
     sitesOf,
     type BriefingRow,
-} from '#services/briefing'
+} from '#services/Briefing'
 import {
     asBriefing,
     finishBriefing,
@@ -21,11 +21,11 @@ import {
     PRESENCE_TIMEOUT_SECONDS,
     RECURRENCES,
     type ScheduleRow,
-} from '#services/briefing_schedule'
+} from '#services/BriefingSchedule'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
-import { liveKitConfig } from '#services/livekit'
-import { colleaguesOf as inviteCandidates } from '#services/people'
-import { DATE_PATTERN, localDate, TIME_PATTERN } from '#services/local_time'
+import { liveKitConfig } from '#services/Livekit'
+import { colleaguesOf as inviteCandidates } from '#services/People'
+import { DATE_PATTERN, localDate, TIME_PATTERN } from '#services/LocalTime'
 
 const AUDIENCE_KEYS = Object.keys(BRIEFING_AUDIENCE_ROLES) as Array<
     keyof typeof BRIEFING_AUDIENCE_ROLES

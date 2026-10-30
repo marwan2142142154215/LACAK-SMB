@@ -7,11 +7,11 @@
 import router from '@adonisjs/core/services/router'
 import server from '@adonisjs/core/services/server'
 
-server.errorHandler(() => import('#exceptions/handler'))
+server.errorHandler(() => import('#exceptions/Handler'))
 
 server.use([
-    () => import('#middleware/force_json_response_middleware'),
-    () => import('#middleware/container_bindings_middleware'),
+    () => import('#middleware/ForceJsonResponseMiddleware'),
+    () => import('#middleware/ContainerBindingsMiddleware'),
     () => import('@adonisjs/cors/cors_middleware'),
 ])
 
@@ -23,11 +23,11 @@ server.use([
  */
 router.use([
     () => import('@adonisjs/core/bodyparser_middleware'),
-    () => import('#middleware/record_api_activity_middleware'),
+    () => import('#middleware/RecordApiActivityMiddleware'),
 ])
 
 export const middleware = router.named({
-    auth: () => import('#middleware/auth_middleware'),
-    extendToken: () => import('#middleware/extend_token_expiry_middleware'),
-    throttle: () => import('#middleware/throttle_middleware'),
+    auth: () => import('#middleware/AuthMiddleware'),
+    extendToken: () => import('#middleware/ExtendTokenExpiryMiddleware'),
+    throttle: () => import('#middleware/ThrottleMiddleware'),
 })

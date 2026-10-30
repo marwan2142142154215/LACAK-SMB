@@ -6,7 +6,7 @@ import {
     groupRoom,
     postGroupMessage,
     type GroupMessagePayload,
-} from '#services/chat_relay'
+} from '#services/ChatRelay'
 
 /** Daftar anggota hanya untuk keputusan siaran gateway, tidak diteruskan ke klien. */
 function withoutMembers<T extends { member_ids?: number[] }>(data: T): Omit<T, 'member_ids'> {
@@ -19,7 +19,7 @@ type Ack = (response: Record<string, unknown>) => void
 type ChatUser = { id: number; name: string }
 
 /**
- * Grup chat buatan user (lihat chat_relay.ts). Sama dengan chat site: izin &
+ * Grup chat buatan user (lihat ChatRelay.ts). Sama dengan chat site: izin &
  * penyimpanan selalu lewat backend dengan token user ini. Bedanya, anggota
  * grup bisa berubah kapan saja -- setiap siaran memakai member_ids terbaru
  * dari backend, dan socket yang bukan anggota lagi dikeluarkan dari ruangnya.

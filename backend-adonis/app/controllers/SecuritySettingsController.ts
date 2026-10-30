@@ -1,7 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import vine from '@vinejs/vine'
-import { accessOf, can } from '#services/access'
-import { fail, success } from '#services/api_response'
+import { accessOf, can } from '#services/Access'
+import { fail, success } from '#services/ApiResponse'
 import {
     buildBlockList,
     getIpWhitelist,
@@ -11,9 +11,9 @@ import {
     normalizeIp,
     setIpWhitelist,
     type IpWhitelistEntry,
-} from '#services/ip_whitelist'
-import { isTwoFactorRequired, setTwoFactorRequired } from '#services/two_factor_policy'
-import { laravelBoolean, laravelInput, laravelMessages } from '#validators/users'
+} from '#services/IpWhitelist'
+import { isTwoFactorRequired, setTwoFactorRequired } from '#services/TwoFactorPolicy'
+import { laravelBoolean, laravelInput, laravelMessages } from '#validators/Users'
 
 const securitySettingValidator = vine.create({
     two_factor_required: laravelBoolean(),

@@ -956,7 +956,7 @@ export const useLiveStore = defineStore('live', () => {
     // ---- Socket Live Kerja (realtime-gateway, namespace /ops)
     // Staf yang siaran mengirim status lewat `live:state`; penonton menerima
     // perubahan status staf lewat `live:status` -- pengganti heartbeat HTTP &
-    // polling /live/overview (lihat realtime-gateway/app/services/live_hub.ts).
+    // polling /live/overview (lihat realtime-gateway/app/services/LiveHub.ts).
 
     function ensureLiveSocket() {
         if (liveSocket && liveSocketToken === auth.token) return liveSocket

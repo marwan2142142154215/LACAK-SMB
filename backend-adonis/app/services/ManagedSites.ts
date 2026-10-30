@@ -1,4 +1,4 @@
-import type { Access } from '#services/access'
+import type { Access } from '#services/Access'
 
 /**
  * Site yang dikelola user untuk shift, absensi, izin/cuti, pengumuman, dan

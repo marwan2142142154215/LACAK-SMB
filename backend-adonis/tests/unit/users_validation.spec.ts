@@ -7,7 +7,7 @@ import {
     pickLogged,
     routeId,
     USER_LOGGED_FIELDS,
-} from '#services/user_resource'
+} from '#services/UserResource'
 import {
     generatedSiteCode,
     laravelSlug,
@@ -15,7 +15,7 @@ import {
     storeOrganizationValidator,
     UPDATE_ORGANIZATION_SOMETIMES,
     updateOrganizationValidator,
-} from '#validators/organizations'
+} from '#validators/Organizations'
 import {
     lastPageOf,
     laravelMessage,
@@ -29,7 +29,7 @@ import {
     PRESENT_NULL,
     requestInteger,
     storeUserInput,
-} from '#validators/users'
+} from '#validators/Users'
 
 async function validationErrors(run: () => Promise<unknown>) {
     try {

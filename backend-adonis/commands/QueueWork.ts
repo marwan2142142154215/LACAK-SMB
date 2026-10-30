@@ -8,8 +8,8 @@ import {
     QUEUE_HEARTBEAT_KEY,
     recordHeartbeat,
     startWorker,
-} from '#services/queue'
-import { handleBuildApk, type BuildApkPayload } from '#jobs/build_apk_job'
+} from '#services/Queue'
+import { handleBuildApk, type BuildApkPayload } from '#jobs/BuildApkJob'
 
 /**
  * Pengganti `php artisan queue:work` (unit systemd lacak-api-worker).

@@ -3,8 +3,8 @@ import { test } from '@japa/runner'
 import db from '@adonisjs/lucid/services/db'
 import testUtils from '@adonisjs/core/services/test_utils'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
-import { appQueue, JOB_BUILD_APK } from '#services/queue'
-import { decodeDeviceSecret, type BuildApkPayload } from '#jobs/build_apk_job'
+import { appQueue, JOB_BUILD_APK } from '#services/Queue'
+import { decodeDeviceSecret, type BuildApkPayload } from '#jobs/BuildApkJob'
 
 /**
  * Padanan tests/Feature/ApkBuildZeroTouchTest.php. Butuh database tes

@@ -1,6 +1,6 @@
 import log from '@adonisjs/core/services/logger'
-import type { Access } from '#services/access'
-import { issue, liveKitConfig } from '#services/livekit'
+import type { Access } from '#services/Access'
+import { issue, liveKitConfig } from '#services/Livekit'
 
 /**
  * Briefing: rapat video Live dalam satu ruang (room LiveKit briefing-{id}).
@@ -71,10 +71,7 @@ export function canJoinBriefing(access: Access, briefing: BriefingRow): boolean 
 /**
  * Token bergabung: kamera, mikrofon, dan berbagi layar untuk semua peserta.
  */
-export function briefingToken(
-    briefing: BriefingRow,
-    user: { id: number; name: string }
-): string {
+export function briefingToken(briefing: BriefingRow, user: { id: number; name: string }): string {
     return issue(`user-${user.id}`, user.name, {
         room: roomForBriefing(briefing.id),
         roomJoin: true,

@@ -1,9 +1,9 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { accessOf, can } from '#services/access'
-import { fail, success } from '#services/api_response'
-import { authorizedOrganizationId } from '#services/organization_scope'
-import { findDeviceOrFail, paginate, violationLogResource } from '#services/device_resource'
+import { accessOf, can } from '#services/Access'
+import { fail, success } from '#services/ApiResponse'
+import { authorizedOrganizationId } from '#services/OrganizationScope'
+import { findDeviceOrFail, paginate, violationLogResource } from '#services/DeviceResource'
 
 /**
  * Read-only dari sisi API ini, padanan ViolationLogController di backend-api.

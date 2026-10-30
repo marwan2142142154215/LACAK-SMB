@@ -5,7 +5,7 @@ import {
     sniffImage,
     strLimit,
     toPayload,
-} from '#controllers/chat_messages_controller'
+} from '#controllers/ChatMessagesController'
 import {
     carbonBinding,
     dataChangeSentence,
@@ -17,7 +17,7 @@ import {
     subjectName,
     validate,
     type ActivityRow,
-} from '#controllers/activity_logs_controller'
+} from '#controllers/ActivityLogsController'
 import {
     ACTIONS,
     activityOrganizationId,
@@ -26,7 +26,7 @@ import {
     resultOf,
     safeInput,
     strimwidth,
-} from '#middleware/record_api_activity_middleware'
+} from '#middleware/RecordApiActivityMiddleware'
 import {
     formatBytes,
     heartbeatStatus,
@@ -37,7 +37,7 @@ import {
     queueVerdict,
     storageVerdict,
     unitStatuses,
-} from '#services/server_status'
+} from '#services/ServerStatus'
 import { laravelUrlSigner } from '#services/laravel/index'
 
 /** PNG 800x600 minimal (signature + IHDR). */

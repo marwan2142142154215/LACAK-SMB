@@ -1,8 +1,8 @@
 import type { Job } from 'bullmq'
 import db from '@adonisjs/lucid/services/db'
 import { laravelEncrypter } from '#services/laravel/index'
-import { buildApk, type ApkBuildRow } from '#services/apk_builder'
-import { dispatch, JOB_BUILD_APK } from '#services/queue'
+import { buildApk, type ApkBuildRow } from '#services/ApkBuilder'
+import { dispatch, JOB_BUILD_APK } from '#services/Queue'
 
 /**
  * Padanan App\Jobs\BuildApkJob. Payload dienkripsi (ShouldBeEncrypted di

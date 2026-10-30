@@ -11,17 +11,17 @@ import {
     phpIntval,
     violationLogResource,
     type DeviceRow,
-} from '#services/device_resource'
+} from '#services/DeviceResource'
 import {
     claimDeviceValidator,
     isDigits,
     storeDeviceCommandValidator,
     updateDeviceValidator,
     verifyDeviceOtpValidator,
-} from '#validators/devices'
-import { generatePlainSecret, hashDeviceSecret } from '#controllers/device_enrollment_controller'
-import { generateOtpCode } from '#controllers/device_otp_controller'
-import { COMMAND_PERMISSIONS } from '#controllers/device_commands_controller'
+} from '#validators/Devices'
+import { generatePlainSecret, hashDeviceSecret } from '#controllers/DeviceEnrollmentController'
+import { generateOtpCode } from '#controllers/DeviceOtpController'
+import { COMMAND_PERMISSIONS } from '#controllers/DeviceCommandsController'
 
 function deviceRow(overrides: Partial<DeviceRow> = {}): DeviceRow {
     return {

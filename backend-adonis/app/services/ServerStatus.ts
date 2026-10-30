@@ -6,7 +6,7 @@ import app from '@adonisjs/core/services/app'
 import db from '@adonisjs/lucid/services/db'
 import redis from '@adonisjs/redis/services/main'
 import env from '#start/env'
-import { appQueue } from '#services/queue'
+import { appQueue } from '#services/Queue'
 
 /**
  * Pemeriksaan kesehatan semua layanan Lacak SMB untuk halaman "Status

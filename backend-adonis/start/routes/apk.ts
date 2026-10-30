@@ -7,7 +7,7 @@
 import router from '@adonisjs/core/services/router'
 import { middleware } from '#start/kernel'
 
-const ApkBuildsController = () => import('#controllers/apk_builds_controller')
+const ApkBuildsController = () => import('#controllers/ApkBuildsController')
 
 router
     .group(() => {

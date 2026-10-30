@@ -1,12 +1,12 @@
 import { DateTime } from 'luxon'
 import type { HttpContext } from '@adonisjs/core/http'
 import type { NextFn } from '@adonisjs/core/types/http'
-import PersonalAccessToken from '#models/personal_access_token'
-import User from '#models/user'
-import UnauthenticatedException from '#exceptions/unauthenticated_exception'
-import { ipRejectionBody, ipRejectionFor } from '#services/ip_whitelist'
+import PersonalAccessToken from '#models/PersonalAccessToken'
+import User from '#models/User'
+import UnauthenticatedException from '#exceptions/UnauthenticatedException'
+import { ipRejectionBody, ipRejectionFor } from '#services/IpWhitelist'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
-import { parseSanctumToken, sanctumHashMatches } from '#services/laravel/sanctum_token'
+import { parseSanctumToken, sanctumHashMatches } from '#services/laravel/SanctumToken'
 
 /**
  * Padanan `auth:sanctum`: token Bearer yang diterbitkan backend-api Laravel

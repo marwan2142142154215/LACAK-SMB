@@ -1,8 +1,8 @@
 import app from '@adonisjs/core/services/app'
 import { BaseSeeder } from '@adonisjs/lucid/seeders'
 import type { QueryClientContract } from '@adonisjs/lucid/types/database'
-import { randomPassword, seedRolesAndPermissions, syncRoles } from '#database/accounts'
-import { hashLaravelPassword } from '#services/laravel/bcrypt'
+import { randomPassword, seedRolesAndPermissions, syncRoles } from '#database/Accounts'
+import { hashLaravelPassword } from '#services/laravel/Bcrypt'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
 import env from '#start/env'
 

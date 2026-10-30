@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto'
 import vine from '@vinejs/vine'
-import { laravelBoolean } from '#validators/users'
+import { laravelBoolean } from '#validators/Users'
 
 /** StoreOrganizationRequest: tipe site saat ini hanya company_asset. */
 export const storeOrganizationValidator = vine.create({

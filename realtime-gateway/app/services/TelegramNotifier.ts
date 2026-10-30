@@ -1,6 +1,6 @@
 import axios from 'axios'
-import log from '#services/log'
-import { describeHttpError } from '#services/http_error'
+import log from '#services/Log'
+import { describeHttpError } from '#services/HttpError'
 
 /**
  * Kirim notifikasi langsung ke Telegram saat ada pelanggaran geofence.
@@ -9,7 +9,7 @@ import { describeHttpError } from '#services/http_error'
  * bukan token asli (standar 6.1).
  *
  * `@adonisjs/lucid/services/db` diimpor dinamis di dalam fungsi, bukan di
- * top-level file, dengan alasan sama seperti system_user.ts: modul itu
+ * top-level file, dengan alasan sama seperti SystemUser.ts: modul itu
  * butuh application container sudah boot.
  */
 export async function notifyTelegramViolation(

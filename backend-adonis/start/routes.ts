@@ -12,11 +12,11 @@
 import router from '@adonisjs/core/services/router'
 import { middleware } from '#start/kernel'
 
-const AuthController = () => import('#controllers/auth_controller')
-const WorkSessionsController = () => import('#controllers/work_sessions_controller')
-const DashboardSummaryController = () => import('#controllers/dashboard_summary_controller')
-const LiveRecordingsController = () => import('#controllers/live_recordings_controller')
-const BriefingsController = () => import('#controllers/briefings_controller')
+const AuthController = () => import('#controllers/AuthController')
+const WorkSessionsController = () => import('#controllers/WorkSessionsController')
+const DashboardSummaryController = () => import('#controllers/DashboardSummaryController')
+const LiveRecordingsController = () => import('#controllers/LiveRecordingsController')
+const BriefingsController = () => import('#controllers/BriefingsController')
 
 router.get('/health', () => ({ success: true, message: 'OK', data: null }))
 

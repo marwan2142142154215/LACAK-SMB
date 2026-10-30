@@ -1,9 +1,9 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { accessOf, can } from '#services/access'
-import { writeActivity } from '#services/activity_log'
-import { fail, success } from '#services/api_response'
-import { authorizedOrganizationId, organizationFilter } from '#services/organization_scope'
+import { accessOf, can } from '#services/Access'
+import { writeActivity } from '#services/ActivityLog'
+import { fail, success } from '#services/ApiResponse'
+import { authorizedOrganizationId, organizationFilter } from '#services/OrganizationScope'
 import {
     deviceResource,
     eloquentNow,
@@ -16,12 +16,12 @@ import {
     phpIntval,
     saveDevice,
     type DeviceRow,
-} from '#services/device_resource'
+} from '#services/DeviceResource'
 import {
     moveDeviceSiteValidator,
     storeDeviceValidator,
     updateDeviceValidator,
-} from '#validators/devices'
+} from '#validators/Devices'
 
 /**
  * Padanan DeviceController (apiResource 'devices') di backend-api, kontrak sama.

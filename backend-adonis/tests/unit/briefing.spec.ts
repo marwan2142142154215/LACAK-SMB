@@ -1,6 +1,6 @@
 import { test } from '@japa/runner'
-import type { Access } from '#services/access'
-import { canHostBriefing, canJoinBriefing, sitesOf, type BriefingRow } from '#services/briefing'
+import type { Access } from '#services/Access'
+import { canHostBriefing, canJoinBriefing, sitesOf, type BriefingRow } from '#services/Briefing'
 
 function access(roles: string[], overrides: Partial<Access> = {}): Access {
     return {

@@ -1,8 +1,8 @@
 import { test } from '@japa/runner'
-import { attendanceDay, type Shift } from '#services/attendance'
-import { nextRunAt } from '#services/briefing_schedule'
-import { dailyReportText } from '#services/work_alerts'
-import type { PresenceEvent } from '#services/work_presence'
+import { attendanceDay, type Shift } from '#services/Attendance'
+import { nextRunAt } from '#services/BriefingSchedule'
+import { dailyReportText } from '#services/WorkAlerts'
+import type { PresenceEvent } from '#services/WorkPresence'
 
 // Asia/Jakarta = UTC+7. 2026-10-26 hari Senin.
 const SHIFT: Shift = {

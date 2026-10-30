@@ -3,9 +3,9 @@ import { test } from '@japa/runner'
 import { DateTime } from 'luxon'
 import db from '@adonisjs/lucid/services/db'
 import testUtils from '@adonisjs/core/services/test_utils'
-import PersonalAccessToken from '#models/personal_access_token'
+import PersonalAccessToken from '#models/PersonalAccessToken'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
-import { DEVICE_MORPH } from '#services/device_resource'
+import { DEVICE_MORPH } from '#services/DeviceResource'
 
 /**
  * Padanan tests/Feature/DeviceCommandAuthorizationTest.php di backend-api,

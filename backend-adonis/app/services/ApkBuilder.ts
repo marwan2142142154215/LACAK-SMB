@@ -6,7 +6,7 @@ import app from '@adonisjs/core/services/app'
 import log from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 import env from '#start/env'
-import { disk, documentsDiskName } from '#services/storage'
+import { disk, documentsDiskName } from '#services/Storage'
 
 /**
  * Build APK on-demand per site -- padanan App\Services\ApkBuilder di
@@ -15,7 +15,7 @@ import { disk, documentsDiskName } from '#services/storage'
  * - di Windows: lewat WSL2 (`wsl --exec`, runner 'wsl') -- Gradle tidak bisa
  *   jalan di Windows native di mesin build.
  * Runner dipilih otomatis dari OS, bisa dipaksa dengan LACAKSMB_APK_BUILD_RUNNER. Dipanggil
- * dari app/jobs/build_apk_job.ts (antrean BullMQ), bukan dari controller,
+ * dari app/jobs/BuildApkJob.ts (antrean BullMQ), bukan dari controller,
  * supaya request HTTP dashboard/APK master tidak menunggu 30-90 detik build.
  *
  * Perintah, argumen, path, dan isi build_log SAMA dengan versi Laravel --

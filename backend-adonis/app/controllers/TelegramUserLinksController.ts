@@ -1,12 +1,12 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { accessOf, can, hasRole, type Access } from '#services/access'
-import { fail, success } from '#services/api_response'
-import { laravelDate } from '#services/activity_log'
-import { hasCrossOrganizationAccess } from '#services/organization_scope'
-import { permissionNamesOf, roleNamesOf } from '#services/permissions'
-import { storeTelegramUserLinkValidator } from '#validators/rules'
-import { stringInput } from '#controllers/telegram_bindings_controller'
+import { accessOf, can, hasRole, type Access } from '#services/Access'
+import { fail, success } from '#services/ApiResponse'
+import { laravelDate } from '#services/ActivityLog'
+import { hasCrossOrganizationAccess } from '#services/OrganizationScope'
+import { permissionNamesOf, roleNamesOf } from '#services/Permissions'
+import { storeTelegramUserLinkValidator } from '#validators/Rules'
+import { stringInput } from '#controllers/TelegramBindingsController'
 
 type LinkedUser = { id: number; name: string; username: string; organization_id: number | null }
 

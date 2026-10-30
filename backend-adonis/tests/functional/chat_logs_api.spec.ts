@@ -4,10 +4,10 @@ import { DateTime } from 'luxon'
 import db from '@adonisjs/lucid/services/db'
 import redis from '@adonisjs/redis/services/main'
 import testUtils from '@adonisjs/core/services/test_utils'
-import PersonalAccessToken from '#models/personal_access_token'
+import PersonalAccessToken from '#models/PersonalAccessToken'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
-import { chatImagesDiskName, disk } from '#services/storage'
-import { QUEUE_HEARTBEAT_KEY, SCHEDULER_HEARTBEAT_KEY } from '#services/server_status'
+import { chatImagesDiskName, disk } from '#services/Storage'
+import { QUEUE_HEARTBEAT_KEY, SCHEDULER_HEARTBEAT_KEY } from '#services/ServerStatus'
 
 /**
  * Padanan tests/Feature/ChatMessageTest, ActivityLogTest, dan SystemStatusTest

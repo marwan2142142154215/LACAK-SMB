@@ -1,8 +1,8 @@
 import axios from 'axios'
 import env from '#start/env'
-import log from '#services/log'
-import { describeHttpError } from '#services/http_error'
-import { userHeaders } from '#services/client_ip'
+import log from '#services/Log'
+import { describeHttpError } from '#services/HttpError'
+import { userHeaders } from '#services/ClientIp'
 
 export type AuthenticatedUser = {
     id: number

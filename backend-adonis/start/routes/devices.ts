@@ -11,11 +11,11 @@
 import router from '@adonisjs/core/services/router'
 import { middleware } from '#start/kernel'
 
-const DevicesController = () => import('#controllers/devices_controller')
-const DeviceCommandsController = () => import('#controllers/device_commands_controller')
-const DeviceOtpController = () => import('#controllers/device_otp_controller')
-const DeviceEnrollmentController = () => import('#controllers/device_enrollment_controller')
-const ViolationLogsController = () => import('#controllers/violation_logs_controller')
+const DevicesController = () => import('#controllers/DevicesController')
+const DeviceCommandsController = () => import('#controllers/DeviceCommandsController')
+const DeviceOtpController = () => import('#controllers/DeviceOtpController')
+const DeviceEnrollmentController = () => import('#controllers/DeviceEnrollmentController')
+const ViolationLogsController = () => import('#controllers/ViolationLogsController')
 
 router
     .group(() => {

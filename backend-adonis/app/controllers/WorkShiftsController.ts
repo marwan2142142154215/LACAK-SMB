@@ -1,12 +1,12 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
-import { accessOf } from '#services/access'
-import { writeActivity } from '#services/activity_log'
-import { fail, success } from '#services/api_response'
-import { shiftRow } from '#services/attendance'
-import { TIME_PATTERN } from '#services/local_time'
-import { isManager, managedSites, managesSite } from '#services/managed_sites'
+import { accessOf } from '#services/Access'
+import { writeActivity } from '#services/ActivityLog'
+import { fail, success } from '#services/ApiResponse'
+import { shiftRow } from '#services/Attendance'
+import { TIME_PATTERN } from '#services/LocalTime'
+import { isManager, managedSites, managesSite } from '#services/ManagedSites'
 
 const shiftValidator = vine.compile(
     vine.object({

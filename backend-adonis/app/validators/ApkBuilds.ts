@@ -1,5 +1,5 @@
 import db from '@adonisjs/lucid/services/db'
-import { APK_TYPES, type ApkType } from '#services/apk_builder'
+import { APK_TYPES, type ApkType } from '#services/ApkBuilder'
 
 /**
  * Padanan StoreApkBuildRequest & GenerateApkBuildRequest. Ditulis manual

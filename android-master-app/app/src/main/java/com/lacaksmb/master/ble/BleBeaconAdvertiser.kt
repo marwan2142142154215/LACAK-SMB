@@ -17,7 +17,7 @@ import java.util.UUID
  * memancarkan beacon BLE berisi UUID "anchor bergerak"-nya sendiri (lihat
  * MasterAnchorService) selagi login, supaya APK Lacak yang mendeteksinya
  * dalam radius aman bisa menganggap device di tempat aman (realtime-gateway
- * master_anchor_registry.ts), persis fungsi anchor BLE fisik tapi bisa
+ * MasterAnchorRegistry.ts), persis fungsi anchor BLE fisik tapi bisa
  * dibawa-bawa staf.
  */
 class BleBeaconAdvertiser(private val context: Context) {

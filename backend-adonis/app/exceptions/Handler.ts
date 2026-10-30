@@ -40,7 +40,7 @@ export default class HttpExceptionHandler extends ExceptionHandler {
         }
 
         // Token dicabut karena akun ini login di perangkat lain (satu akun =
-        // satu sesi, lihat endOtherSessions di auth_controller.ts).
+        // satu sesi, lihat endOtherSessions di AuthController.ts).
         if (status === 401 && (await wasReplaced(ctx))) {
             return ctx.response.status(401).send({
                 success: false,

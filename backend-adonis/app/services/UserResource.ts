@@ -1,6 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { laravelDate, logModelEvent } from '#services/activity_log'
+import { laravelDate, logModelEvent } from '#services/ActivityLog'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
 
 /*

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build APK pelacak dengan kode site ditanam saat build -- TIDAK mengunggah
 # sendiri ke backend-adonis (beda dari build-for-site.sh). Dipanggil oleh
-# backend-adonis (app/services/apk_builder.ts) saat admin memilih site
+# backend-adonis (app/services/ApkBuilder.ts) saat admin memilih site
 # dan menekan "Build & Download" dari dashboard/bot Telegram/APK master --
 # backend-adonis sendiri yang membaca file hasil build, menghitung checksum,
 # dan menyimpannya (satu sumber kebenaran, bukan loop balik ke diri sendiri).

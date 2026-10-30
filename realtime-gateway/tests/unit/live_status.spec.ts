@@ -1,5 +1,5 @@
 import { test } from '@japa/runner'
-import { parseReportedState, statusOf, type WorkSessionRow } from '#services/live_status'
+import { parseReportedState, statusOf, type WorkSessionRow } from '#services/LiveStatus'
 
 /** Kasus yang sama dengan WorkPresenceTest di backend-api -- aturannya harus identik. */
 const NOW = new Date('2026-10-25T08:00:00Z')

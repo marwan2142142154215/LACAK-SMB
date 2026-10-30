@@ -1,7 +1,7 @@
 import { BlockList, isIP } from 'node:net'
 import type { HttpContext } from '@adonisjs/core/http'
-import { roleNamesOf } from '#services/permissions'
-import { getSetting, putSetting } from '#services/two_factor_policy'
+import { roleNamesOf } from '#services/Permissions'
+import { getSetting, putSetting } from '#services/TwoFactorPolicy'
 
 /**
  * Whitelist IP global: kalau aktif, semua akun hanya bisa login & memakai API

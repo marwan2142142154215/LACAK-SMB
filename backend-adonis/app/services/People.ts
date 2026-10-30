@@ -1,6 +1,6 @@
 import db from '@adonisjs/lucid/services/db'
-import type { Access } from '#services/access'
-import { BRIEFING_AUDIENCE_ROLES, sitesOf } from '#services/briefing'
+import type { Access } from '#services/Access'
+import { BRIEFING_AUDIENCE_ROLES, sitesOf } from '#services/Briefing'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
 
 export type Colleague = { id: number; name: string; role: string | null; site: string | null }

@@ -1,18 +1,18 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import log from '@adonisjs/core/services/logger'
-import { accessOf, can, seesOnlySelf } from '#services/access'
-import { writeActivity } from '#services/activity_log'
-import { fail, success } from '#services/api_response'
-import { authorizedOrganizationId } from '#services/organization_scope'
+import { accessOf, can, seesOnlySelf } from '#services/Access'
+import { writeActivity } from '#services/ActivityLog'
+import { fail, success } from '#services/ApiResponse'
+import { authorizedOrganizationId } from '#services/OrganizationScope'
 import {
     handleEgressEnded,
     handleTrackPublished,
     RECORDING_RETENTION_HOURS,
     recordingEnabled,
     verifyWebhook,
-} from '#services/recording'
-import { disk } from '#services/storage'
+} from '#services/Recording'
+import { disk } from '#services/Storage'
 
 // Tautan putar ulang berlaku selama ini (cukup untuk menonton satu file 1 jam).
 const PLAYBACK_URL_TTL_SECONDS = 2 * 3600

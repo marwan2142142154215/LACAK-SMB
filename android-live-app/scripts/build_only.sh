@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build APK Live Kerja. Dipanggil oleh backend-adonis (app/services/apk_builder.ts)
+# Build APK Live Kerja. Dipanggil oleh backend-adonis (app/services/ApkBuilder.ts)
 # lewat WSL dengan argumen yang sama seperti APK Master -- APK Live
 # universal, jadi kode/nama site & URL gateway diterima tapi tidak dipakai
 # (siaran selalu ke site akun staf yang login). backend-adonis sendiri yang

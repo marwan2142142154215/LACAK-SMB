@@ -1,6 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { permissionNamesOf, roleNamesOf } from '#services/permissions'
+import { permissionNamesOf, roleNamesOf } from '#services/Permissions'
 
 /**
  * Peran, izin, dan akses site user yang sedang login -- dimuat sekali per

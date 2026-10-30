@@ -33,10 +33,10 @@ export default await Env.create(new URL('../', import.meta.url), {
     DB_DATABASE: Env.schema.string(),
 
     // Backend API (Laravel) — dipanggil gateway untuk validasi token Sanctum
-    // milik dashboard/APK master (lihat app/services/backend_api_client.ts)
+    // milik dashboard/APK master (lihat app/services/BackendApiClient.ts)
     BACKEND_API_URL: Env.schema.string({ format: 'url', tld: false }),
 
     // Interval (ms) polling device_commands yang masih 'pending' untuk dikirim
-    // ke device yang sedang terkoneksi (lihat app/services/command_dispatcher.ts)
+    // ke device yang sedang terkoneksi (lihat app/services/CommandDispatcher.ts)
     COMMAND_POLL_INTERVAL_MS: Env.schema.number.optional(),
 })

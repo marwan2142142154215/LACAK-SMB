@@ -4,7 +4,7 @@ type LogMeta = Record<string, unknown>
 
 /**
  * Pembungkus logger AdonisJS untuk kode gateway custom (socket.ts,
- * command_dispatcher.ts, ...).
+ * CommandDispatcher.ts, ...).
  *
  * `@adonisjs/core/services/logger` sengaja diimpor dinamis saat pertama kali
  * dipakai, bukan di top-level file: modul itu memakai top-level `await

@@ -7,7 +7,7 @@ import {
     laravelRandomString,
     laravelSlug,
     phpIntval,
-} from '#controllers/apk_builds_controller'
+} from '#controllers/ApkBuildsController'
 import {
     buildCommand,
     buildScriptPath,
@@ -17,13 +17,13 @@ import {
     toWslPath,
     trimTrailingSlashes,
     type ApkBuilderConfig,
-} from '#services/apk_builder'
-import { iso8601Now } from '#services/queue'
+} from '#services/ApkBuilder'
+import { iso8601Now } from '#services/Queue'
 import { laravelUrlSigner } from '#services/laravel/index'
-import { apkFileErrors, toInteger } from '#validators/apk_builds'
-import { decodeDeviceSecret, encodeBuildApkPayload } from '#jobs/build_apk_job'
-import { crc32b, generateSanctumTokenString } from '../../commands/issue_telegram_bot_token.js'
-import { msUntilNextMinute } from '../../commands/scheduler_run.js'
+import { apkFileErrors, toInteger } from '#validators/ApkBuilds'
+import { decodeDeviceSecret, encodeBuildApkPayload } from '#jobs/BuildApkJob'
+import { crc32b, generateSanctumTokenString } from '../../commands/IssueTelegramBotToken.js'
+import { msUntilNextMinute } from '../../commands/SchedulerRun.js'
 
 const CONFIG: ApkBuilderConfig = {
     runner: 'wsl',

@@ -1,11 +1,11 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
-import { accessOf } from '#services/access'
-import { writeActivity } from '#services/activity_log'
-import { fail, success } from '#services/api_response'
-import { isManager, managedSites, managesSite } from '#services/managed_sites'
-import { roleNamesOf } from '#services/permissions'
+import { accessOf } from '#services/Access'
+import { writeActivity } from '#services/ActivityLog'
+import { fail, success } from '#services/ApiResponse'
+import { isManager, managedSites, managesSite } from '#services/ManagedSites'
+import { roleNamesOf } from '#services/Permissions'
 
 export const WARNING_LEVELS = { teguran: 'Teguran', keras: 'Peringatan keras' } as const
 type WarningLevel = keyof typeof WARNING_LEVELS

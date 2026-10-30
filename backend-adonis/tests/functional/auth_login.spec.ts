@@ -3,15 +3,15 @@ import { test } from '@japa/runner'
 import db from '@adonisjs/lucid/services/db'
 import redis from '@adonisjs/redis/services/main'
 import testUtils from '@adonisjs/core/services/test_utils'
-import { generateTokenString } from '#controllers/auth_controller'
-import { hashLaravelPassword } from '#services/laravel/bcrypt'
+import { generateTokenString } from '#controllers/AuthController'
+import { hashLaravelPassword } from '#services/laravel/Bcrypt'
 import { laravelEncrypter, LARAVEL_USER_MORPH } from '#services/laravel/index'
-import { currentTimestamp, generateSecretKey, otpAt } from '#services/two_factor'
+import { currentTimestamp, generateSecretKey, otpAt } from '#services/TwoFactor'
 import {
     isTwoFactorRequired,
     setTwoFactorRequired,
     TWO_FACTOR_SETTING_KEY,
-} from '#services/two_factor_policy'
+} from '#services/TwoFactorPolicy'
 
 /**
  * Padanan backend-api/tests/Feature/AuthenticationTest.php,

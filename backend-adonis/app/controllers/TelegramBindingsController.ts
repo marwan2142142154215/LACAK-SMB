@@ -1,14 +1,14 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { accessOf, can } from '#services/access'
-import { fail, success } from '#services/api_response'
-import { laravelDate } from '#services/activity_log'
-import { authorizedOrganizationId, organizationFilter } from '#services/organization_scope'
+import { accessOf, can } from '#services/Access'
+import { fail, success } from '#services/ApiResponse'
+import { laravelDate } from '#services/ActivityLog'
+import { authorizedOrganizationId, organizationFilter } from '#services/OrganizationScope'
 import {
     paginationOf,
     requestedOrganizationId,
     storeTelegramBindingValidator,
-} from '#validators/rules'
+} from '#validators/Rules'
 
 type TelegramBindingRow = {
     id: number

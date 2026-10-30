@@ -1,5 +1,5 @@
 import { test } from '@japa/runner'
-import { clientIpOf, forgetClientIp, rememberClientIp, userHeaders } from '#services/client_ip'
+import { clientIpOf, forgetClientIp, rememberClientIp, userHeaders } from '#services/ClientIp'
 
 test.group('IP klien untuk whitelist backend', () => {
     test('X-Forwarded-For hanya dipercaya dari loopback, entri terakhir yang dipakai', ({

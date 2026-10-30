@@ -6,11 +6,11 @@ import {
     JOB_QUEUE_HEARTBEAT,
     recordHeartbeat,
     SCHEDULER_HEARTBEAT_KEY,
-} from '#services/queue'
-import { runBriefingSchedules } from '#services/briefing_schedule'
-import { pruneRecordings, rotateRecordings } from '#services/recording'
-import { runWorkAlerts } from '#services/work_alerts'
-import { closeStaleWorkSessions } from './close_stale_work_sessions.js'
+} from '#services/Queue'
+import { runBriefingSchedules } from '#services/BriefingSchedule'
+import { pruneRecordings, rotateRecordings } from '#services/Recording'
+import { runWorkAlerts } from '#services/WorkAlerts'
+import { closeStaleWorkSessions } from './CloseStaleWorkSessions.js'
 
 /** Milidetik sampai awal menit berikutnya (jadwal Laravel jalan tepat di detik 0). */
 export function msUntilNextMinute(now: Date = new Date()): number {

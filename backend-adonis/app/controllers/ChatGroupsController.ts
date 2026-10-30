@@ -3,11 +3,11 @@ import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
-import { accessOf } from '#services/access'
-import { writeActivity } from '#services/activity_log'
-import { fail, success } from '#services/api_response'
-import { colleaguesOf } from '#services/people'
-import { chatImagesDiskName, disk } from '#services/storage'
+import { accessOf } from '#services/Access'
+import { writeActivity } from '#services/ActivityLog'
+import { fail, success } from '#services/ApiResponse'
+import { colleaguesOf } from '#services/People'
+import { chatImagesDiskName, disk } from '#services/Storage'
 import {
     bodyInput,
     findMessage,
@@ -18,7 +18,7 @@ import {
     toPayload,
     type MessageRow,
     type ValidationErrors,
-} from '#controllers/chat_messages_controller'
+} from '#controllers/ChatMessagesController'
 
 const PAGE_SIZE = 50
 const MAX_MEMBERS = 300

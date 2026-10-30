@@ -1,4 +1,4 @@
-import { hasRole, type Access } from '#services/access'
+import { hasRole, type Access } from '#services/Access'
 
 /**
  * Padanan trait ResolvesOrganizationScope di backend-api: site mana yang

@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon'
 import { BaseModel, column, hasMany, scope } from '@adonisjs/lucid/orm'
 import type { HasMany } from '@adonisjs/lucid/types/relations'
-import PersonalAccessToken from '#models/personal_access_token'
+import PersonalAccessToken from '#models/PersonalAccessToken'
 
 /**
  * Tabel users milik backend-api (Laravel). Skema masih dikelola migrasi

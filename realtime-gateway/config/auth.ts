@@ -16,7 +16,7 @@ const authConfig = defineConfig({
         api: tokensGuard({
             provider: tokensUserProvider({
                 tokens: 'accessTokens',
-                model: () => import('#models/user'),
+                model: () => import('#models/User'),
             }),
         }),
 
@@ -30,7 +30,7 @@ const authConfig = defineConfig({
             useRememberMeTokens: false,
 
             provider: sessionUserProvider({
-                model: () => import('#models/user'),
+                model: () => import('#models/User'),
             }),
         }),
     },

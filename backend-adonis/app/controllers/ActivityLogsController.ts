@@ -1,18 +1,18 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
-import { accessOf, can } from '#services/access'
-import { WORK_SESSION_MORPH } from '#services/activity_log'
-import { fail, success } from '#services/api_response'
+import { accessOf, can } from '#services/Access'
+import { WORK_SESSION_MORPH } from '#services/ActivityLog'
+import { fail, success } from '#services/ApiResponse'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
-import { authorizedOrganizationId, hasCrossOrganizationAccess } from '#services/organization_scope'
+import { authorizedOrganizationId, hasCrossOrganizationAccess } from '#services/OrganizationScope'
 import {
     LOG_NAME,
     MODEL_MORPHS,
     MODEL_TABLES,
     type ModelName,
     type ModelRow,
-} from '#middleware/record_api_activity_middleware'
+} from '#middleware/RecordApiActivityMiddleware'
 
 /**
  * Menu Log aktivitas -- padanan ActivityLogController di backend-api: siapa

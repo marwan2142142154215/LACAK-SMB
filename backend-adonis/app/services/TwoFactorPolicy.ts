@@ -1,6 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { writeActivity } from '#services/activity_log'
+import { writeActivity } from '#services/ActivityLog'
 
 /**
  * Wajib/tidaknya 2FA saat login, padanan App\Support\TwoFactorPolicy +

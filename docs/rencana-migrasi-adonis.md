@@ -64,7 +64,7 @@ Paket `barryvdh/laravel-dompdf` dan `maatwebsite/excel` ada di `composer.json` t
 - [x] Bentuk respons dan handler error (401, 403, 404, 422 VineJS, 500) dengan pesan yang sama.
 - [ ] Alasan `session_replaced` pada 401: penandanya masih di cache Laravel; pindah ke Redis bersama di Tahap 2.
 - [x] Service permission (tabel spatie). Endpoint pertama: `/auth/me` dan `/auth/session`.
-- [x] Cakupan site (`app/services/organization_scope.ts`) dan writer log aktivitas (`app/services/activity_log.ts`). Cabang `telegram_bot_service` (site dari header `X-Telegram-Chat-Id`) sengaja tidak di-port karena bot Telegram tidak dipakai.
+- [x] Cakupan site (`app/services/OrganizationScope.ts`) dan writer log aktivitas (`app/services/ActivityLog.ts`). Cabang `telegram_bot_service` (site dari header `X-Telegram-Chat-Id`) sengaja tidak di-port karena bot Telegram tidak dipakai.
 - [x] Harness tes Japa (`tests/bootstrap.ts`, `.env.test` ke `lacak_master_test`).
 - [ ] Nginx: upstream kedua dan aturan per path, awalnya belum ada path yang diarahkan.
 
@@ -77,7 +77,7 @@ Status (25 Okt): **kode selesai & teruji dengan database tes; belum dilayani ngi
 - [x] Token LiveKit identik byte per byte dengan Laravel (test vector), aturan status, ringkasan jam kerja, dan cakupan site diuji tes unit.
 - [x] Log aktivitas sesi kerja (`created`/`updated` WorkSession) ditulis dengan format spatie yang sama.
 - [x] Tes fungsional terhadap database `lacak_master_test` (lihat "Hasil tes" di bawah).
-- [x] Rate limit (`throttle:10,1` start, `throttle:60,1` heartbeat, `throttle:30,1` watch-token) lewat `app/middleware/throttle_middleware.ts` (Redis). Kuncinya per user/IP tanpa route, sama dengan `ThrottleRequests` Laravel, jadi semua route ber-throttle berbagi satu penghitung.
+- [x] Rate limit (`throttle:10,1` start, `throttle:60,1` heartbeat, `throttle:30,1` watch-token) lewat `app/middleware/ThrottleMiddleware.ts` (Redis). Kuncinya per user/IP tanpa route, sama dengan `ThrottleRequests` Laravel, jadi semua route ber-throttle berbagi satu penghitung.
 - [ ] Nginx mengarahkan path di atas ke `backend-adonis`.
 
 Catatan perbedaan kecil yang tidak mengubah perilaku dashboard: tanggal dikirim sebagai `...000Z` (milidetik) bukan `...000000Z` (mikrodetik), dan objek kosong `devices_by_status` dikirim `{}` bukan `[]`.
@@ -119,7 +119,7 @@ Login (password lokal dan Account Center, termasuk `AesCbc256` dengan test vekto
 
 Build APK lewat antrean, `CloseStaleWorkSessions` dan detak scheduler lewat systemd timer, command `bot:issue-telegram-token` dan pengaturan 2FA, serta unit systemd baru (`lacak-api`, `lacak-api-worker`).
 
-- [x] `apk-builds` (index, upload, generate -> 202, show, destroy, unduh bertanda tangan) + job `build-apk` di BullMQ (`app/jobs/build_apk_job.ts`, `node ace queue:work`, concurrency 1).
+- [x] `apk-builds` (index, upload, generate -> 202, show, destroy, unduh bertanda tangan) + job `build-apk` di BullMQ (`app/jobs/BuildApkJob.ts`, `node ace queue:work`, concurrency 1).
 - [x] `node ace scheduler:run` (tiap menit: `work-sessions:close-stale`, detak scheduler, job detak antrean), `bot:issue-telegram-token`, `security:two-factor [on|off]`.
 - [x] Status server menghitung antrean dari BullMQ + sisa tabel `jobs`/`failed_jobs` Laravel; detak dibaca dari Redis Adonis.
 - [x] Batas multipart bodyparser dinaikkan ke 210 MB (unggah APK `max:204800` KB tetap dijawab 422, bukan 413). Cek juga `client_max_body_size` nginx.
@@ -165,7 +165,7 @@ Status (25 Okt, ±06:15 UTC): **peralihan berjalan di produksi.**
   - Database lama: migrasi hanya memeriksa tabel `migrations` Laravel berisi ke-44 migrasi itu, lalu dicatat sudah jalan di `adonis_schema`. Kalau ada yang belum, migrasi berhenti dan menyebutkan namanya.
   - Diuji: skema dari `baseline.sql` sama dengan hasil `php artisan migrate` (beda hanya penulisan CHECK constraint oleh Postgres), dan 213/213 tes Adonis lolos di database yang dibuat dari nol.
   - Perubahan skema berikutnya = migrasi Lucid baru (`node ace make:migration`).
-- Seeder: `node ace db:seed` (`database/seeders/main_seeder.ts`: peran & izin, `marwanmaster`, `fortunesmb`, `system-automation`, `telegram-bot`, `root` hanya di development). Akun dummy server uji: `node ace demo:seed-accounts` (padanan `DemoAccountsSeeder`).
+- Seeder: `node ace db:seed` (`database/seeders/MainSeeder.ts`: peran & izin, `marwanmaster`, `fortunesmb`, `system-automation`, `telegram-bot`, `root` hanya di development). Akun dummy server uji: `node ace demo:seed-accounts` (padanan `DemoAccountsSeeder`).
 - File lokal: `STORAGE_PATH` (path absolut, default server `/var/www/lacak/storage/app/private`); `LARAVEL_STORAGE_PATH` masih dibaca sebagai nama lama.
 - Nama env `LARAVEL_APP_KEY`/`LARAVEL_APP_URL` sengaja dipertahankan: token, 2FA, dan URL bertanda tangan lama tetap berlaku.
 - `server-gui` menjalankan `backend-adonis` (dev, queue:work, scheduler:run) di port 8000.

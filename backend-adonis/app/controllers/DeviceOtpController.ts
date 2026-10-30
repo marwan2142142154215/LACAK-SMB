@@ -2,19 +2,19 @@ import { randomInt } from 'node:crypto'
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import redis from '@adonisjs/redis/services/main'
-import { accessOf, can } from '#services/access'
-import { fail, success } from '#services/api_response'
-import { laravelDate } from '#services/activity_log'
-import { hashLaravelPassword, verifyLaravelPassword } from '#services/laravel/bcrypt'
-import { authorizedOrganizationId } from '#services/organization_scope'
+import { accessOf, can } from '#services/Access'
+import { fail, success } from '#services/ApiResponse'
+import { laravelDate } from '#services/ActivityLog'
+import { hashLaravelPassword, verifyLaravelPassword } from '#services/laravel/Bcrypt'
+import { authorizedOrganizationId } from '#services/OrganizationScope'
 import {
     eloquentNow,
     findDeviceOrFail,
     logDeviceUpdated,
     updateDevice,
     type DeviceRow,
-} from '#services/device_resource'
-import { verifyDeviceOtpValidator } from '#validators/devices'
+} from '#services/DeviceResource'
+import { verifyDeviceOtpValidator } from '#validators/Devices'
 
 /** Maksimum tebakan OTP salah per device sebelum diblokir sementara. */
 export const MAX_OTP_ATTEMPTS = 5

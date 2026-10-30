@@ -2,7 +2,7 @@ import { Exception } from '@adonisjs/core/exceptions'
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
-import { laravelDate, logModelEvent, writeActivity } from '#services/activity_log'
+import { laravelDate, logModelEvent, writeActivity } from '#services/ActivityLog'
 
 /**
  * Bentuk data & helper modul device -- padanan DeviceResource,

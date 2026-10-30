@@ -4,7 +4,7 @@ import redis from '@adonisjs/redis/services/main'
  * Persiapan bersama tes fungsional (dipasang di tests/bootstrap.ts). Peran &
  * izin dibuat dengan daftar yang sama dengan seeder (database/accounts.ts).
  */
-export { seedRolesAndPermissions } from '#database/accounts'
+export { seedRolesAndPermissions } from '#database/Accounts'
 
 /**
  * Hapus semua kunci Redis milik aplikasi ini (penghitung rate limit, token

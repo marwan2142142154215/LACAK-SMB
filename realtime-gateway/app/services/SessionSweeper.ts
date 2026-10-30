@@ -1,5 +1,5 @@
 import type { Server as SocketIoServer } from 'socket.io'
-import logger from '#services/log'
+import logger from '#services/Log'
 
 /**
  * Socket /ops hanya memverifikasi token sekali saat connect (lalu dicek ulang

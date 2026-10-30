@@ -1,7 +1,7 @@
 import { Bot, InputFile, type Context } from 'node-telegram-bot-api/node'
 import type { Logger } from '@adonisjs/core/logger'
-import * as backend from '#services/backend_api_client'
-import type { Device, StaffLink } from '#services/backend_api_client'
+import * as backend from '#services/BackendApiClient'
+import type { Device, StaffLink } from '#services/BackendApiClient'
 
 const NOT_LINKED_MESSAGE =
     'Chat ini belum ditautkan ke site mana pun. Minta admin menautkannya lewat dashboard (menu Bot Telegram).'

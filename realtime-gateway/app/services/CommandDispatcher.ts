@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon'
-import DeviceCommand from '#models/device_command'
-import socketManager from '#services/socket_manager'
-import logger from '#services/log'
+import DeviceCommand from '#models/DeviceCommand'
+import socketManager from '#services/SocketManager'
+import logger from '#services/Log'
 
 /**
  * Satu-satunya jalur pengiriman perintah ke device: poll baris

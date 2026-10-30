@@ -33,7 +33,7 @@ import java.util.UUID
  * /ops yang sedang login di sini (lihat master:beacon:start, dikirim di
  * bawah) untuk menentukan izinnya: super_admin menghitung untuk site MANA
  * PUN dalam radius, role lain cuma untuk site miliknya sendiri -- realtime-
- * gateway master_anchor_registry.ts yang menegakkan itu, BUKAN app ini.
+ * gateway MasterAnchorRegistry.ts yang menegakkan itu, BUKAN app ini.
  *
  * SENGAJA foreground service (bukan berhenti saat app ditutup/di-swipe) --
  * permintaan eksplisit: anchor harus tetap menyiarkan walau layar/app APK

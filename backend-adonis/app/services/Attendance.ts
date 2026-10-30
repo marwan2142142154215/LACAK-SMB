@@ -1,6 +1,6 @@
 import db from '@adonisjs/lucid/services/db'
-import { atLocal, addDays, dateColumn, datesBetween, isoWeekday } from '#services/local_time'
-import { summarize, type PresenceEvent } from '#services/work_presence'
+import { atLocal, addDays, dateColumn, datesBetween, isoWeekday } from '#services/LocalTime'
+import { summarize, type PresenceEvent } from '#services/WorkPresence'
 
 /**
  * Absensi dari Live Kerja: tiap staf per hari dibandingkan dengan shift-nya

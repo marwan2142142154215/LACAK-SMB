@@ -1,8 +1,8 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { accessOf, can } from '#services/access'
-import { fail, success } from '#services/api_response'
-import { logModelEvent } from '#services/activity_log'
+import { accessOf, can } from '#services/Access'
+import { fail, success } from '#services/ApiResponse'
+import { logModelEvent } from '#services/ActivityLog'
 import {
     dirtyLogged,
     ORGANIZATION_LOGGED_FIELDS,
@@ -11,13 +11,13 @@ import {
     pickLogged,
     routeId,
     type OrganizationRow,
-} from '#services/user_resource'
+} from '#services/UserResource'
 import {
     generatedSiteCode,
     storeOrganizationValidator,
     UPDATE_ORGANIZATION_SOMETIMES,
     updateOrganizationValidator,
-} from '#validators/organizations'
+} from '#validators/Organizations'
 import {
     lastPageOf,
     laravelInput,
@@ -25,7 +25,7 @@ import {
     pageOf,
     perPageOf,
     phpBooleanFlag,
-} from '#validators/users'
+} from '#validators/Users'
 
 const ORGANIZATION_COLUMNS = [
     'organizations.id',

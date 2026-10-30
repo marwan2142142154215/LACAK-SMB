@@ -6,7 +6,7 @@ import {
     normalizeInput,
     tokenNameFor,
     validationFailures,
-} from '#controllers/auth_controller'
+} from '#controllers/AuthController'
 import {
     currentTimestamp,
     generateSecretKey,
@@ -15,8 +15,8 @@ import {
     qrCodeInlineSvg,
     qrCodeUrl,
     verifyKeyNewer,
-} from '#services/two_factor'
-import { phpBool } from '#services/two_factor_policy'
+} from '#services/TwoFactor'
+import { phpBool } from '#services/TwoFactorPolicy'
 
 /**
  * Vektor dari pragmarx/google2fa ASLI (vendor backend-api):

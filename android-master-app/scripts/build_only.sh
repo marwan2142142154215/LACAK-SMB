@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build APK master dengan kode site ditanam saat build. Dipanggil oleh
-# backend-adonis (app/services/apk_builder.ts) -- backend-adonis sendiri
+# backend-adonis (app/services/ApkBuilder.ts) -- backend-adonis sendiri
 # yang membaca file hasil build, menghitung checksum, dan menyimpannya.
 set -e
 

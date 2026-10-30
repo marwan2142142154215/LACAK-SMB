@@ -1,22 +1,22 @@
 import { test } from '@japa/runner'
 import { errors as vineErrors } from '@vinejs/vine'
-import type { Access } from '#services/access'
-import { attachmentDisposition, laravelSlug, mimeTypeFor, randomString } from '#services/documents'
+import type { Access } from '#services/Access'
+import { attachmentDisposition, laravelSlug, mimeTypeFor, randomString } from '#services/Documents'
 import {
     GEOFENCE_RULE_MORPH,
     dirtyLoggedAttributes,
     geofenceRuleResource,
     loggedAttributesOf,
     type GeofenceRuleRow,
-} from '#controllers/geofence_rules_controller'
-import { maskedTokenRef, stringInput } from '#controllers/telegram_bindings_controller'
-import { canManageStaffLink } from '#controllers/telegram_user_links_controller'
+} from '#controllers/GeofenceRulesController'
+import { maskedTokenRef, stringInput } from '#controllers/TelegramBindingsController'
+import { canManageStaffLink } from '#controllers/TelegramUserLinksController'
 import {
     paginationFrom,
     phpInteger,
     storeGeofenceRuleValidator,
     updateGeofenceRuleValidator,
-} from '#validators/rules'
+} from '#validators/Rules'
 
 function accessWith(roles: string[], organizationId: number | null): Access {
     return { userId: 1, organizationId, roles, permissions: [], grantedOrganizationIds: [] }

@@ -1,8 +1,8 @@
 import { test } from '@japa/runner'
-import { hashLaravelPassword, verifyLaravelPassword } from '#services/laravel/bcrypt'
-import { LaravelEncrypter } from '#services/laravel/crypt'
-import { LaravelUrlSigner } from '#services/laravel/signed_url'
-import { parseSanctumToken, sanctumHashMatches } from '#services/laravel/sanctum_token'
+import { hashLaravelPassword, verifyLaravelPassword } from '#services/laravel/Bcrypt'
+import { LaravelEncrypter } from '#services/laravel/Crypt'
+import { LaravelUrlSigner } from '#services/laravel/SignedUrl'
+import { parseSanctumToken, sanctumHashMatches } from '#services/laravel/SanctumToken'
 
 /**
  * Vector dari Laravel ASLI (backend-api, Laravel 13) dengan kunci uji:

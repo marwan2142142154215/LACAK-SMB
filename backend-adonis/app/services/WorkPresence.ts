@@ -3,7 +3,7 @@ import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 /**
  * Status kerja Live Kerja & log kejadiannya -- padanan WorkPresence di
- * backend-api (dan realtime-gateway/app/services/live_status.ts). Urutan
+ * backend-api (dan realtime-gateway/app/services/LiveStatus.ts). Urutan
  * prioritas: offline -> disconnected -> break -> alert -> camera_off ->
  * screen_off -> idle -> working. Ubah ketiganya bersamaan.
  */
@@ -36,7 +36,7 @@ export type StateColumn = keyof typeof STATE_EVENTS
  * Wajah hilang baru dicatat di log kalau berlangsung minimal selama ini
  * (dihitung dari kejadian face_lost). Lebih singkat = face_lost-nya dihapus
  * begitu wajah kembali / sesi selesai, dan face_back tidak dicatat. Sama
- * dengan realtime-gateway/app/services/live_status.ts.
+ * dengan realtime-gateway/app/services/LiveStatus.ts.
  */
 export const FACE_LOG_MIN_SECONDS = 5 * 60
 
