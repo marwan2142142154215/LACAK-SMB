@@ -1,4 +1,4 @@
-import { hasRole, type Access } from '#services/Access'
+import { hasRole, siteScopeOfAccess, type Access } from '#services/Access'
 
 /**
  * Padanan trait ResolvesOrganizationScope di backend-api: site mana yang
@@ -9,11 +9,12 @@ import { hasRole, type Access } from '#services/Access'
  * bot tidak dipakai, dan endpointnya tetap dilayani backend-api.
  */
 export function hasCrossOrganizationAccess(access: Access): boolean {
-    return hasRole(access, 'super_admin')
+    return hasRole(access, 'super_admin') || siteScopeOfAccess(access) === 'all'
 }
 
+/** Cakupan "granted": admin, leader, dan peran buatan sendiri yang diatur begitu di menu Peran. */
 export function hasGrantBasedAccess(access: Access): boolean {
-    return hasRole(access, 'admin') || hasRole(access, 'leader')
+    return !hasCrossOrganizationAccess(access) && siteScopeOfAccess(access) === 'granted'
 }
 
 /**

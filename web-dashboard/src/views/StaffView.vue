@@ -43,20 +43,31 @@ const resettingTwoFactor = ref(false)
 const deleteTarget = ref(null)
 const deleting = ref(false)
 
-const ROLE_LABELS = {
-    super_admin: 'Super Admin',
-    admin: 'Admin',
-    leader: 'Leader',
-    site_admin: 'Site Admin',
-    staff_viewer: 'Staff Viewer',
-}
+// Daftar peran datang dari server (menu Peran): peran buatan sendiri ikut muncul di sini.
+// Peran bawaan dipakai sebagai cadangan sampai daftarnya termuat.
+const FALLBACK_ROLES = [
+    { name: 'super_admin', label: 'Super Admin', description: 'Full akses semua fitur & semua site', site_scope: 'all' },
+    { name: 'admin', label: 'Admin', description: 'Lihat site yang diizinkan', site_scope: 'granted' },
+    { name: 'leader', label: 'Leader', description: 'Lihat site yang diizinkan', site_scope: 'granted' },
+    { name: 'site_admin', label: 'Site Admin', description: 'Kelola site sendiri penuh', site_scope: 'own' },
+    { name: 'staff_viewer', label: 'Staff Viewer', description: 'Lihat site sendiri', site_scope: 'own' },
+]
+const roleOptions = ref(FALLBACK_ROLES)
 
-const roleDescriptions = {
-    super_admin: 'Super Admin (full akses semua fitur & semua site)',
-    admin: 'Admin (lihat site yang diizinkan)',
-    leader: 'Leader (lihat site yang diizinkan)',
-    site_admin: 'Site Admin (kelola site sendiri penuh)',
-    staff_viewer: 'Staff Viewer (lihat site sendiri)',
+const ROLE_LABELS = computed(() => Object.fromEntries(roleOptions.value.map((role) => [role.name, role.label])))
+const roleDescriptions = computed(() =>
+    Object.fromEntries(roleOptions.value.map((role) => [role.name, role.description ? `${role.label} (${role.description})` : role.label])),
+)
+const scopeOfRole = (name) => roleOptions.value.find((role) => role.name === name)?.site_scope ?? 'own'
+
+async function loadRoleOptions() {
+    if (!canManageAll.value) return
+    try {
+        const response = await api.get('/roles/options')
+        roleOptions.value = response.data.data
+    } catch {
+        // Cadangan bawaan tetap dipakai; daftar peran tidak menghalangi halaman Staf.
+    }
 }
 
 const form = ref({
@@ -69,7 +80,7 @@ const form = ref({
     site_access: [],
 })
 
-const needsSiteAccess = computed(() => form.value.role === 'admin' || form.value.role === 'leader')
+const needsSiteAccess = computed(() => scopeOfRole(form.value.role) === 'granted')
 
 function resetForm() {
     form.value = { name: '', username: '', email: '', password: '', role: 'admin', organization_id: null, site_access: [] }
@@ -172,9 +183,9 @@ function goToPage(next) {
 }
 
 // ---- Pilih banyak staf & atur site massal -------------------------------------------------
-// Hanya peran Admin dan Leader yang punya akses per site (user_site_access); peran lain tidak
-// bisa dicentang. Pilihan bertahan saat pindah halaman atau mengganti filter.
-const GRANT_ROLES = ['admin', 'leader']
+// Hanya peran ber-cakupan "site yang diberikan" (Admin, Leader, atau peran buatan sendiri) yang punya
+// akses per site (user_site_access); peran lain tidak bisa dicentang. Pilihan bertahan saat
+// pindah halaman atau mengganti filter.
 const selectedIds = ref([])
 const bulkOpen = ref(false)
 const bulkMode = ref('add')
@@ -182,7 +193,7 @@ const bulkAllSites = ref(false)
 const bulkSites = ref([])
 const bulkSubmitting = ref(false)
 
-const isSelectable = (user) => GRANT_ROLES.includes(user.role)
+const isSelectable = (user) => scopeOfRole(user.role) === 'granted'
 const selectableOnPage = computed(() => staff.value.filter(isSelectable))
 const allOnPageSelected = computed(
     () => selectableOnPage.value.length > 0 && selectableOnPage.value.every((user) => selectedIds.value.includes(user.id)),
@@ -251,7 +262,7 @@ async function submitBulk() {
 
 /** Ringkasan kolom "Akses site": banyak site (mis. auditor) tidak membanjiri baris tabel. */
 function siteSummary(user) {
-    if (user.role === 'super_admin') return { text: 'Semua site', title: null }
+    if (scopeOfRole(user.role) === 'all') return { text: 'Semua site', title: null }
     const sites = user.site_access ?? []
     if (sites.length > 0) {
         const names = sites.map((site) => site.name)
@@ -392,7 +403,7 @@ function menuItems(user) {
 }
 
 onMounted(async () => {
-    await Promise.all([loadStaff(), loadOrganizations()])
+    await Promise.all([loadStaff(), loadOrganizations(), loadRoleOptions()])
 })
 </script>
 
@@ -435,7 +446,7 @@ onMounted(async () => {
                         <span class="sr-only">Filter peran</span>
                         <select v-model="roleFilter" class="field-control h-9 appearance-none pr-8 text-sm">
                             <option value="">Semua peran</option>
-                            <option v-for="(label, role) in ROLE_LABELS" :key="role" :value="role">{{ label }}</option>
+                            <option v-for="role in roleOptions" :key="role.name" :value="role.name">{{ role.label }}</option>
                         </select>
                         <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
                     </label>
@@ -608,11 +619,11 @@ onMounted(async () => {
                 />
 
                 <BaseSelect v-model="form.role" label="Peran">
-                    <option v-for="(desc, role) in roleDescriptions" :key="role" :value="role">{{ desc }}</option>
+                    <option v-for="role in roleOptions" :key="role.name" :value="role.name">{{ roleDescriptions[role.name] }}</option>
                 </BaseSelect>
 
-                <p v-if="form.role === 'super_admin'" class="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-base-300">
-                    Super Admin melihat dan mengelola semua site, jadi tidak perlu memilih site.
+                <p v-if="scopeOfRole(form.role) === 'all'" class="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-base-300">
+                    Peran ini melihat semua site, jadi tidak perlu memilih site.
                 </p>
 
                 <BaseSelect v-else-if="!needsSiteAccess" v-model="form.organization_id" label="Site" required>

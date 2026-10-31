@@ -16,7 +16,7 @@ import { laravelEncrypter, LARAVEL_USER_MORPH } from '#services/laravel/index'
 import { verifyLaravelPassword } from '#services/laravel/Bcrypt'
 import { ipRejectionBody, ipRejectionFor, isIpAllowed, normalizeIp } from '#services/IpWhitelist'
 import { removeBroadcaster } from '#services/Livekit'
-import { permissionNamesOf, roleNamesOf } from '#services/Permissions'
+import { permissionNamesOf, roleNamesOf, siteScopeOf } from '#services/Permissions'
 import * as TwoFactor from '#services/TwoFactor'
 import { isTwoFactorRequired } from '#services/TwoFactorPolicy'
 import { closeSession, openSessionOf, openSessions, record } from '#services/WorkPresence'
@@ -314,10 +314,11 @@ export default class AuthController {
 
 /** Sama dengan AuthController::userPayload() di backend-api. */
 export async function userPayload(user: User) {
-    const [roles, permissions, siteRows] = await Promise.all([
+    const [roles, permissions, siteRows, siteScope] = await Promise.all([
         roleNamesOf(user.id),
         permissionNamesOf(user.id),
         db.from('user_site_access').where('user_id', user.id).select('organization_id'),
+        siteScopeOf(user.id),
     ])
 
     return {
@@ -328,6 +329,7 @@ export async function userPayload(user: User) {
         organization_id: user.organizationId,
         roles,
         permissions,
+        site_scope: siteScope,
         accessible_organization_ids: siteRows.map((row) => row.organization_id),
     }
 }

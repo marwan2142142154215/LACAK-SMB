@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import db from '@adonisjs/lucid/services/db'
 import type { QueryClientContract } from '@adonisjs/lucid/types/database'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
+import { BUILT_IN_SCOPES } from '#services/RoleRules'
 
 /**
  * Peran, izin, dan akun bawaan sistem (padanan seeder Laravel lama).
@@ -27,6 +28,8 @@ export const PERMISSIONS = [
     'live.watch',
     // Pengaturan keamanan sistem (mis. wajib/tidaknya 2FA) -- hanya super_admin.
     'security.manage',
+    // Menu Peran: membuat peran & mengatur izin/cakupan site -- hanya super_admin.
+    'roles.manage',
 ]
 
 export const ROLE_PERMISSIONS: Record<string, string[]> = {
@@ -93,7 +96,21 @@ async function idOf(
     return row.id
 }
 
-/** Buat peran & izin yang belum ada, lalu samakan izin tiap peran. */
+/** Nama tampilan & deskripsi awal peran bawaan (cakupan site: BUILT_IN_SCOPES). */
+const ROLE_LABELS: Record<string, [string, string]> = {
+    super_admin: ['Super Admin', 'Full akses semua fitur & semua site'],
+    site_admin: ['Site Admin', 'Kelola site sendiri penuh'],
+    admin: ['Admin', 'Lihat site yang diizinkan'],
+    leader: ['Leader', 'Lihat site yang diizinkan'],
+    staff_viewer: ['Staff Viewer', 'Lihat site sendiri'],
+    telegram_bot_service: ['Telegram Bot Service', 'Akun layanan bot Telegram'],
+}
+
+/**
+ * Buat peran & izin yang belum ada. Izin peran bawaan hanya diisi saat peran BARU dibuat
+ * (supaya perubahan dari menu Peran tidak tertimpa seed ulang); super_admin selalu
+ * disamakan dengan semua izin.
+ */
 export async function seedRolesAndPermissions(client: QueryClientContract = db.connection()) {
     const permissionIds = new Map<string, number>()
     for (const name of PERMISSIONS) {
@@ -101,7 +118,20 @@ export async function seedRolesAndPermissions(client: QueryClientContract = db.c
     }
 
     for (const [role, permissions] of Object.entries(ROLE_PERMISSIONS)) {
+        const existed = await client.from('roles').where({ name: role, guard_name: 'web' }).first()
         const roleId = await idOf(client, 'roles', role)
+        const [label, description] = ROLE_LABELS[role]
+        await client
+            .from('roles')
+            .where('id', roleId)
+            .update({
+                is_system: true,
+                label: existed?.label ?? label,
+                description: existed?.description ?? description,
+                site_scope: BUILT_IN_SCOPES[role],
+            })
+
+        if (existed && role !== 'super_admin') continue
         await client.from('role_has_permissions').where('role_id', roleId).delete()
         await client.table('role_has_permissions').multiInsert(
             permissions.map((name) => ({

@@ -17,6 +17,7 @@ import {
 } from '#services/BulkSiteAccess'
 import { removeBroadcaster } from '#services/Livekit'
 import { hasGrantBasedAccess } from '#services/OrganizationScope'
+import { ROLE_NAME_PATTERN } from '#services/RoleRules'
 import { escapeLike, searchTermOf } from '#services/SearchTerm'
 import { closeSession, openSessionOf } from '#services/WorkPresence'
 import { fail, success } from '#services/ApiResponse'
@@ -70,7 +71,7 @@ export default class UsersController {
         const organizationId = requestInteger(input, 'organization_id')
         const search = searchTermOf(input.search)
         const role =
-            typeof input.role === 'string' && ROLE_NAMES.includes(input.role) ? input.role : null
+            typeof input.role === 'string' && ROLE_NAME_PATTERN.test(input.role) ? input.role : null
         const status =
             input.status === 'active' || input.status === 'suspended' ? input.status : null
 
@@ -452,7 +453,6 @@ const STAFF_ROLE = 'staff_viewer'
 
 /** Per halaman paling banyak yang dilayani daftar staf. */
 const MAX_PER_PAGE = 100
-const ROLE_NAMES = ['super_admin', 'admin', 'leader', 'site_admin', 'staff_viewer']
 
 /** id user yang punya salah satu peran ini (subquery). */
 function usersWithRoles(roles: string[]) {

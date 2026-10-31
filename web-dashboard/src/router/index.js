@@ -106,8 +106,15 @@ const routes = [
                 path: 'staff',
                 name: 'staff',
                 component: () => import('@/views/StaffView.vue'),
-                // Admin & leader: hanya menonaktifkan / mengaktifkan staf di site-nya.
-                meta: { roles: ['super_admin', 'admin', 'leader'] },
+                // Peran ber-cakupan "site yang diberikan" (admin, leader, ...): hanya menonaktifkan /
+                // mengaktifkan staf di site-nya.
+                meta: { staffAccess: true },
+            },
+            {
+                path: 'peran',
+                name: 'roles',
+                component: () => import('@/views/RolesView.vue'),
+                meta: { permission: 'roles.manage' },
             },
             {
                 path: 'settings',
@@ -160,11 +167,13 @@ router.beforeEach(async (to) => {
     let isSuperAdmin = false
     let permissions = []
     let roles = []
+    let siteScope = null
     try {
         const user = JSON.parse(localStorage.getItem(USER_STORAGE_KEY) || 'null')
         isSuperAdmin = user?.roles?.includes('super_admin') ?? false
         permissions = user?.permissions ?? []
         roles = user?.roles ?? []
+        siteScope = user?.site_scope ?? null
     } catch {
         isSuperAdmin = false
     }
@@ -194,6 +203,10 @@ router.beforeEach(async (to) => {
     }
 
     if (to.meta.roles && !to.meta.roles.some((role) => roles.includes(role))) {
+        return { name: 'radar' }
+    }
+
+    if (to.meta.staffAccess && !isSuperAdmin && siteScope !== 'granted') {
         return { name: 'radar' }
     }
 

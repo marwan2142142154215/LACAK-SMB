@@ -1,5 +1,12 @@
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
+import { BUILT_IN_SCOPES } from '#services/RoleRules'
+
+/** Peran bawaan ber-cakupan "granted" (tetap) dan semua nama peran bawaan. */
+const GRANT_ROLES = Object.keys(BUILT_IN_SCOPES).filter(
+    (name) => BUILT_IN_SCOPES[name] === 'granted'
+)
+const BUILT_IN_NAMES = Object.keys(BUILT_IN_SCOPES)
 
 /**
  * Atur akses site untuk BANYAK user sekaligus (menu Staf > Atur site massal).
@@ -8,7 +15,8 @@ import { LARAVEL_USER_MORPH } from '#services/laravel/index'
  * - remove  : cabut site yang dipilih (semua akses kalau all_sites).
  * - replace : akses tiap user diganti persis dengan site yang dipilih.
  *
- * Hanya user berperan admin atau leader yang punya akses per site
+ * Hanya user yang perannya ber-cakupan "granted" (admin, leader, atau peran buatan
+ * sendiri yang diatur begitu di menu Peran) yang punya akses per site
  * (user_site_access); user lain dilewati dan dilaporkan, bukan dianggap error.
  * Seluruh perubahan satu transaksi: gagal di tengah = tidak ada yang berubah.
  */
@@ -19,8 +27,6 @@ export const MAX_BULK_USERS = 200
 export const MAX_BULK_SITES = 1000
 /** Baris pivot per INSERT: aman dari batas parameter PostgreSQL (65535). */
 const INSERT_CHUNK = 1000
-/** Peran yang akses site-nya dipilih per site. */
-const GRANT_ROLES = ['admin', 'leader']
 
 export type BulkSiteAccessInput = {
     userIds: number[]
@@ -120,7 +126,15 @@ export async function partitionUsers(
         .join('roles', 'roles.id', 'model_has_roles.role_id')
         .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
         .whereIn('model_has_roles.model_id', userIds)
-        .whereIn('roles.name', GRANT_ROLES)
+        .where((scope) =>
+            scope
+                .whereIn('roles.name', GRANT_ROLES)
+                .orWhere((custom) =>
+                    custom
+                        .where('roles.site_scope', 'granted')
+                        .whereNotIn('roles.name', BUILT_IN_NAMES)
+                )
+        )
         .select('model_has_roles.model_id')
     const eligibleIds = new Set(grantHolders.map((row) => Number(row.model_id)))
     const foundIds = new Set(users.map((row) => Number(row.id)))
@@ -134,7 +148,7 @@ export async function partitionUsers(
             skipped.push({
                 id,
                 name,
-                reason: 'Hanya peran Admin dan Leader yang punya akses per site',
+                reason: 'Hanya peran ber-cakupan "site yang diberikan" yang punya akses per site',
             })
         }
     }

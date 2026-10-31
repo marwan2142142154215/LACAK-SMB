@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { permissionNamesOf, roleNamesOf } from '#services/Permissions'
+import { permissionNamesOf, roleNamesOf, siteScopeOf } from '#services/Permissions'
+import { BUILT_IN_SCOPES, widestScope, type SiteScope } from '#services/RoleRules'
 
 /**
  * Peran, izin, dan akses site user yang sedang login -- dimuat sekali per
@@ -11,8 +12,17 @@ export type Access = {
     organizationId: number | null
     roles: string[]
     permissions: string[]
-    /** user_site_access: site yang diberikan ke admin/leader. */
+    /** user_site_access: site yang diberikan ke peran ber-cakupan "granted" (admin/leader/...). */
     grantedOrganizationIds: number[]
+    /** Cakupan site terluas dari semua perannya; kosong = turunkan dari nama peran bawaan. */
+    siteScope?: SiteScope
+}
+
+/** Cakupan site efektif: dari database kalau ada, kalau tidak dari nama peran bawaan. */
+export function siteScopeOfAccess(access: Access): SiteScope {
+    return (
+        access.siteScope ?? widestScope(access.roles.map((role) => BUILT_IN_SCOPES[role] ?? 'own'))
+    )
 }
 
 const cache = new WeakMap<HttpContext, Promise<Access>>()
@@ -28,10 +38,11 @@ export function accessOf(ctx: HttpContext): Promise<Access> {
 
 async function load(ctx: HttpContext): Promise<Access> {
     const user = ctx.authUser!
-    const [roles, permissions, grants] = await Promise.all([
+    const [roles, permissions, grants, siteScope] = await Promise.all([
         roleNamesOf(user.id),
         permissionNamesOf(user.id),
         db.from('user_site_access').where('user_id', user.id).select('organization_id'),
+        siteScopeOf(user.id),
     ])
 
     return {
@@ -40,6 +51,7 @@ async function load(ctx: HttpContext): Promise<Access> {
         roles,
         permissions,
         grantedOrganizationIds: grants.map((row) => Number(row.organization_id)),
+        siteScope,
     }
 }
 

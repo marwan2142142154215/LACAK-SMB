@@ -279,10 +279,23 @@ export function laravelBoolean() {
 */
 
 /**
- * Peran yang boleh diberikan lewat dashboard. telegram_bot_service tetap
- * tidak termasuk -- akun layanan bot satu-satunya (TelegramBotAccountSeeder).
+ * Peran yang boleh diberikan lewat dashboard: semua peran guard web (termasuk yang dibuat
+ * di menu Peran) KECUALI telegram_bot_service -- akun layanan bot satu-satunya
+ * (TelegramBotAccountSeeder).
  */
-export const ASSIGNABLE_ROLES = ['super_admin', 'admin', 'leader', 'site_admin', 'staff_viewer']
+export const assignableRoleRule = vine.createRule(
+    async (value, _options, field) => {
+        const row = await db
+            .from('roles')
+            .where({ name: value as string, guard_name: 'web' })
+            .whereNot('name', 'telegram_bot_service')
+            .first()
+        if (!row) field.report(LARAVEL_MESSAGES.enum, 'enum', field)
+    },
+    { name: 'enum', isAsync: true }
+)
+
+const assignableRoleField = () => vine.string().maxLength(64).use(assignableRoleRule())
 
 const organizationIdField = () =>
     vine
@@ -304,7 +317,7 @@ export const storeUserValidator = vine.create({
         .maxLength(255)
         .use(uniqueRule({ table: 'users', column: 'email' })),
     password: vine.string().minLength(8),
-    role: vine.enum(ASSIGNABLE_ROLES),
+    role: assignableRoleField(),
     // organization_id = site "rumah" staf (dipakai site_admin/staff_viewer);
     // admin/leader dibatasi lewat site_access, bukan field ini.
     organization_id: organizationIdField().nullable().optional(),
@@ -320,7 +333,7 @@ export const updateUserValidator = vine.withMetaData<{ userId: number }>().creat
         .use(uniqueRule({ table: 'users', column: 'email', ignoreIdMetaKey: 'userId' }))
         .optional(),
     password: vine.string().minLength(8).optional(),
-    role: vine.enum(ASSIGNABLE_ROLES).optional(),
+    role: assignableRoleField().optional(),
     organization_id: organizationIdField().nullable().optional(),
 })
 

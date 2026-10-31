@@ -16,6 +16,7 @@ import { middleware } from '#start/kernel'
 const UsersController = () => import('#controllers/UsersController')
 const OrganizationsController = () => import('#controllers/OrganizationsController')
 const SecuritySettingsController = () => import('#controllers/SecuritySettingsController')
+const RolesController = () => import('#controllers/RolesController')
 
 router
     .group(() => {
@@ -46,6 +47,20 @@ router
         router
             .post('/users/bulk-site-access', [UsersController, 'bulkSiteAccess'])
             .use(middleware.throttle({ max: 10, minutes: 1 }))
+
+        // Menu Peran: pilihan peran untuk form staf (users.manage / roles.manage);
+        // sisanya roles.manage (super_admin) saja.
+        router.get('/roles/options', [RolesController, 'options'])
+        router.get('/roles', [RolesController, 'index'])
+        router
+            .post('/roles', [RolesController, 'store'])
+            .use(middleware.throttle({ max: 20, minutes: 1 }))
+        router
+            .route('/roles/:role', ['PUT', 'PATCH'], [RolesController, 'update'])
+            .use(middleware.throttle({ max: 30, minutes: 1 }))
+        router
+            .delete('/roles/:role', [RolesController, 'destroy'])
+            .use(middleware.throttle({ max: 20, minutes: 1 }))
 
         // Wajib/tidaknya 2FA -- security.manage (super_admin) saja.
         router.get('/settings/security', [SecuritySettingsController, 'show'])

@@ -4,6 +4,7 @@ import { accessOf, can } from '#services/Access'
 import { fail, success } from '#services/ApiResponse'
 import { logModelEvent } from '#services/ActivityLog'
 import { escapeLike, searchTermOf } from '#services/SearchTerm'
+import { normalizeSiteName, SITE_NAME_TAKEN_MESSAGE, siteNameTaken } from '#services/SiteName'
 import {
     dirtyLogged,
     ORGANIZATION_LOGGED_FIELDS,
@@ -122,22 +123,33 @@ export default class OrganizationsController {
         const data = await storeOrganizationValidator.validate(laravelInput(ctx), {
             messagesProvider: laravelMessages,
         })
+        const name = normalizeSiteName(data.name)
+        if (!name || (await siteNameTaken(name))) return nameInvalid(ctx, name)
         const actorId = ctx.authUser!.id
         const now = new Date()
 
-        const [row] = await db
-            .table('organizations')
-            .insert({
-                name: data.name,
-                type: data.type,
-                unique_site_code: generatedSiteCode(data.name),
-                is_active: true,
-                created_by: actorId,
-                updated_by: actorId,
-                created_at: now,
-                updated_at: now,
-            })
-            .returning(ORGANIZATION_COLUMNS.map((column) => column.replace('organizations.', '')))
+        let row
+        try {
+            ;[row] = await db
+                .table('organizations')
+                .insert({
+                    name,
+                    type: data.type,
+                    unique_site_code: generatedSiteCode(name),
+                    is_active: true,
+                    created_by: actorId,
+                    updated_by: actorId,
+                    created_at: now,
+                    updated_at: now,
+                })
+                .returning(
+                    ORGANIZATION_COLUMNS.map((column) => column.replace('organizations.', ''))
+                )
+        } catch (error) {
+            // Dua permintaan nama sama bersamaan: indeks unik database yang menolak yang kedua.
+            if (isUniqueViolation(error)) return nameInvalid(ctx, name)
+            throw error
+        }
 
         await logModelEvent(ctx, {
             event: 'created',
@@ -179,7 +191,11 @@ export default class OrganizationsController {
         )
 
         const changes: Record<string, unknown> = { updated_by: ctx.authUser!.id }
-        if (data.name !== undefined) changes.name = data.name
+        if (data.name !== undefined) {
+            const name = normalizeSiteName(data.name)
+            if (!name || (await siteNameTaken(name, organization.id))) return nameInvalid(ctx, name)
+            changes.name = name
+        }
         if (data.is_active !== undefined) changes.is_active = data.is_active
 
         // Eloquent hanya menyimpan kalau ada yang berubah (updated_by ikut
@@ -191,13 +207,19 @@ export default class OrganizationsController {
 
         let current = organization
         if (Object.keys(dirty).length > 0) {
-            const [updated] = await db
-                .from('organizations')
-                .where('id', organization.id)
-                .update({ ...dirty, updated_at: new Date() })
-                .returning(
-                    ORGANIZATION_COLUMNS.map((column) => column.replace('organizations.', ''))
-                )
+            let updated
+            try {
+                ;[updated] = await db
+                    .from('organizations')
+                    .where('id', organization.id)
+                    .update({ ...dirty, updated_at: new Date() })
+                    .returning(
+                        ORGANIZATION_COLUMNS.map((column) => column.replace('organizations.', ''))
+                    )
+            } catch (error) {
+                if (isUniqueViolation(error)) return nameInvalid(ctx, String(dirty.name ?? ''))
+                throw error
+            }
             current = updated
 
             const logged = dirtyLogged(ORGANIZATION_LOGGED_FIELDS, before, dirty)
@@ -283,3 +305,14 @@ function forbidden(ctx: HttpContext) {
 function notFound(ctx: HttpContext) {
     return ctx.response.status(404).send(fail('Data tidak ditemukan'))
 }
+
+/** 422 gaya validasi: nama kosong (hanya spasi) atau sudah dipakai site lain. */
+function nameInvalid(ctx: HttpContext, name: string) {
+    return ctx.response.status(422).send(
+        fail('Data yang diberikan tidak valid.', {
+            name: [name ? SITE_NAME_TAKEN_MESSAGE : 'Nama site wajib diisi.'],
+        })
+    )
+}
+
+const isUniqueViolation = (error: unknown) => (error as { code?: string })?.code === '23505'

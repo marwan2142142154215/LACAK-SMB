@@ -120,7 +120,9 @@ async function submitForm() {
         editingOrg.value = null
         await loadOrganizations()
     } catch (err) {
-        toast.error(editingOrg.value ? 'Gagal mengubah site' : 'Gagal membuat site', err.response?.data?.message)
+        // Kesalahan isian (mis. nama site sudah dipakai) ditampilkan apa adanya, bukan pesan umum.
+        const detail = err.response?.data?.errors?.name?.[0] ?? err.response?.data?.message
+        toast.error(editingOrg.value ? 'Gagal mengubah site' : 'Gagal membuat site', detail)
     } finally {
         submitting.value = false
     }
