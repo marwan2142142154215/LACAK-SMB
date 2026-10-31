@@ -149,34 +149,45 @@ function applyLiveStatus(event) {
 
     // "Semua site" hanya membuka room site yang sedang ada staf live. Staf di site lain yang BARU
     // mulai kerja muncul lewat event ini -> buka room site itu saat itu juga.
-    if (selectedSiteId.value === ALL_SITES && event.session) {
+    // Satu site dipilih: hanya ruang leader yang bisa muncul lewat jalur ini (room site-nya sudah terbuka).
+    if (event.session && !live.connecting) {
         const key = event.organization_id ?? LEADERS_ROOM_KEY
-        const inScope = key === LEADERS_ROOM_KEY ? canWatchLeaders.value : sites.value.some((site) => site.id === key)
+        const inScope =
+            key === LEADERS_ROOM_KEY
+                ? canWatchLeaders.value
+                : selectedSiteId.value === ALL_SITES && sites.value.some((site) => site.id === key)
         if (inScope && !live.watchedSiteIds.includes(key)) live.addWatchSites([key]).catch(() => {})
     }
 }
 
 // Event status (live:status) diterima untuk SEMUA site yang bisa dilihat saat "Semua site" dipilih,
 // walau room videonya baru dibuka untuk site yang sedang live. Satu site dipilih = site itu saja.
-const statusSiteIds = computed(() =>
-    selectedSiteId.value === ALL_SITES
-        ? [...sites.value.map((site) => site.id), ...(canWatchLeaders.value ? [LEADERS_ROOM_KEY] : [])]
-        : live.watchedSiteIds,
-)
+const statusSiteIds = computed(() => {
+    const leaders = canWatchLeaders.value ? [LEADERS_ROOM_KEY] : []
+    return selectedSiteId.value === ALL_SITES
+        ? [...sites.value.map((site) => site.id), ...leaders]
+        : [...live.watchedSiteIds.filter((id) => id !== LEADERS_ROOM_KEY), ...leaders]
+})
 
 watch(statusSiteIds, (siteIds) => live.watchLiveStatus(siteIds), { immediate: true })
 
-/** Site (dan ruang leader) yang sedang ada staf live: hanya itu yang perlu room videonya dibuka. */
-function liveRoomKeys() {
-    const keys = sites.value.filter((site) => (site.live_count ?? 0) > 0).map((site) => site.id)
+/**
+ * Room yang perlu dibuka: "Semua site" = site yang sedang ada staf live; satu site = site itu.
+ * Ruang leader hanya dibuka kalau ada leader yang sedang live.
+ */
+function wantedRoomKeys() {
+    const keys =
+        selectedSiteId.value === ALL_SITES
+            ? sites.value.filter((site) => (site.live_count ?? 0) > 0).map((site) => site.id)
+            : [selectedSiteId.value]
     if (canWatchLeaders.value && leadersLive.value > 0) keys.push(LEADERS_ROOM_KEY)
     return keys
 }
 
-/** Samakan room yang terbuka dengan site yang sedang live (dipanggil tiap muat ulang status). */
+/** Samakan room yang terbuka dengan yang diinginkan (dipanggil tiap muat ulang status). */
 async function syncLazyRooms() {
-    if (selectedSiteId.value !== ALL_SITES || live.mode === 'idle' || live.connecting) return
-    const wanted = liveRoomKeys()
+    if (live.mode === 'idle' || live.connecting) return
+    const wanted = wantedRoomKeys()
     await live.addWatchSites(wanted.filter((key) => !live.watchedSiteIds.includes(key)))
     await live.removeWatchSites(live.watchedSiteIds.filter((key) => !wanted.includes(key)))
 }
@@ -478,11 +489,7 @@ async function selectSite(siteId) {
     try {
         // "Semua site": hanya room site yang sedang ada staf live (bukan 49 room sekaligus);
         // site lain dibuka belakangan begitu ada staf yang mulai kerja (applyLiveStatus / syncLazyRooms).
-        if (siteId === ALL_SITES) {
-            await live.watchSites(liveRoomKeys(), { allowEmpty: true })
-        } else {
-            await live.watchSites(canWatchLeaders.value ? [siteId, LEADERS_ROOM_KEY] : [siteId])
-        }
+        await live.setWatchRooms(wantedRoomKeys(), { allowEmpty: siteId === ALL_SITES })
     } catch (err) {
         toast.error('Gagal membuka siaran', err.response?.data?.message ?? err.message)
     }

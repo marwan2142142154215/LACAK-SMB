@@ -688,6 +688,48 @@ export const useLiveStore = defineStore('live', () => {
         bump()
     }
 
+    // Daftar room yang diinginkan oleh pemanggilan setWatchRooms() terbaru.
+    let wantedRooms = new Set()
+
+    /**
+     * Samakan room tonton dengan daftar ini TANPA memutus room yang sudah sesuai: pindah tab site
+     * hanya meminta token untuk room yang belum ada (mis. ruang leader tetap tersambung), bukan
+     * memutus semuanya lalu meminta ulang. Aman dipanggil beruntun saat tab diklik cepat: hanya
+     * pemanggilan terakhir yang menentukan hasil akhir, room sisa pemanggilan lama dirapikan.
+     *
+     * allowEmpty: daftar kosong BUKAN error ("Semua site" saat belum ada staf yang live).
+     */
+    async function setWatchRooms(siteIds, { allowEmpty = false } = {}) {
+        const wanted = new Set(siteIds)
+        wantedRooms = wanted
+        connecting.value = true
+        try {
+            const broadcasting = mode.value === 'broadcasting' && ownRoom
+            if (mode.value === 'idle') await disconnect()
+            await removeWatchSites([...rooms.keys()].filter((id) => !wanted.has(id)))
+            const missing = [...wanted].filter((id) => !rooms.has(id) && !pendingWatchRooms.has(id))
+            missing.forEach((id) => pendingWatchRooms.add(id))
+            let results = []
+            try {
+                results = await settledPool(missing, WATCH_CONNECT_CONCURRENCY, connectWatchRoom)
+            } finally {
+                missing.forEach((id) => pendingWatchRooms.delete(id))
+            }
+            // Ada pemanggilan yang lebih baru selama menunggu: buang room yang tidak lagi diinginkan.
+            await removeWatchSites([...rooms.keys()].filter((id) => !wantedRooms.has(id)))
+            watchedSiteIds.value = [...rooms.keys()]
+            if (!rooms.size && !(allowEmpty && !siteIds.length)) {
+                throw results.find((result) => result.status === 'rejected')?.reason ?? new Error('Tidak ada site')
+            }
+            if (broadcasting || wantedRooms !== wanted) return
+            organizationId.value = siteIds.length === 1 ? siteIds[0] : null
+            mode.value = 'watching'
+            bump()
+        } finally {
+            if (wantedRooms === wanted) connecting.value = false
+        }
+    }
+
     /** Putus semua room tonton, kecuali room siaran saya sendiri. */
     async function disconnectWatchRooms() {
         const watched = [...rooms].filter(([, room]) => room !== ownRoom)
@@ -1301,6 +1343,7 @@ export const useLiveStore = defineStore('live', () => {
         watchSites,
         addWatchSites,
         removeWatchSites,
+        setWatchRooms,
         startWork,
         resumeIfBroadcasting,
         endWork,
