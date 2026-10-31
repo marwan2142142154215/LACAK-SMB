@@ -1,5 +1,5 @@
 import { test } from '@japa/runner'
-import { parseBulkUserUpdate } from '#services/BulkUserUpdate'
+import { parseBulkUserUpdate, parseEmailList } from '#services/BulkUserUpdate'
 
 test.group('Update massal staf: validasi input', () => {
     test('hanya peran: site tidak diubah dan tidak perlu diisi', ({ assert }) => {
@@ -70,5 +70,19 @@ test.group('Update massal staf: validasi input', () => {
             organization_ids: [],
         })
         assert.isTrue(result.ok)
+    })
+})
+
+test.group('Update massal staf: daftar email tempelan', () => {
+    test('email dirapikan, dibuat huruf kecil, unik; potongan bukan email dilaporkan', ({
+        assert,
+    }) => {
+        const result = parseEmailList(['A@Gmail.com', ' a@gmail.com ', 'b@x.id', 'bukan-email', ''])
+        assert.deepEqual(result, { emails: ['a@gmail.com', 'b@x.id'], invalid: ['bukan-email'] })
+    })
+
+    test('bukan array atau berisi non-teks ditolak', ({ assert }) => {
+        assert.isNull(parseEmailList('a@b.com'))
+        assert.isNull(parseEmailList(['a@b.com', 5]))
     })
 })

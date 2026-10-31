@@ -39,6 +39,8 @@ const allSites = ref(false)
 const sites = ref([])
 const submitting = ref(false)
 const outcome = ref(null)
+const pasteNote = ref(null)
+const pasting = ref(false)
 let searchTimer = null
 let searchSeq = 0
 
@@ -62,6 +64,7 @@ watch(
         allSites.value = false
         sites.value = []
         outcome.value = null
+        pasteNote.value = null
     },
 )
 
@@ -109,6 +112,33 @@ function toggle(user) {
 function addAllResults() {
     const fresh = results.value.filter((user) => !isPicked(user))
     selected.value = [...selected.value, ...fresh.map((user) => ({ id: user.id, name: user.name, email: user.email }))]
+}
+
+// Tempel daftar email (dipisah spasi, koma, titik koma, atau baris baru): yang valid dan terdaftar
+// langsung dipilih, sisanya dilaporkan. Satu email biasa tetap lewat pencarian di atas.
+const PASTE_SEPARATOR = /[\s,;]+/
+
+async function handlePaste(event) {
+    const text = event.clipboardData?.getData('text') ?? ''
+    const parts = text.split(PASTE_SEPARATOR).filter(Boolean)
+    if (parts.length < 2) return
+    event.preventDefault()
+    pasting.value = true
+    pasteNote.value = null
+    try {
+        const response = await api.post('/users/lookup', { emails: parts })
+        const { found, missing, invalid } = response.data.data
+        const fresh = found.filter((user) => !isPicked(user))
+        selected.value = [...selected.value, ...fresh.map((user) => ({ id: user.id, name: user.name, email: user.email }))]
+        search.value = ''
+        results.value = []
+        pasteNote.value = { added: fresh.length, already: found.length - fresh.length, missing, invalid }
+    } catch (err) {
+        const errors = err.response?.data?.errors
+        toast.error('Gagal mencocokkan email', errors ? Object.values(errors).flat().join(' ') : err.response?.data?.message)
+    } finally {
+        pasting.value = false
+    }
 }
 
 async function submit() {
@@ -200,10 +230,26 @@ const summary = computed(() => {
                         v-model="search"
                         type="search"
                         maxlength="100"
-                        placeholder="Cari email atau nama lalu klik untuk memilih…"
+                        placeholder="Cari email atau nama, atau tempel banyak email sekaligus…"
                         class="field-control pl-9"
+                        @paste="handlePaste"
                     />
                 </label>
+                <p v-if="pasting" class="mt-1.5 text-xs text-base-400">Mencocokkan email…</p>
+                <div v-if="pasteNote" class="mt-1.5 space-y-1 text-xs">
+                    <p class="text-base-300">
+                        <span class="font-semibold text-base-50">{{ pasteNote.added }}</span> email langsung dipilih<template
+                            v-if="pasteNote.already"
+                            >, {{ pasteNote.already }} sudah dipilih sebelumnya</template
+                        >.
+                    </p>
+                    <p v-if="pasteNote.missing.length" class="text-warning-400">
+                        Tidak terdaftar ({{ pasteNote.missing.length }}): {{ pasteNote.missing.join(', ') }}
+                    </p>
+                    <p v-if="pasteNote.invalid.length" class="text-warning-400">
+                        Bukan email ({{ pasteNote.invalid.length }}): {{ pasteNote.invalid.join(', ') }}
+                    </p>
+                </div>
                 <div v-if="search.trim()" class="mt-2 rounded-lg border border-base-800 bg-base-900/60">
                     <p v-if="searching" class="px-3 py-2 text-xs text-base-500">Mencari…</p>
                     <p v-else-if="results.length === 0" class="px-3 py-2 text-xs text-base-500">Tidak ada staf yang cocok.</p>

@@ -19,7 +19,7 @@ import {
 import { removeBroadcaster } from '#services/Livekit'
 import { hasGrantBasedAccess } from '#services/OrganizationScope'
 import { ROLE_NAME_PATTERN } from '#services/RoleRules'
-import { parseBulkUserUpdate } from '#services/BulkUserUpdate'
+import { MAX_LOOKUP_EMAILS, parseBulkUserUpdate, parseEmailList } from '#services/BulkUserUpdate'
 import { escapeLike, searchTermOf } from '#services/SearchTerm'
 import { closeSession, openSessionOf } from '#services/WorkPresence'
 import { fail, success } from '#services/ApiResponse'
@@ -373,6 +373,49 @@ export default class UsersController {
         })
 
         return success('Akses site diperbarui', await freshUserResource(user.id))
+    }
+
+    /**
+     * Cocokkan banyak email sekaligus (tempel daftar di dialog Update staf): mana yang ada sebagai
+     * staf (belum dihapus) dan mana yang tidak. Huruf besar/kecil tidak dibedakan.
+     */
+    async lookup(ctx: HttpContext) {
+        if (!(await canManage(ctx))) return forbidden(ctx)
+
+        const parsed = parseEmailList(ctx.request.input('emails'))
+        if (!parsed) {
+            return ctx.response.status(422).send(
+                fail('Data yang diberikan tidak valid.', {
+                    emails: ['Daftar email harus berupa array teks.'],
+                })
+            )
+        }
+        if (parsed.emails.length + parsed.invalid.length > MAX_LOOKUP_EMAILS) {
+            return ctx.response.status(422).send(
+                fail('Data yang diberikan tidak valid.', {
+                    emails: [`Paling banyak ${MAX_LOOKUP_EMAILS} email sekali tempel.`],
+                })
+            )
+        }
+
+        const rows =
+            parsed.emails.length > 0
+                ? await db
+                      .from('users')
+                      .whereNull('deleted_at')
+                      .whereRaw(
+                          `lower(email) in (${parsed.emails.map(() => '?').join(',')})`,
+                          parsed.emails
+                      )
+                      .select('id', 'name', 'email')
+                : []
+        const foundEmails = new Set(rows.map((row) => String(row.email).toLowerCase()))
+
+        return success('Hasil pencocokan email', {
+            found: rows.map((row) => ({ id: Number(row.id), name: row.name, email: row.email })),
+            missing: parsed.emails.filter((email) => !foundEmails.has(email)),
+            invalid: parsed.invalid,
+        })
     }
 
     /**

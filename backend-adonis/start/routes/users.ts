@@ -43,6 +43,10 @@ router
         router.post('/users/:user/reactivate', [UsersController, 'reactivate'])
         router.post('/users/:user/reset-2fa', [UsersController, 'reset2fa'])
         router.put('/users/:user/site-access', [UsersController, 'syncSiteAccess'])
+        // Cocokkan daftar email yang ditempel dengan staf yang ada (dialog Update staf).
+        router
+            .post('/users/lookup', [UsersController, 'lookup'])
+            .use(middleware.throttle({ max: 30, minutes: 1 }))
         // Update massal staf: peran, status (aktifkan / suspen), dan akses site sekaligus.
         router
             .post('/users/bulk-update', [UsersController, 'bulkUpdate'])

@@ -87,6 +87,28 @@ export function parseBulkUserUpdate(input: Record<string, unknown>): Parsed {
     return { ok: true, data: { userIds, role, status, sites } }
 }
 
+export const MAX_LOOKUP_EMAILS = 200
+const EMAIL_SHAPE = /^[^\s@,;]+@[^\s@,;]+$/
+
+/**
+ * Daftar email dari hasil tempel (dipisah spasi, koma, titik koma, atau baris baru): huruf kecil,
+ * unik, hanya yang berbentuk email. `invalid` = potongan yang bukan email (dilaporkan ke pengguna).
+ */
+export function parseEmailList(raw: unknown): { emails: string[]; invalid: string[] } | null {
+    if (!Array.isArray(raw)) return null
+    const emails: string[] = []
+    const invalid: string[] = []
+    for (const item of raw) {
+        if (typeof item !== 'string') return null
+        const value = item.trim().toLowerCase()
+        if (!value) continue
+        if (EMAIL_SHAPE.test(value) && value.length <= 255) {
+            if (!emails.includes(value)) emails.push(value)
+        } else if (!invalid.includes(value.slice(0, 100))) invalid.push(value.slice(0, 100))
+    }
+    return { emails, invalid }
+}
+
 /** Daftar id dari input mentah (untuk kasus parser site gagal tapi daftar staf valid). */
 function userIdsOf(value: unknown): number[] {
     if (!Array.isArray(value)) return []
