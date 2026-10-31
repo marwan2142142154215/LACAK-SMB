@@ -127,6 +127,8 @@ class SpacesDisk implements Disk {
                 accessKeyId: env.get('DO_SPACES_KEY') ?? '',
                 secretAccessKey: env.get('DO_SPACES_SECRET')?.release() ?? '',
             },
+            requestChecksumCalculation: 'WHEN_REQUIRED',
+            responseChecksumValidation: 'WHEN_REQUIRED',
         })
     }
 
