@@ -11,6 +11,7 @@ import env from '#start/env'
 import { fail, success } from '#services/ApiResponse'
 import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/ActivityLog'
 import * as AccountCenter from '#services/AccountCenter'
+import { autoProvisionEnabled, provisionPendingUser } from '#services/AccountCenterProvisioning'
 import { laravelEncrypter, LARAVEL_USER_MORPH } from '#services/laravel/index'
 import { verifyLaravelPassword } from '#services/laravel/Bcrypt'
 import { ipRejectionBody, ipRejectionFor, isIpAllowed, normalizeIp } from '#services/IpWhitelist'
@@ -99,6 +100,17 @@ export default class AuthController {
             // Account Center hanya membuktikan identitas -- akun, role, dan
             // site tetap harus sudah dibuat admin di sini (tidak dibuat otomatis).
             user = await activeUsers().whereRaw('LOWER(email) = ?', [outcome.email]).first()
+
+            if (!user && autoProvisionEnabled()) {
+                await provisionPendingUser(outcome.email, outcome.name)
+                return ctx.response
+                    .status(403)
+                    .send(
+                        fail(
+                            'Akun Anda sudah didaftarkan dan menunggu diaktifkan oleh super admin. Hubungi super admin.'
+                        )
+                    )
+            }
 
             if (!user) {
                 return ctx.response

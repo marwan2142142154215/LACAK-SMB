@@ -51,6 +51,9 @@ export default await Env.create(new URL('../', import.meta.url), {
 
     // Account Center (login email) -- sama dengan ACCOUNTCENTER_* di backend-api/.env
     ACCOUNTCENTER_ENABLED: Env.schema.boolean.optional(),
+    // true = email Account Center yang belum terdaftar dibuatkan akun menunggu
+    // aktivasi (nonaktif, tanpa peran & site). Bawaan false.
+    ACCOUNTCENTER_AUTO_PROVISION: Env.schema.boolean.optional(),
     ACCOUNTCENTER_URI: Env.schema.string.optional(),
     ACCOUNTCENTER_NAME: Env.schema.string.optional(),
     ACCOUNTCENTER_SECRET: Env.schema.secret.optional(),

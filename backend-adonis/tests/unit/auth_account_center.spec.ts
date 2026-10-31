@@ -1,6 +1,7 @@
 import { test } from '@japa/runner'
 import * as AesCbc256 from '#services/AesCbc256'
 import { AUTHENTICATED, REJECTED, isConfigured, readIdentity } from '#services/AccountCenter'
+import { usernameFromEmail } from '#services/AccountCenterProvisioning'
 
 /**
  * Vektor dari pustaka PHP Account Center yang asli (disalin dari
@@ -79,5 +80,20 @@ test.group('Auth: jawaban Account Center', () => {
         assert.isFalse(isConfigured({ ...base, uri: 'http://account-center.test' }))
         assert.isFalse(isConfigured({ ...base, name: '' }))
         assert.isFalse(isConfigured({ ...base, secret: '' }))
+    })
+})
+
+test.group('Pendaftaran otomatis Account Center: username dari email', () => {
+    test('memakai bagian lokal email dalam huruf kecil', ({ assert }) => {
+        assert.equal(usernameFromEmail('Budi.Santoso@gmail.com'), 'budi.santoso')
+        assert.equal(usernameFromEmail('sinarjaya69111@gmail.com'), 'sinarjaya69111')
+    })
+
+    test('membuang karakter yang tidak aman', ({ assert }) => {
+        assert.equal(usernameFromEmail('a+b c!d@x.com'), 'abcd')
+    })
+
+    test('nama terlalu pendek diberi awalan user', ({ assert }) => {
+        assert.equal(usernameFromEmail('ab@x.com'), 'userab')
     })
 })
