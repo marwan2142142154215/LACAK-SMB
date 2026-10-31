@@ -14,7 +14,20 @@ BACKEND_API_URL="${5:?BACKEND_API_URL wajib diisi}"
 
 # Server: bisa diatur dari luar (mis. unit systemd); bawaan ~/android-sdk.
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"
-export JAVA_HOME="${JAVA_HOME:-$(dirname "$(dirname "$(readlink -f "$(which java)")")")}"
+# JAVA_HOME: pakai yang diset dari luar kalau valid; kalau tidak, turunkan dari `java` di PATH.
+# (Dulu: tanpa java di server, `which java` kosong dan JAVA_HOME jadi "." -> Gradle gagal membingungkan.)
+if [ -z "${JAVA_HOME:-}" ] || [ ! -x "$JAVA_HOME/bin/java" ]; then
+    JAVA_BIN="$(command -v java || true)"
+    if [ -z "$JAVA_BIN" ]; then
+        echo "ERROR: JDK tidak ditemukan di server ini. Pasang JDK 17: sudo apt-get install -y openjdk-17-jdk-headless" >&2
+        exit 1
+    fi
+    export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$JAVA_BIN")")")"
+fi
+if [ ! -d "$ANDROID_HOME" ]; then
+    echo "ERROR: Android SDK tidak ditemukan di $ANDROID_HOME. Pasang SDK atau set ANDROID_HOME (lihat docs build APK di server)." >&2
+    exit 1
+fi
 
 cd "$(dirname "$0")/.."
 
