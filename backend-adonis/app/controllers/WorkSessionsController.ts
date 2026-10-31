@@ -397,7 +397,16 @@ export default class WorkSessionsController {
             )
         }
 
-        const organizationId = authorizedOrganizationId(access, requestedOrganizationId(ctx))
+        const requested = requestedOrganizationId(ctx)
+        // Tanpa site yang diminta: itu kesalahan permintaan, bukan soal hak (Super Admin pun harus menyebut site).
+        if (requested === null && hasCrossOrganizationAccess(access)) {
+            return ctx.response.status(422).send(
+                fail('Data yang diberikan tidak valid.', {
+                    organization_id: ['Pilih site yang akan ditonton.'],
+                })
+            )
+        }
+        const organizationId = authorizedOrganizationId(access, requested)
         if (organizationId === null) {
             return ctx.response.status(403).send(fail('Anda tidak berwenang menonton site ini'))
         }

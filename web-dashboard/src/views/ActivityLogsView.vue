@@ -1,4 +1,5 @@
 <script setup>
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import {
     Building2,
     ChevronDown,
@@ -280,23 +281,15 @@ onMounted(async () => {
                         </button>
                     </div>
 
-                    <label v-if="sites.length > 1" class="relative">
-                        <span class="sr-only">Site</span>
-                        <select v-model="siteId" class="field-control h-9 appearance-none py-0 pr-8 text-sm">
-                            <option value="all">Semua site</option>
-                            <option v-for="site in sites" :key="site.id" :value="site.id">{{ site.name }}</option>
-                        </select>
-                        <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
-                    </label>
+                    <BaseSelect v-if="sites.length > 1" v-model="siteId" variant="compact" aria-label="Site">
+                        <option value="all">Semua site</option>
+                        <option v-for="site in sites" :key="site.id" :value="site.id">{{ site.name }}</option>
+                    </BaseSelect>
 
-                    <label class="relative">
-                        <span class="sr-only">Hasil</span>
-                        <select v-model="result" class="field-control h-9 appearance-none py-0 pr-8 text-sm">
+                    <BaseSelect v-model="result" variant="compact" aria-label="Hasil">
                             <option value="">Semua hasil</option>
                             <option v-for="(meta, key) in RESULTS" :key="key" :value="key">{{ meta.label }}</option>
-                        </select>
-                        <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
-                    </label>
+                        </BaseSelect>
 
                     <label class="relative min-w-52 flex-1">
                         <span class="sr-only">Cari</span>

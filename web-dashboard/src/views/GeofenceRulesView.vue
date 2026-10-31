@@ -281,15 +281,11 @@ onMounted(async () => {
                         class="field-control h-9 pl-9 text-sm"
                     />
                 </label>
-                <label class="relative">
-                    <span class="sr-only">Filter status</span>
-                    <select v-model="statusFilter" class="field-control h-9 appearance-none pr-8 text-sm">
+                <BaseSelect v-model="statusFilter" variant="compact" aria-label="Filter status">
                         <option value="">Semua status</option>
                         <option value="active">Aktif</option>
                         <option value="inactive">Nonaktif</option>
-                    </select>
-                    <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
-                </label>
+                    </BaseSelect>
                 <SiteFilter v-if="organizations.length > 1" v-model="siteFilter" :sites="organizations" />
             </div>
 

@@ -33,6 +33,7 @@ import LiveStatusBar from '@/components/live/LiveStatusBar.vue'
 import LivePairTile from '@/components/live/LivePairTile.vue'
 import LoginDeviceIcon from '@/components/live/LoginDeviceIcon.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import SearchSelect from '@/components/ui/SearchSelect.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import WarnStaffDialog from '@/components/work/WarnStaffDialog.vue'
@@ -179,7 +180,7 @@ function wantedRoomKeys() {
     const keys =
         selectedSiteId.value === ALL_SITES
             ? sites.value.filter((site) => (site.live_count ?? 0) > 0).map((site) => site.id)
-            : [selectedSiteId.value]
+            : [selectedSiteId.value].filter((id) => Number.isInteger(id))
     if (canWatchLeaders.value && leadersLive.value > 0) keys.push(LEADERS_ROOM_KEY)
     return keys
 }
@@ -478,6 +479,12 @@ async function loadMySession() {
     const response = await api.get('/live/sessions', { params })
     mySession.value = response.data.data.my_session
 }
+
+// Opsi pemilih site: "Semua site" lalu tiap site; lencana = jumlah staf yang sedang live.
+const siteOptions = computed(() => [
+    { value: ALL_SITES, label: 'Semua site', badge: totalLive.value },
+    ...sites.value.map((site) => ({ value: site.id, label: site.name, badge: site.live_count ?? 0 })),
+])
 
 /** Tonton satu site, atau ALL_SITES = semua site sekaligus (satu koneksi per site). */
 async function selectSite(siteId) {
@@ -869,43 +876,18 @@ onBeforeUnmount(() => {
 
             <!-- Bilah kendali: pilih site, cari staf, atur tampilan -->
             <div class="flex flex-wrap items-center gap-3 rounded-xl border border-base-800 bg-base-900 p-2 shadow-(--shadow-card)">
-                <div
+                <!-- Pemilih site: dropdown ke bawah yang bisa dicari, di pojok kanan bilah kendali -->
+                <SearchSelect
                     v-if="sites.length > 1"
-                    class="-m-0.5 flex min-w-0 flex-1 basis-full gap-1 overflow-x-auto p-0.5 lg:basis-auto"
-                    role="radiogroup"
+                    class="order-last w-full sm:ml-auto sm:w-72"
                     aria-label="Site yang ditonton"
-                >
-                    <button
-                        v-for="option in [{ id: ALL_SITES, name: 'Semua site', live_count: totalLive }, ...sites]"
-                        :key="option.id"
-                        type="button"
-                        role="radio"
-                        :aria-checked="selectedSiteId === option.id"
-                        :disabled="live.isBroadcasting || live.connecting"
-                        class="inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent-400 disabled:cursor-not-allowed disabled:opacity-50"
-                        :class="
-                            selectedSiteId === option.id
-                                ? 'bg-base-50 text-base-950 shadow-(--shadow-card)'
-                                : 'text-base-300 hover:bg-base-850 hover:text-base-50'
-                        "
-                        @click="selectSite(option.id)"
-                    >
-                        <LayoutGrid v-if="option.id === ALL_SITES" class="size-4" />
-                        {{ option.name }}
-                        <span
-                            class="min-w-5 rounded-full px-1.5 py-px text-center font-mono text-[11px] tabular-nums"
-                            :class="
-                                selectedSiteId === option.id
-                                    ? 'bg-base-950/20'
-                                    : option.live_count
-                                      ? 'bg-accent-500/12 text-accent-400'
-                                      : 'bg-base-850 text-base-500'
-                            "
-                        >
-                            {{ option.live_count ?? 0 }}
-                        </span>
-                    </button>
-                </div>
+                    search-placeholder="Cari site…"
+                    empty-text="Tidak ada site"
+                    :model-value="selectedSiteId"
+                    :options="siteOptions"
+                    :disabled="live.isBroadcasting || live.connecting"
+                    @update:model-value="selectSite"
+                />
                 <p v-else class="flex-1 px-2 text-sm font-medium text-base-100">{{ ownSiteName ?? sites[0]?.name }}</p>
 
                 <div v-if="!auth.seesOnlySelf" class="relative w-full sm:w-72">

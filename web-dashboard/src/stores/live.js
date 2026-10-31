@@ -626,8 +626,12 @@ export const useLiveStore = defineStore('live', () => {
 
     const watchSite = (siteId) => watchSites([siteId])
 
+    // Kunci room yang sah: id site (angka) atau ruang leader. Selain itu (null, 'all', undefined) bukan room.
+    const isRoomKey = (id) => id === LEADERS_ROOM_KEY || Number.isInteger(id)
+
     /** Minta token tonton untuk satu room site (atau ruang leader) lalu sambung. */
     async function connectWatchRoom(siteId) {
+        if (!isRoomKey(siteId)) throw new Error('Site yang ditonton belum dipilih')
         const params = siteId === LEADERS_ROOM_KEY ? { room: LEADERS_ROOM_KEY } : { organization_id: siteId }
         const response = await api.post('/live/watch-token', params)
         const { livekit_url, token } = response.data.data
@@ -675,7 +679,7 @@ export const useLiveStore = defineStore('live', () => {
      */
     async function addWatchSites(siteIds) {
         if (mode.value === 'idle') return
-        const missing = [...new Set(siteIds)].filter((id) => !rooms.has(id) && !pendingWatchRooms.has(id))
+        const missing = [...new Set(siteIds)].filter(isRoomKey).filter((id) => !rooms.has(id) && !pendingWatchRooms.has(id))
         if (!missing.length) return
         missing.forEach((id) => pendingWatchRooms.add(id))
         try {
@@ -708,7 +712,8 @@ export const useLiveStore = defineStore('live', () => {
      *
      * allowEmpty: daftar kosong BUKAN error ("Semua site" saat belum ada staf yang live).
      */
-    async function setWatchRooms(siteIds, { allowEmpty = false } = {}) {
+    async function setWatchRooms(requestedIds, { allowEmpty = false } = {}) {
+        const siteIds = requestedIds.filter(isRoomKey)
         const wanted = new Set(siteIds)
         wantedRooms = wanted
         connecting.value = true

@@ -321,7 +321,11 @@ onBeforeUnmount(() => {
 <template>
     <div>
         <!-- ===== Di dalam panggilan ===== -->
-        <div v-if="inCall" class="briefing-room flex min-h-[calc(100dvh-3.5rem)] flex-col px-4 pt-5 pb-4 sm:px-8">
+        <div
+            v-if="inCall"
+            class="briefing-room flex min-h-[calc(100dvh-3.5rem)] flex-col px-4 pt-5 pb-4 sm:px-8"
+            :class="call.screenShare.value && 'lg:h-[calc(100dvh-3.5rem)]'"
+        >
             <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div class="flex min-w-0 items-center gap-3.5">
                     <span class="live-chip">
@@ -340,8 +344,9 @@ onBeforeUnmount(() => {
             </div>
 
             <!-- Layar yang sedang dipresentasikan besar, peserta jadi filmstrip di sampingnya -->
-            <div v-if="call.screenShare.value" class="grid flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_17rem]">
-                <div class="relative overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
+            <!-- Layar presentasi mengisi sisa tinggi layar (tanpa area hitam kosong); peserta menggulir sendiri di sampingnya -->
+            <div v-if="call.screenShare.value" class="grid min-h-0 flex-1 content-start gap-3 lg:grid-cols-[minmax(0,1fr)_17rem] lg:grid-rows-[minmax(0,1fr)]">
+                <div class="relative flex aspect-video min-h-0 items-center justify-center overflow-hidden rounded-2xl bg-black ring-1 ring-white/10 lg:aspect-auto">
                     <div class="presenter-banner">
                         <MonitorUp class="size-3.5" />
                         {{ nameOf(call.screenShare.value.participant)
@@ -352,14 +357,15 @@ onBeforeUnmount(() => {
                         :label="`Layar ${call.screenShare.value.participant.name}`"
                         fit="contain"
                         bare
-                        class="!rounded-none !border-0"
+                        class="!aspect-auto !h-full !w-full !rounded-none !border-0"
                     />
                 </div>
-                <div class="grid content-start gap-2 overflow-y-auto sm:grid-cols-3 lg:grid-cols-1">
+                <!-- Layar kecil: filmstrip mendatar yang bisa digeser; layar lebar: kolom yang menggulir ke bawah -->
+                <div class="flex min-h-0 items-start gap-2 overflow-x-auto pb-1 lg:grid lg:content-start lg:overflow-x-visible lg:overflow-y-auto lg:pb-0">
                     <div
                         v-for="participant in call.participants.value"
                         :key="participant.identity"
-                        class="tile"
+                        class="tile w-44 shrink-0 lg:w-auto"
                         :class="participant.isSpeaking && 'is-speaking'"
                     >
                         <LiveVideoTile

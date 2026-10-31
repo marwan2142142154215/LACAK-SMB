@@ -299,29 +299,21 @@ onBeforeUnmount(() => {
                             class="field-control h-9 pl-9 text-sm"
                         />
                     </label>
-                    <label class="relative">
-                        <span class="sr-only">Filter status</span>
-                        <select v-model="statusFilter" class="field-control h-9 appearance-none pr-8 text-sm">
+                    <BaseSelect v-model="statusFilter" variant="compact" aria-label="Filter status">
                             <option value="">Semua status</option>
                             <option value="success">Berhasil</option>
                             <option value="building">Sedang build</option>
                             <option value="pending">Menunggu</option>
                             <option value="failed">Gagal</option>
-                        </select>
-                        <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
-                    </label>
+                        </BaseSelect>
                     <SiteFilter v-if="organizations.length > 1" v-model="siteFilter" :sites="organizations" />
-                    <label class="relative">
-                        <span class="sr-only">Filter aplikasi</span>
-                        <select v-model="typeFilter" class="field-control h-9 appearance-none pr-8 text-sm">
+                    <BaseSelect v-model="typeFilter" variant="compact" aria-label="Filter aplikasi">
                             <option value="">Semua aplikasi</option>
                             <option value="tracker">SMB Pelacak</option>
                             <option value="master">SMB Admin</option>
                             <option value="live">SMB Live Kerja</option>
                             <option value="server">Server</option>
-                        </select>
-                        <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
-                    </label>
+                        </BaseSelect>
                 </div>
 
                 <div v-if="loading" class="px-5 py-12 text-center text-sm text-base-500">Memuat build…</div>

@@ -396,23 +396,15 @@ onMounted(async () => {
                             class="field-control h-9 pl-9 text-sm"
                         />
                     </label>
-                    <label class="relative">
-                        <span class="sr-only">Filter peran</span>
-                        <select v-model="roleFilter" class="field-control h-9 appearance-none pr-8 text-sm">
+                    <BaseSelect v-model="roleFilter" variant="compact" aria-label="Filter peran">
                             <option value="">Semua peran</option>
                             <option v-for="role in roleOptions" :key="role.name" :value="role.name">{{ role.label }}</option>
-                        </select>
-                        <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
-                    </label>
-                    <label class="relative">
-                        <span class="sr-only">Filter status</span>
-                        <select v-model="statusFilter" class="field-control h-9 appearance-none pr-8 text-sm">
+                        </BaseSelect>
+                    <BaseSelect v-model="statusFilter" variant="compact" aria-label="Filter status">
                             <option value="">Semua status</option>
                             <option value="active">Aktif</option>
                             <option value="suspended">Disuspen</option>
-                        </select>
-                        <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
-                    </label>
+                        </BaseSelect>
                 </div>
 
                 <div

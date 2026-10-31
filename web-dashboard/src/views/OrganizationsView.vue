@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BasePagination from '@/components/ui/BasePagination.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -199,15 +200,11 @@ onMounted(loadOrganizations)
                         class="field-control h-9 pl-9 text-sm"
                     />
                 </label>
-                <label class="relative">
-                    <span class="sr-only">Filter status</span>
-                    <select v-model="statusFilter" class="field-control h-9 appearance-none pr-8 text-sm">
+                <BaseSelect v-model="statusFilter" variant="compact" aria-label="Filter status">
                         <option value="">Semua status</option>
                         <option value="active">Aktif</option>
                         <option value="inactive">Nonaktif</option>
-                    </select>
-                    <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
-                </label>
+                    </BaseSelect>
             </div>
 
             <div v-if="loading" class="py-12 text-center text-sm text-base-500">Memuat site…</div>

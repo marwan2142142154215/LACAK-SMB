@@ -1,4 +1,5 @@
 <script setup>
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, LayoutGrid, Search } from '@lucide/vue'
 import dayjs from 'dayjs'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -250,12 +251,9 @@ function downloadCsv() {
                 </div>
                 <p v-else class="flex-1 px-2 text-sm font-medium text-base-100">{{ sites[0]?.name }}</p>
 
-                <label class="relative w-full sm:w-48">
-                    <span class="sr-only">Urutkan</span>
-                    <select v-model="sort" class="field-control !py-2">
+                <BaseSelect v-model="sort" class="w-full sm:w-48" aria-label="Urutkan">
                         <option v-for="option in SORTS" :key="option.key" :value="option.key">{{ option.label }}</option>
-                    </select>
-                </label>
+                    </BaseSelect>
 
                 <label class="relative w-full sm:w-56">
                     <span class="sr-only">Cari staf</span>

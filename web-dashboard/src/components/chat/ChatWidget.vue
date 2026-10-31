@@ -1,4 +1,5 @@
 <script setup>
+import BaseSelect from '@/components/ui/BaseSelect.vue'
 import { ChevronDown, Maximize2, MessagesSquare, X } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -57,18 +58,17 @@ watch(onChatPage, (value) => value && (chat.open = false))
                 <header class="flex items-start gap-3 border-b border-base-800 px-4 py-3">
                     <div class="min-w-0 flex-1">
                         <h2 class="font-display text-base font-bold tracking-[-0.015em] text-base-50">Chat staf</h2>
-                        <label v-if="chat.sites.length > 1" class="relative mt-1 block w-fit">
-                            <span class="sr-only">Ruang chat site</span>
-                            <select
-                                v-model="chat.activeSiteId"
-                                class="appearance-none rounded-md bg-transparent py-0.5 pr-6 text-xs font-medium text-base-300 hover:text-base-50 focus-visible:outline-2 focus-visible:outline-accent-400"
-                            >
-                                <option v-for="site in chat.sites" :key="site.id" :value="site.id">
-                                    {{ site.name }}{{ chat.unreadCount(site.id) ? ` (${chat.unreadCount(site.id)} baru)` : '' }}
-                                </option>
-                            </select>
-                            <ChevronDown class="pointer-events-none absolute top-1/2 right-1 size-3.5 -translate-y-1/2 text-base-500" />
-                        </label>
+                        <BaseSelect
+                            v-if="chat.sites.length > 1"
+                            v-model="chat.activeSiteId"
+                            variant="ghost"
+                            class="mt-1"
+                            aria-label="Ruang chat site"
+                        >
+                            <option v-for="site in chat.sites" :key="site.id" :value="site.id">
+                                {{ site.name }}{{ chat.unreadCount(site.id) ? ` (${chat.unreadCount(site.id)} baru)` : '' }}
+                            </option>
+                        </BaseSelect>
                         <p v-else class="mt-0.5 text-xs text-base-400">{{ activeSite?.name }}</p>
                     </div>
                     <p
