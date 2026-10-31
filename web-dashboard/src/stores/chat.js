@@ -3,6 +3,7 @@ import { io } from 'socket.io-client'
 import { computed, ref } from 'vue'
 
 import api from '@/lib/api'
+import { goToLogin } from '@/lib/routerRef'
 import { useAuthStore } from '@/stores/auth'
 
 // Pesan terakhir yang sudah dibaca, per site -- disimpan per browser supaya
@@ -157,8 +158,7 @@ export const useChatStore = defineStore('chat', () => {
         socket.on('session:expired', async () => {
             stop()
             auth.clearSession()
-            const { default: router } = await import('@/router')
-            router.push({ name: 'login' })
+            goToLogin()
         })
 
         socket.on('chat:message', addMessage)

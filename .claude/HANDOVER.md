@@ -47,7 +47,7 @@ LACAK-SMB: sistem pelacakan perangkat & manajemen kerja staf (lokasi GPS/BLE/WiF
 - Jangan tambah `add_header` di dalam `location` nginx tanpa mengulang header keamanan (menimpa header level server).
 
 ## Catatan Penting
-- Menjalankan lokal: `npm ci`, lalu `node ace serve --hmr` (dev) / `node ace build` (produksi). Produksi: `cp .env build/.env && cd build && npm ci --omit=dev`, dijalankan pm2 dari `ecosystem.config.cjs`.
+- Menjalankan lokal: `npm ci`, lalu `node ace serve --hmr` (dev) / `node ace build` (produksi). Produksi: `cp .env build/.env && cd build && npm ci --omit=dev`, dijalankan pm2 dari `ecosystem.config.cjs`. SETIAP selesai `node ace build` restart SEMUA proses backend: `pm2 restart lacak-api lacak-api-queue lacak-api-scheduler --update-env` (atau `bash deploy/deploy.sh`). `node ace build` menghapus folder `build`; proses yang tidak di-restart (queue = build APK) kehilangan folder kerjanya dan galat `shell-init: error retrieving current directory`.
 - Dokumentasi: `docs/rencana-migrasi-adonis.md` (migrasi Laravel→Adonis, selesai), `docs/skema-database.md`, `docs/kontrak-status-perangkat.md`.
 - `git mv` dipakai untuk rename (beda huruf besar-kecil di Windows); server Linux case-sensitive, import sudah dicek 494/494 cocok persis.
 - Skill audit keamanan Cloudflare di `D:\TOOLS\security-audit-skill` dinilai aman dipasang, belum dipasang; berat (banyak agen), pakai profil `quick`.

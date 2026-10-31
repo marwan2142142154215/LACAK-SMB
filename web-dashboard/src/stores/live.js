@@ -3,6 +3,7 @@ import { io } from 'socket.io-client'
 import { computed, ref } from 'vue'
 
 import api from '@/lib/api'
+import { goToLogin } from '@/lib/routerRef'
 import { createCameraBackground, rawCameraTrack } from '@/lib/cameraBackground'
 import { createFaceWatch } from '@/lib/faceWatch'
 import { useAuthStore } from '@/stores/auth'
@@ -1103,8 +1104,7 @@ export const useLiveStore = defineStore('live', () => {
         liveSocket.on('session:expired', async () => {
             auth.clearSession()
             await disconnect()
-            const { default: router } = await import('@/router')
-            router.push({ name: 'login' })
+            goToLogin()
         })
         return liveSocket
     }

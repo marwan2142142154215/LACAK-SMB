@@ -35,7 +35,9 @@ export async function serveDocumentsDiskFile(ctx: HttpContext, path: string, dow
     const url = await temporaryUrl(path, {
         responseContentDisposition: `attachment; filename="${addSlashes(downloadName)}"`,
     })
-    return ctx.response.redirect(url)
+    // false: JANGAN bawa query string permintaan ini (?expires=&signature= tautan aplikasi) ke URL
+    // Spaces -- menempel di ujung URL bertanda tangan dan merusak tanda tangannya (SignatureDoesNotMatch).
+    return ctx.response.redirect(url, false)
 }
 
 /**
@@ -62,7 +64,9 @@ export async function serveImageFromDisk(
         responseContentType: mimeType,
         responseContentDisposition: 'inline',
     })
-    return ctx.response.redirect(url)
+    // false: JANGAN bawa query string permintaan ini (?expires=&signature= tautan aplikasi) ke URL
+    // Spaces -- menempel di ujung URL bertanda tangan dan merusak tanda tangannya (SignatureDoesNotMatch).
+    return ctx.response.redirect(url, false)
 }
 
 async function streamFromDisk(

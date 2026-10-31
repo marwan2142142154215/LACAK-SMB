@@ -7,6 +7,7 @@ import { createApp } from 'vue'
 import App from '@/App.vue'
 import api from '@/lib/api'
 import { forgetIpAccess } from '@/lib/ipAccess'
+import { setRouter } from '@/lib/routerRef'
 import router from '@/router'
 import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
@@ -34,6 +35,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 
 app.use(pinia)
 app.use(router)
+setRouter(router)
 
 // useAuthStore(pinia) -- instance pinia dioper EKSPLISIT, bukan
 // useAuthStore() biasa. Dipanggil di sini, di luar context component Vue

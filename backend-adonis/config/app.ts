@@ -42,11 +42,11 @@ export const http = defineConfig({
      */
     redirect: {
         /**
-         * When enabled, all redirects automatically carry over the current
-         * request's query string parameters to the redirect destination.
-         * Use withQs(false) to opt out for a specific redirect.
+         * Dimatikan: redirect ke URL luar (mis. tautan bertanda tangan Spaces) tidak boleh ikut
+         * membawa query string permintaan ini -- itu merusak tanda tangan URL tujuan. Kalau suatu
+         * redirect internal memang perlu meneruskannya, pakai withQs() secara eksplisit.
          */
-        forwardQueryString: true,
+        forwardQueryString: false,
     },
 
     /**

@@ -162,11 +162,19 @@ export class ProcessTimedOutError extends Error {}
  */
 export function runProcess(
     command: string[],
-    timeoutSeconds: number = BUILD_TIMEOUT_SECONDS
+    timeoutSeconds: number = BUILD_TIMEOUT_SECONDS,
+    options: { cwd?: string } = {}
 ): Promise<ProcessResult> {
     return new Promise((resolve, reject) => {
         const [executable, ...args] = command
-        const child = spawn(executable, args, { shell: false, windowsHide: true })
+        // cwd eksplisit: tanpa ini proses anak mewarisi folder kerja worker. Setelah deploy ulang
+        // (`node ace build` menghapus & membuat ulang folder build), folder kerja worker yang belum
+        // di-restart menunjuk ke folder yang sudah terhapus -> "shell-init: error retrieving current directory".
+        const child = spawn(executable, args, {
+            shell: false,
+            windowsHide: true,
+            cwd: options.cwd,
+        })
         const stdout: Buffer[] = []
         const stderr: Buffer[] = []
         let timedOut = false
@@ -325,7 +333,10 @@ export async function buildApk(
             version: apkBuild.version,
             deviceUuid: device?.device_uuid ?? null,
             deviceSecret,
-        })
+        }),
+        undefined,
+        // Folder proyek yang pasti ada & tidak ikut terhapus saat deploy (runner WSL: folder kerja Windows).
+        { cwd: config.runner === 'wsl' ? undefined : projectPath }
     )
 
     const output = result.output + result.errorOutput
