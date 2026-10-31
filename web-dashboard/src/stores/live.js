@@ -617,11 +617,22 @@ export const useLiveStore = defineStore('live', () => {
 
     const watchSite = (siteId) => watchSites([siteId])
 
+    /** Minta token tonton untuk satu room site (atau ruang leader) lalu sambung. */
+    async function connectWatchRoom(siteId) {
+        const params = siteId === LEADERS_ROOM_KEY ? { room: LEADERS_ROOM_KEY } : { organization_id: siteId }
+        const response = await api.post('/live/watch-token', params)
+        const { livekit_url, token } = response.data.data
+        await connect(livekit_url, token, siteId)
+    }
+
     /**
      * Tonton satu atau beberapa site sekaligus. Site yang gagal tersambung
      * dilewati; error baru dilempar kalau SEMUA site gagal.
+     *
+     * allowEmpty: daftar kosong BUKAN error (mis. "Semua site" saat belum ada staf yang live):
+     * mode tetap "menonton" tanpa room, dan room baru dibuka belakangan lewat addWatchSites().
      */
-    async function watchSites(siteIds) {
+    async function watchSites(siteIds, { allowEmpty = false } = {}) {
         connecting.value = true
         try {
             // Leader yang sedang siaran tetap di ruang leader-nya sendiri dan
@@ -632,14 +643,11 @@ export const useLiveStore = defineStore('live', () => {
             const results = await settledPool(
                 siteIds.filter((siteId) => !rooms.has(siteId)),
                 WATCH_CONNECT_CONCURRENCY,
-                async (siteId) => {
-                    const params = siteId === LEADERS_ROOM_KEY ? { room: LEADERS_ROOM_KEY } : { organization_id: siteId }
-                    const response = await api.post('/live/watch-token', params)
-                    const { livekit_url, token } = response.data.data
-                    await connect(livekit_url, token, siteId)
-                },
+                connectWatchRoom,
             )
-            if (!rooms.size) throw results.find((result) => result.status === 'rejected')?.reason ?? new Error('Tidak ada site')
+            if (!rooms.size && !(allowEmpty && siteIds.length === 0)) {
+                throw results.find((result) => result.status === 'rejected')?.reason ?? new Error('Tidak ada site')
+            }
             watchedSiteIds.value = [...rooms.keys()]
             if (broadcasting) return
             organizationId.value = siteIds.length === 1 ? siteIds[0] : null
@@ -647,6 +655,37 @@ export const useLiveStore = defineStore('live', () => {
         } finally {
             connecting.value = false
         }
+    }
+
+    // Room yang sedang dalam proses tersambung -- mencegah dua permintaan token untuk site yang sama.
+    const pendingWatchRooms = new Set()
+
+    /**
+     * Buka room site-site ini TANPA memutus yang sudah terbuka (dipakai "Semua site" yang hanya
+     * membuka site yang sedang ada staf live, lalu menambah saat ada staf baru mulai kerja).
+     */
+    async function addWatchSites(siteIds) {
+        if (mode.value === 'idle') return
+        const missing = [...new Set(siteIds)].filter((id) => !rooms.has(id) && !pendingWatchRooms.has(id))
+        if (!missing.length) return
+        missing.forEach((id) => pendingWatchRooms.add(id))
+        try {
+            await settledPool(missing, WATCH_CONNECT_CONCURRENCY, connectWatchRoom)
+        } finally {
+            missing.forEach((id) => pendingWatchRooms.delete(id))
+        }
+        watchedSiteIds.value = [...rooms.keys()]
+        bump()
+    }
+
+    /** Putus room site-site ini (bukan room siaran saya sendiri), mis. site yang sudah tidak ada staf live. */
+    async function removeWatchSites(siteIds) {
+        const doomed = [...rooms].filter(([id, room]) => siteIds.includes(id) && room !== ownRoom)
+        if (!doomed.length) return
+        doomed.forEach(([id]) => rooms.delete(id))
+        watchedSiteIds.value = [...rooms.keys()]
+        await Promise.all(doomed.map(([, room]) => room.removeAllListeners().disconnect()))
+        bump()
     }
 
     /** Putus semua room tonton, kecuali room siaran saya sendiri. */
@@ -1260,6 +1299,8 @@ export const useLiveStore = defineStore('live', () => {
         onLiveStatus,
         watchSite,
         watchSites,
+        addWatchSites,
+        removeWatchSites,
         startWork,
         resumeIfBroadcasting,
         endWork,
