@@ -1,5 +1,5 @@
 import { test } from '@japa/runner'
-import { escapeLike, searchTermOf } from '#controllers/UsersController'
+import { escapeLike, searchTermOf } from '#services/SearchTerm'
 import { errors as vineErrors } from '@vinejs/vine'
 import {
     dirtyLogged,

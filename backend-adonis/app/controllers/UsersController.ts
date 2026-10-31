@@ -5,6 +5,7 @@ import { accessOf, can, type Access } from '#services/Access'
 import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/ActivityLog'
 import { removeBroadcaster } from '#services/Livekit'
 import { hasGrantBasedAccess } from '#services/OrganizationScope'
+import { escapeLike, searchTermOf } from '#services/SearchTerm'
 import { closeSession, openSessionOf } from '#services/WorkPresence'
 import { fail, success } from '#services/ApiResponse'
 import { hashLaravelPassword } from '#services/laravel/Bcrypt'
@@ -358,18 +359,7 @@ const STAFF_ROLE = 'staff_viewer'
 
 /** Per halaman paling banyak yang dilayani daftar staf. */
 const MAX_PER_PAGE = 100
-const MAX_SEARCH_LENGTH = 100
 const ROLE_NAMES = ['super_admin', 'admin', 'leader', 'site_admin', 'staff_viewer']
-
-/** Kata kunci pencarian: teks, dipangkas, dibatasi panjangnya; selain itu kosong. */
-export function searchTermOf(value: unknown): string {
-    return typeof value === 'string' ? value.trim().slice(0, MAX_SEARCH_LENGTH) : ''
-}
-
-/** Karakter khusus LIKE (% _ \\) dianggap huruf biasa, bukan pola dari pengguna. */
-export function escapeLike(term: string): string {
-    return term.replace(/[\\%_]/g, (char) => `\\${char}`)
-}
 
 /** id user yang punya salah satu peran ini (subquery). */
 function usersWithRoles(roles: string[]) {

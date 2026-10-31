@@ -89,7 +89,9 @@ async function loadRules() {
 async function loadOrganizations() {
     if (!canPickSite.value) return
     // /organizations khusus root; admin & leader memakai daftar site yang diberikan.
-    const response = await api.get(auth.isSuperAdmin ? '/organizations' : '/live/sites')
+    const response = await api.get(auth.isSuperAdmin ? '/organizations' : '/live/sites', {
+        params: { per_page: 200 },
+    })
     organizations.value = auth.isSuperAdmin ? response.data.data.items : response.data.data
     if (!form.value.organization_id && organizations.value.length) {
         form.value.organization_id = organizations.value[0].id

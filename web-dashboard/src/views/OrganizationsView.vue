@@ -1,10 +1,11 @@
 <script setup>
-import { Building2, Copy, Pencil, Plus, Trash2 } from '@lucide/vue'
-import { computed, onMounted, ref } from 'vue'
+import { Building2, ChevronDown, Copy, Pencil, Plus, Search, Trash2 } from '@lucide/vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BasePagination from '@/components/ui/BasePagination.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -26,15 +27,83 @@ const deleteTarget = ref(null)
 const deleting = ref(false)
 const deleteTitle = computed(() => (deleteTarget.value ? `Hapus site "${deleteTarget.value.name}"?` : ''))
 
+// Daftar dimuat per halaman dengan pencarian & filter di server. 12 per halaman = pas untuk
+// kisi 2, 3, dan 4 kolom (tanpa kartu yatim di baris terakhir).
+const PER_PAGE = 12
+const SEARCH_DEBOUNCE_MS = 350
+
+const page = ref(1)
+const total = ref(0)
+const lastPage = ref(1)
+const counts = ref({ active: 0, inactive: 0, devices: 0 })
+const search = ref('')
+const statusFilter = ref('')
+const refreshing = ref(false)
+let loadSeq = 0
+let searchTimer = null
+
+const hasFilters = computed(() => Boolean(search.value.trim() || statusFilter.value))
+
 async function loadOrganizations() {
-    loading.value = true
+    // Hanya jawaban permintaan terbaru yang dipakai (ketikan cepat tidak menimpa hasil baru).
+    const seq = ++loadSeq
+    refreshing.value = true
     try {
-        const response = await api.get('/organizations')
-        organizations.value = response.data.data.items
+        const response = await api.get('/organizations', {
+            params: {
+                per_page: PER_PAGE,
+                page: page.value,
+                search: search.value.trim() || undefined,
+                status: statusFilter.value || undefined,
+            },
+        })
+        if (seq !== loadSeq) return
+        const data = response.data.data
+        // Halaman ini sudah kosong (mis. site terakhirnya dihapus): mundur ke halaman terakhir.
+        if (data.items.length === 0 && page.value > 1 && data.total > 0) {
+            page.value = Math.max(Math.ceil(data.total / PER_PAGE), 1)
+            return loadOrganizations()
+        }
+        organizations.value = data.items
+        total.value = data.total
+        lastPage.value = data.last_page ?? 1
+        counts.value = {
+            active: data.active_count ?? 0,
+            inactive: data.inactive_count ?? 0,
+            devices: data.devices_total ?? 0,
+        }
+    } catch (err) {
+        if (seq === loadSeq) toast.error('Gagal memuat daftar site', err.response?.data?.message)
     } finally {
-        loading.value = false
+        if (seq === loadSeq) {
+            loading.value = false
+            refreshing.value = false
+        }
     }
 }
+
+function goToPage(next) {
+    page.value = next
+    loadOrganizations()
+}
+
+function resetFilters() {
+    search.value = ''
+    statusFilter.value = ''
+}
+
+watch(search, () => {
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+        page.value = 1
+        loadOrganizations()
+    }, SEARCH_DEBOUNCE_MS)
+})
+watch(statusFilter, () => {
+    page.value = 1
+    loadOrganizations()
+})
+onBeforeUnmount(() => clearTimeout(searchTimer))
 
 async function submitForm() {
     submitting.value = true
@@ -88,8 +157,6 @@ function openCreate() {
     dialogOpen.value = true
 }
 
-const totalDevices = computed(() => organizations.value.reduce((total, org) => total + (org.devices_count ?? 0), 0))
-
 function menuItems(org) {
     return [
         { label: 'Ubah nama', icon: Pencil, onSelect: () => openEdit(org) },
@@ -111,14 +178,42 @@ onMounted(loadOrganizations)
                 <BaseButton @click="openCreate"><Plus class="size-4" /> Tambah site</BaseButton>
             </template>
             <template v-if="!loading" #readouts>
-                <Readout label="Site" :value="organizations.length" />
-                <Readout label="Aktif" :value="organizations.filter((o) => o.is_active).length" led="accent" />
-                <Readout label="Device terdaftar" :value="totalDevices" />
+                <Readout label="Site" :value="counts.active + counts.inactive" />
+                <Readout label="Aktif" :value="counts.active" led="accent" />
+                <Readout label="Device terdaftar" :value="counts.devices" />
             </template>
         </PageHeader>
 
         <div class="p-4 sm:p-8">
+            <div class="mb-4 flex flex-wrap items-center gap-2">
+                <label class="relative min-w-52 flex-1">
+                    <span class="sr-only">Cari site</span>
+                    <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-base-500" />
+                    <input
+                        v-model="search"
+                        type="search"
+                        maxlength="100"
+                        placeholder="Cari nama atau kode site…"
+                        class="field-control h-9 pl-9 text-sm"
+                    />
+                </label>
+                <label class="relative">
+                    <span class="sr-only">Filter status</span>
+                    <select v-model="statusFilter" class="field-control h-9 appearance-none pr-8 text-sm">
+                        <option value="">Semua status</option>
+                        <option value="active">Aktif</option>
+                        <option value="inactive">Nonaktif</option>
+                    </select>
+                    <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
+                </label>
+            </div>
+
             <div v-if="loading" class="py-12 text-center text-sm text-base-500">Memuat site…</div>
+            <div v-else-if="organizations.length === 0 && hasFilters" class="rounded-xl border border-base-800 bg-base-900/70">
+                <EmptyState :icon="Search" title="Tidak ada site yang cocok" description="Coba kata kunci lain atau hapus filter.">
+                    <BaseButton variant="outline" @click="resetFilters">Hapus filter</BaseButton>
+                </EmptyState>
+            </div>
             <div v-else-if="organizations.length === 0" class="rounded-xl border border-base-800 bg-base-900/70">
                 <EmptyState
                     :icon="Building2"
@@ -128,7 +223,11 @@ onMounted(loadOrganizations)
                     <BaseButton @click="openCreate"><Plus class="size-4" /> Tambah site</BaseButton>
                 </EmptyState>
             </div>
-            <ul v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <ul
+                v-else
+                class="grid grid-cols-1 gap-4 transition-opacity sm:grid-cols-2 xl:grid-cols-3"
+                :class="refreshing && 'opacity-60'"
+            >
                 <li
                     v-for="org in organizations"
                     :key="org.id"
@@ -166,6 +265,16 @@ onMounted(loadOrganizations)
                     </dl>
                 </li>
             </ul>
+            <BasePagination
+                v-if="!loading"
+                class="mt-4 rounded-xl border"
+                :page="page"
+                :last-page="lastPage"
+                :total="total"
+                :per-page="PER_PAGE"
+                :disabled="refreshing"
+                @update:page="goToPage"
+            />
         </div>
 
         <BaseDialog

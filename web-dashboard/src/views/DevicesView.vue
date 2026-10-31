@@ -2,12 +2,13 @@
 import { ArrowRightLeft, KeyRound, Lock, MapPin, Pencil, PlayCircle, RefreshCw, Search, Smartphone, StopCircle, Trash2, Unlock, Wifi } from '@lucide/vue'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BasePagination from '@/components/ui/BasePagination.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -54,18 +55,18 @@ const STATUS_FILTERS = [
 const statusFilter = ref('all')
 const search = ref('')
 
-const countByStatus = computed(() =>
-    devices.value.reduce((counts, device) => ({ ...counts, [device.status]: (counts[device.status] ?? 0) + 1 }), {}),
-)
+// Pencarian, filter status, dan halaman diproses di server (10 per halaman), bukan di browser.
+const PER_PAGE = 10
+const SEARCH_DEBOUNCE_MS = 350
 
-const visibleDevices = computed(() => {
-    const query = search.value.trim().toLowerCase()
-    return devices.value.filter(
-        (device) =>
-            (statusFilter.value === 'all' || device.status === statusFilter.value) &&
-            (!query || device.device_name.toLowerCase().includes(query) || (device.organization_name ?? '').toLowerCase().includes(query)),
-    )
-})
+const page = ref(1)
+const total = ref(0)
+const totalAll = ref(0)
+const countByStatus = ref({})
+const refreshing = ref(false)
+const lastPage = computed(() => Math.max(Math.ceil(total.value / PER_PAGE), 1))
+let loadSeq = 0
+let searchTimer = null
 
 function batteryColor(level) {
     if (level == null) return 'bg-base-700'
@@ -94,16 +95,56 @@ function menuItems(device) {
 }
 
 async function loadDevices() {
-    loading.value = true
+    // Hanya jawaban permintaan terbaru yang dipakai (ketikan cepat tidak menimpa hasil baru).
+    const seq = ++loadSeq
+    refreshing.value = true
     try {
-        const response = await api.get('/devices', { params: { per_page: 100 } })
-        devices.value = response.data.data.items
+        const response = await api.get('/devices', {
+            params: {
+                per_page: PER_PAGE,
+                page: page.value,
+                search: search.value.trim() || undefined,
+                status: statusFilter.value === 'all' ? undefined : statusFilter.value,
+            },
+        })
+        if (seq !== loadSeq) return
+        const data = response.data.data
+        // Halaman ini sudah kosong (mis. device terakhirnya dihapus): mundur ke halaman terakhir.
+        if (data.items.length === 0 && page.value > 1 && data.total > 0) {
+            page.value = Math.max(Math.ceil(data.total / PER_PAGE), 1)
+            return loadDevices()
+        }
+        devices.value = data.items
+        total.value = data.total
+        totalAll.value = data.total_all ?? data.total
+        countByStatus.value = data.counts_by_status ?? {}
     } catch {
-        toast.error('Gagal memuat device')
+        if (seq === loadSeq) toast.error('Gagal memuat device')
     } finally {
-        loading.value = false
+        if (seq === loadSeq) {
+            loading.value = false
+            refreshing.value = false
+        }
     }
 }
+
+function goToPage(next) {
+    page.value = next
+    loadDevices()
+}
+
+watch(search, () => {
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+        page.value = 1
+        loadDevices()
+    }, SEARCH_DEBOUNCE_MS)
+})
+watch(statusFilter, () => {
+    page.value = 1
+    loadDevices()
+})
+onBeforeUnmount(() => clearTimeout(searchTimer))
 
 async function issueCommand(device, commandType, reasonNote = null) {
     actingDeviceId.value = device.id
@@ -192,7 +233,9 @@ async function loadSites() {
     if (!canPickSite.value) return
     try {
         // /organizations khusus root; admin & leader memakai site yang diberikan.
-        const response = await api.get(auth.isSuperAdmin ? '/organizations' : '/live/sites')
+        const response = await api.get(auth.isSuperAdmin ? '/organizations' : '/live/sites', {
+            params: { per_page: 200 },
+        })
         sites.value = (auth.isSuperAdmin ? response.data.data.items : response.data.data).map((site) => ({
             id: site.id,
             name: site.name,
@@ -237,7 +280,7 @@ onMounted(() => {
             subtitle="Perangkat yang dipantau di setiap site. Kunci, buka, atau minta lokasi langsung dari sini."
         >
             <template v-if="!loading" #readouts>
-                <Readout label="Total" :value="devices.length" />
+                <Readout label="Total" :value="totalAll" />
                 <Readout label="Online" :value="countByStatus.online ?? 0" led="accent" />
                 <Readout label="Terkunci" :value="countByStatus.locked ?? 0" :led="countByStatus.locked ? 'danger' : 'muted'" />
                 <Readout
@@ -263,20 +306,26 @@ onMounted(() => {
                         >
                             {{ filter.label }}
                             <span class="ml-1 font-mono text-base-500">{{
-                                filter.value === 'all' ? devices.length : (countByStatus[filter.value] ?? 0)
+                                filter.value === 'all' ? totalAll : (countByStatus[filter.value] ?? 0)
                             }}</span>
                         </button>
                     </div>
                     <label class="relative w-full sm:w-64">
                         <span class="sr-only">Cari device</span>
                         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-base-500" />
-                        <input v-model="search" type="search" placeholder="Cari nama device atau site" class="field-control !py-2 pl-9" />
+                        <input
+                            v-model="search"
+                            type="search"
+                            maxlength="100"
+                            placeholder="Cari nama, UUID, atau site"
+                            class="field-control !py-2 pl-9"
+                        />
                     </label>
                 </div>
 
                 <div v-if="loading" class="px-5 py-12 text-center text-sm text-base-500">Memuat device…</div>
                 <EmptyState
-                    v-else-if="devices.length === 0"
+                    v-else-if="totalAll === 0 && !search.trim()"
                     :icon="Smartphone"
                     title="Belum ada device terdaftar"
                     description="Device muncul di sini setelah APK pelacak dibuat di menu Build APK lalu dipasang di HP tujuan."
@@ -284,14 +333,14 @@ onMounted(() => {
                     <BaseButton variant="outline" @click="$router.push({ name: 'apk-builds' })">Buka Build APK</BaseButton>
                 </EmptyState>
                 <EmptyState
-                    v-else-if="visibleDevices.length === 0"
+                    v-else-if="devices.length === 0"
                     :icon="Search"
                     title="Tidak ada device yang cocok"
                     description="Ubah kata pencarian atau pilih status lain."
                 >
                     <BaseButton variant="ghost" @click="((statusFilter = 'all'), (search = ''))">Tampilkan semua</BaseButton>
                 </EmptyState>
-                <div v-else class="overflow-x-auto">
+                <div v-else class="overflow-x-auto transition-opacity" :class="refreshing && 'opacity-60'">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -305,7 +354,7 @@ onMounted(() => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="d in visibleDevices" :key="d.id">
+                            <tr v-for="d in devices" :key="d.id">
                                 <td>
                                     <p class="font-medium text-base-50">{{ d.device_name }}</p>
                                     <p class="font-mono text-[11px] text-base-500" :title="d.device_uuid">
@@ -369,6 +418,15 @@ onMounted(() => {
                         </tbody>
                     </table>
                 </div>
+                <BasePagination
+                    v-if="!loading"
+                    :page="page"
+                    :last-page="lastPage"
+                    :total="total"
+                    :per-page="PER_PAGE"
+                    :disabled="refreshing"
+                    @update:page="goToPage"
+                />
             </BaseCard>
         </div>
 

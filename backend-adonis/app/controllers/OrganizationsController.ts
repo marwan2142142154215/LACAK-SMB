@@ -3,6 +3,7 @@ import db from '@adonisjs/lucid/services/db'
 import { accessOf, can } from '#services/Access'
 import { fail, success } from '#services/ApiResponse'
 import { logModelEvent } from '#services/ActivityLog'
+import { escapeLike, searchTermOf } from '#services/SearchTerm'
 import {
     dirtyLogged,
     ORGANIZATION_LOGGED_FIELDS,
@@ -47,31 +48,71 @@ export default class OrganizationsController {
         if (!(await canManage(ctx))) return forbidden(ctx)
 
         const input = laravelInput(ctx)
-        const perPage = perPageOf(input, 15)
+        // Batas atas per_page: dropdown butuh banyak site, tapi bukan seluruh tabel tanpa batas.
+        const perPage = Math.min(perPageOf(input, 15), MAX_PER_PAGE)
         const page = pageOf(input)
         const onlyActive = phpBooleanFlag(input.only_active)
+        const search = searchTermOf(input.search)
+        const status =
+            input.status === 'active' || input.status === 'inactive' ? input.status : null
 
         const filtered = () => {
             const query = organizationsQuery()
             if (onlyActive) query.where('organizations.is_active', true)
+            if (search) {
+                const pattern = `%${escapeLike(search)}%`
+                query.where((match) =>
+                    match
+                        .whereILike('organizations.name', pattern)
+                        .orWhereILike('organizations.unique_site_code', pattern)
+                )
+            }
             return query
         }
 
-        const [countRow, rows] = await Promise.all([
-            filtered().count('* as total').first(),
+        // Hitungan aktif/nonaktif & jumlah device mengikuti pencarian tetapi TIDAK filter status.
+        const [countRows, rows, devicesRow] = await Promise.all([
             filtered()
+                .select('organizations.is_active')
+                .count('* as total')
+                .groupBy('organizations.is_active'),
+            filtered()
+                .if(status === 'active', (query) => query.where('organizations.is_active', true))
+                .if(status === 'inactive', (query) => query.where('organizations.is_active', false))
                 .select(ORGANIZATION_COLUMNS)
                 .select(devicesCount())
                 .orderBy('organizations.name')
+                .orderBy('organizations.id')
                 .offset((page - 1) * perPage)
                 .limit(perPage),
+            db
+                .from('devices')
+                .whereNull('devices.deleted_at')
+                .whereIn('devices.organization_id', filtered().select('organizations.id'))
+                .count('* as total')
+                .first(),
         ])
-        const total = Number(countRow?.total ?? 0)
+
+        const countOf = (active: boolean) =>
+            Number(countRows.find((row) => Boolean(row.is_active) === active)?.total ?? 0)
+        const activeCount = countOf(true)
+        const inactiveCount = countOf(false)
+        const total =
+            status === 'active'
+                ? activeCount
+                : status === 'inactive'
+                  ? inactiveCount
+                  : activeCount + inactiveCount
 
         return success('Daftar site/organization', {
             items: (rows as OrganizationRow[]).map((row) => organizationResource(row)),
             total,
             last_page: lastPageOf(total, perPage),
+            page,
+            per_page: perPage,
+            active_count: activeCount,
+            inactive_count: inactiveCount,
+            devices_total: Number(devicesRow?.total ?? 0),
         })
     }
 
@@ -201,6 +242,9 @@ export default class OrganizationsController {
         return success('Site berhasil dihapus (soft delete)')
     }
 }
+
+/** Per halaman paling banyak yang dilayani daftar site. */
+const MAX_PER_PAGE = 200
 
 function organizationsQuery() {
     return db.from('organizations').whereNull('organizations.deleted_at')

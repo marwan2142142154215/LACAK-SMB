@@ -6,6 +6,7 @@ import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 import { accessOf, can } from '#services/Access'
 import { fail, success } from '#services/ApiResponse'
+import { escapeLike, searchTermOf } from '#services/SearchTerm'
 import { laravelDate, logModelEvent } from '#services/ActivityLog'
 import { laravelUrlSigner } from '#services/laravel/index'
 import { authorizedOrganizationId, organizationFilter } from '#services/OrganizationScope'
@@ -30,6 +31,9 @@ const DOWNLOAD_URL_MINUTES = 30
 
 /** Paginator Laravel: per_page 0 -> perPage bawaan model (15). */
 const DEFAULT_MODEL_PER_PAGE = 15
+/** Per halaman paling banyak yang dilayani daftar APK build. */
+const MAX_PER_PAGE = 100
+const BUILD_STATUSES = ['pending', 'building', 'success', 'failed']
 
 type ApkBuildRow = {
     id: number
@@ -65,26 +69,81 @@ export default class ApkBuildsController {
                 .send(fail('Anda tidak berwenang melihat APK build site ini'))
         }
 
-        const query = buildsQuery()
-        if (filter !== 'all') {
-            query.whereIn('apk_builds.organization_id', filter)
+        // Site yang boleh dilihat, lalu pencarian (site, versi, kode site, jenis) tanpa filter status.
+        const search = searchTermOf(ctx.request.input('search'))
+        const rawStatus = String(ctx.request.input('status') ?? '')
+        const status = BUILD_STATUSES.includes(rawStatus) ? rawStatus : null
+
+        const scoped = () => {
+            const query = buildsQuery()
+            if (filter !== 'all') {
+                query.whereIn('apk_builds.organization_id', filter)
+            }
+            return query
+        }
+        const matching = () => {
+            const query = scoped()
+            if (search) {
+                const pattern = `%${escapeLike(search)}%`
+                query.where((match) =>
+                    match
+                        .whereILike('organizations.name', pattern)
+                        .orWhereILike('apk_builds.version', pattern)
+                        .orWhereILike('apk_builds.embedded_site_code', pattern)
+                        .orWhereILike('apk_builds.apk_type', pattern)
+                )
+            }
+            return query
         }
 
-        // $request->integer('per_page', 20) lalu paginate(): 0 -> bawaan model.
+        // $request->integer('per_page', 20) lalu paginate(): 0 -> bawaan model; dibatasi MAX_PER_PAGE.
         const perPageInput = ctx.request.input('per_page', 20)
-        const perPage =
-            phpIntval(perPageInput) > 0 ? phpIntval(perPageInput) : DEFAULT_MODEL_PER_PAGE
+        const perPage = Math.min(
+            phpIntval(perPageInput) > 0 ? phpIntval(perPageInput) : DEFAULT_MODEL_PER_PAGE,
+            MAX_PER_PAGE
+        )
         const page = currentPage(ctx.request.input('page'))
 
-        const totalRow = await query.clone().clearSelect().count('* as total').first()
-        const rows: ApkBuildRow[] = await query
-            .orderBy('apk_builds.id', 'desc')
-            .limit(perPage)
-            .offset((page - 1) * perPage)
+        const [statusRows, rows, liveRow, activeRow] = await Promise.all([
+            matching()
+                .clearSelect()
+                .select('apk_builds.status')
+                .count('* as total')
+                .groupBy('apk_builds.status'),
+            matching()
+                .if(status !== null, (query) => query.where('apk_builds.status', status as string))
+                .orderBy('apk_builds.id', 'desc')
+                .limit(perPage)
+                .offset((page - 1) * perPage) as Promise<ApkBuildRow[]>,
+            // SMB Live Kerja cukup satu: sudah ada yang berhasil / sedang dibuild di site ini?
+            scoped()
+                .clearSelect()
+                .where('apk_builds.apk_type', 'live')
+                .whereIn('apk_builds.status', ['pending', 'building', 'success'])
+                .select('apk_builds.id', 'apk_builds.version', 'apk_builds.status')
+                .orderBy('apk_builds.id', 'desc')
+                .first(),
+            // Masih ada yang dibuild (tidak terpengaruh pencarian): dashboard terus memantau.
+            scoped()
+                .clearSelect()
+                .whereIn('apk_builds.status', ['pending', 'building'])
+                .select('apk_builds.id')
+                .first(),
+        ])
+
+        const countsByStatus = Object.fromEntries(
+            statusRows.map((row) => [String(row.status), Number(row.total)])
+        )
+        const totalMatching = Object.values(countsByStatus).reduce((sum, count) => sum + count, 0)
 
         return success('Daftar APK build', {
             items: rows.map((row) => apkBuildResource(row)),
-            total: Number(totalRow?.total ?? 0),
+            total: status ? (countsByStatus[status] ?? 0) : totalMatching,
+            counts_by_status: countsByStatus,
+            total_all: totalMatching,
+            has_live_build: Boolean(liveRow),
+            live_build: liveRow ? { version: liveRow.version, status: liveRow.status } : null,
+            has_active_build: Boolean(activeRow),
         })
     }
 

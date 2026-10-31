@@ -183,9 +183,18 @@ export function pageOf(raw: unknown): number {
 
 type QueryFactory = () => ReturnType<typeof db.from>
 
-/** Padanan paginate() -> ['items', 'total'] yang dipakai semua endpoint daftar device. */
+/** Per halaman paling banyak (Radar memuat sampai 500 perangkat untuk peta). */
+export const MAX_DEVICES_PER_PAGE = 500
+
+/**
+ * Padanan paginate() -> ['items', 'total'] yang dipakai semua endpoint daftar device.
+ * per_page dibatasi MAX_DEVICES_PER_PAGE: "tanpa batas" (negatif) tidak lagi menarik seluruh tabel.
+ */
 export async function paginate(ctx: HttpContext, query: QueryFactory) {
-    const perPage = perPageOf(ctx.request.input('per_page'))
+    const perPage = Math.min(
+        perPageOf(ctx.request.input('per_page')) ?? MAX_DEVICES_PER_PAGE,
+        MAX_DEVICES_PER_PAGE
+    )
     const page = pageOf(ctx.request.input('page'))
 
     const [{ total }] = await query().clearOrder().clearSelect().count('* as total')
@@ -195,9 +204,7 @@ export async function paginate(ctx: HttpContext, query: QueryFactory) {
     }
 
     const rows = query()
-    if (perPage !== null) {
-        rows.offset((page - 1) * perPage).limit(perPage)
-    }
+    rows.offset((page - 1) * perPage).limit(perPage)
     return { rows: (await rows) as Record<string, any>[], total: count }
 }
 

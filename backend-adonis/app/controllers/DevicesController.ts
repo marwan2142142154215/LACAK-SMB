@@ -3,6 +3,7 @@ import db from '@adonisjs/lucid/services/db'
 import { accessOf, can } from '#services/Access'
 import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
+import { escapeLike, searchTermOf } from '#services/SearchTerm'
 import { authorizedOrganizationId, organizationFilter } from '#services/OrganizationScope'
 import {
     deviceResource,
@@ -44,12 +45,43 @@ export default class DevicesController {
         const rawStatus = ctx.request.input('status')
         const status = rawStatus === null || rawStatus === undefined ? '' : String(rawStatus)
 
-        const { rows, total } = await paginate(ctx, () => {
+        const search = searchTermOf(ctx.request.input('search'))
+
+        // Site yang boleh dilihat + pencarian (nama, UUID, kode site, atau nama site), tanpa filter status.
+        const matching = () => {
             const query = db.from('devices').whereNull('deleted_at')
             if (scope !== 'all') query.whereIn('organization_id', scope)
-            if (status) query.where('status', status)
-            return query.orderBy('device_name').select('*')
-        })
+            if (search) {
+                const pattern = `%${escapeLike(search)}%`
+                query.where((match) =>
+                    match
+                        .whereILike('device_name', pattern)
+                        .orWhereILike('device_uuid', pattern)
+                        .orWhereILike('site_code_embedded', pattern)
+                        .orWhereIn(
+                            'organization_id',
+                            db
+                                .from('organizations')
+                                .whereNull('deleted_at')
+                                .whereILike('name', pattern)
+                                .select('id')
+                        )
+                )
+            }
+            return query
+        }
+
+        const [{ rows, total }, statusRows] = await Promise.all([
+            paginate(ctx, () => {
+                const query = matching()
+                if (status) query.where('status', status)
+                return query.orderBy('device_name').orderBy('id').select('*')
+            }),
+            matching().select('status').count('* as total').groupBy('status'),
+        ])
+        const countsByStatus = Object.fromEntries(
+            statusRows.map((row) => [String(row.status), Number(row.total)])
+        )
 
         const devices = rows as DeviceRow[]
         const [organizations, locations] = await Promise.all([
@@ -66,6 +98,8 @@ export default class DevicesController {
                 })
             ),
             total,
+            counts_by_status: countsByStatus,
+            total_all: Object.values(countsByStatus).reduce((sum, count) => sum + count, 0),
         })
     }
 

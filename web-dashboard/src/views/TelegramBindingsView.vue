@@ -106,7 +106,7 @@ async function loadBindings() {
 
 async function loadOrganizations() {
     if (!auth.isSuperAdmin) return
-    const response = await api.get('/organizations')
+    const response = await api.get('/organizations', { params: { per_page: 200 } })
     organizations.value = response.data.data.items
     if (!form.value.organization_id && organizations.value.length) {
         form.value.organization_id = organizations.value[0].id
