@@ -4,6 +4,7 @@ import dayjs from 'dayjs'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import BaseSelect from '@/components/ui/BaseSelect.vue'
+import SearchSelect from '@/components/ui/SearchSelect.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useToast } from '@/composables/useToast'
@@ -18,6 +19,16 @@ const toast = useToast()
 const sites = ref([])
 const roster = ref([])
 const siteId = ref(null)
+// "Semua site" disimpan sebagai null di halaman ini; dropdown butuh nilai nyata, jadi dipetakan.
+const ALL_SITES = 'all'
+const siteModel = computed({
+    get: () => siteId.value ?? ALL_SITES,
+    set: (value) => (siteId.value = value === ALL_SITES ? null : value),
+})
+const siteOptions = computed(() => [
+    { value: ALL_SITES, label: 'Semua site' },
+    ...sites.value.map((site) => ({ value: site.id, label: site.name })),
+])
 const userId = ref(null)
 const dayOffset = ref(0) // 0 = hari ini, 1 = kemarin, ...
 const items = ref([])
@@ -122,10 +133,16 @@ onMounted(async () => {
 
         <div class="space-y-5 p-4 sm:p-8">
             <div class="grid gap-3 rounded-xl border border-base-800 bg-base-900 p-3 shadow-(--shadow-card) sm:grid-cols-[1fr_1.4fr_auto]">
-                <BaseSelect v-if="sites.length > 1" v-model="siteId" label="Site">
-                    <option :value="null">Semua site</option>
-                    <option v-for="site in sites" :key="site.id" :value="site.id">{{ site.name }}</option>
-                </BaseSelect>
+                <div v-if="sites.length > 1">
+                    <span class="field-label">Site</span>
+                    <SearchSelect
+                        v-model="siteModel"
+                        aria-label="Site"
+                        search-placeholder="Cari site…"
+                        empty-text="Tidak ada site"
+                        :options="siteOptions"
+                    />
+                </div>
                 <BaseSelect v-model="userId" label="Staf" :class="sites.length > 1 ? '' : 'sm:col-span-2'">
                     <option :value="null">Pilih staf…</option>
                     <option v-for="staff in staffOptions" :key="staff.user_id" :value="staff.user_id">{{ staff.name }}</option>

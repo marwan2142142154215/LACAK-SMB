@@ -1,4 +1,5 @@
 <script setup>
+import SearchSelect from '@/components/ui/SearchSelect.vue'
 import { ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, Search, UserRound, X } from '@lucide/vue'
 import dayjs from 'dayjs'
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
@@ -22,6 +23,10 @@ const toast = useToast()
 const sites = ref([])
 const roster = ref([])
 const siteFilter = ref(ALL_SITES)
+const siteOptions = computed(() => [
+    { value: ALL_SITES, label: 'Semua site' },
+    ...sites.value.map((site) => ({ value: site.id, label: site.name })),
+])
 const day = ref(dayjs().startOf('day'))
 const search = ref('')
 const events = ref([])
@@ -339,23 +344,16 @@ const dayLog = computed(() => {
                     </BaseButton>
                 </div>
 
-                <div v-if="sites.length > 1" class="flex min-w-0 flex-1 gap-1 overflow-x-auto" role="radiogroup" aria-label="Site">
-                    <button
-                        v-for="option in [{ id: ALL_SITES, name: 'Semua site' }, ...sites]"
-                        :key="option.id"
-                        type="button"
-                        role="radio"
-                        :aria-checked="siteFilter === option.id"
-                        class="inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent-400"
-                        :class="
-                            siteFilter === option.id ? 'bg-accent-500 text-base-950' : 'text-base-300 hover:bg-base-850 hover:text-base-50'
-                        "
-                        @click="siteFilter = option.id"
-                    >
-                        <LayoutGrid v-if="option.id === ALL_SITES" class="size-4" />
-                        {{ option.name }}
-                    </button>
-                </div>
+                <!-- Pemilih site: dropdown yang bisa dicari, di pojok kanan bilah kendali -->
+                <SearchSelect
+                    v-if="sites.length > 1"
+                    v-model="siteFilter"
+                    class="order-last w-full sm:ml-auto sm:w-64"
+                    aria-label="Site"
+                    search-placeholder="Cari site…"
+                    empty-text="Tidak ada site"
+                    :options="siteOptions"
+                />
                 <p v-else class="flex-1 px-2 text-sm font-medium text-base-100">{{ sites[0]?.name }}</p>
 
                 <label class="relative w-full sm:w-56">

@@ -1,10 +1,10 @@
 <script setup>
 import { computed } from 'vue'
 
-import BaseSelect from '@/components/ui/BaseSelect.vue'
+import SearchSelect from '@/components/ui/SearchSelect.vue'
 
 /*
- * Penyaring site untuk toolbar daftar: "Semua site" atau satu site.
+ * Penyaring site untuk toolbar daftar: "Semua site" atau satu site, dengan kolom cari.
  * Nilai '' = semua site, selain itu id site (angka).
  */
 const props = defineProps({
@@ -16,12 +16,23 @@ const props = defineProps({
 
 defineEmits(['update:modelValue'])
 
-const sortedSites = computed(() => [...props.sites].sort((a, b) => a.name.localeCompare(b.name, 'id')))
+const options = computed(() => [
+    { value: '', label: props.allLabel },
+    ...[...props.sites]
+        .sort((a, b) => a.name.localeCompare(b.name, 'id'))
+        .map((site) => ({ value: site.id, label: site.name })),
+])
 </script>
 
 <template>
-    <BaseSelect :model-value="modelValue" variant="compact" :aria-label="label" @update:model-value="(value) => $emit('update:modelValue', value)">
-        <option value="">{{ allLabel }}</option>
-        <option v-for="site in sortedSites" :key="site.id" :value="site.id">{{ site.name }}</option>
-    </BaseSelect>
+    <SearchSelect
+        class="w-56 max-w-full"
+        compact
+        :aria-label="label"
+        search-placeholder="Cari site…"
+        empty-text="Tidak ada site"
+        :model-value="modelValue"
+        :options="options"
+        @update:model-value="(value) => $emit('update:modelValue', value)"
+    />
 </template>

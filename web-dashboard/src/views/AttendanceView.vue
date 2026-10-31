@@ -9,6 +9,7 @@ import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
+import SearchSelect from '@/components/ui/SearchSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -30,6 +31,7 @@ const tab = ref('recap')
 
 const sites = ref([])
 const siteId = ref(null)
+const siteOptions = computed(() => sites.value.map((site) => ({ value: site.id, label: site.name })))
 const canManage = ref(false)
 
 // ===== Rekap =====
@@ -393,9 +395,15 @@ onMounted(async () => {
             "
         >
             <template #actions>
-                <BaseSelect v-if="sites.length > 1" v-model="siteId" class="w-56" aria-label="Site">
-                    <option v-for="site in sites" :key="site.id" :value="site.id">{{ site.name }}</option>
-                </BaseSelect>
+                <SearchSelect
+                    v-if="sites.length > 1"
+                    v-model="siteId"
+                    class="w-56 max-w-full"
+                    aria-label="Site"
+                    search-placeholder="Cari site…"
+                    empty-text="Tidak ada site"
+                    :options="siteOptions"
+                />
             </template>
         </PageHeader>
 

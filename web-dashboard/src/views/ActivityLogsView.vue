@@ -1,5 +1,6 @@
 <script setup>
 import BaseSelect from '@/components/ui/BaseSelect.vue'
+import SearchSelect from '@/components/ui/SearchSelect.vue'
 import {
     Building2,
     ChevronDown,
@@ -92,6 +93,10 @@ const toast = useToast()
 
 const sites = ref([])
 const siteId = ref('all')
+const siteOptions = computed(() => [
+    { value: 'all', label: 'Semua site' },
+    ...sites.value.map((site) => ({ value: site.id, label: site.name })),
+])
 const period = ref('7d')
 const category = ref('')
 const result = ref('')
@@ -281,10 +286,16 @@ onMounted(async () => {
                         </button>
                     </div>
 
-                    <BaseSelect v-if="sites.length > 1" v-model="siteId" variant="compact" aria-label="Site">
-                        <option value="all">Semua site</option>
-                        <option v-for="site in sites" :key="site.id" :value="site.id">{{ site.name }}</option>
-                    </BaseSelect>
+                    <SearchSelect
+                        v-if="sites.length > 1"
+                        v-model="siteId"
+                        class="w-56 max-w-full"
+                        compact
+                        aria-label="Site"
+                        search-placeholder="Cari site…"
+                        empty-text="Tidak ada site"
+                        :options="siteOptions"
+                    />
 
                     <BaseSelect v-model="result" variant="compact" aria-label="Hasil">
                             <option value="">Semua hasil</option>

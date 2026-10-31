@@ -4,6 +4,7 @@ import {
     ClipboardList,
     Mic,
     MicOff,
+    Pin,
     MonitorUp,
     MonitorX,
     PhoneOff,
@@ -281,6 +282,26 @@ const gridClass = computed(() => {
 const elapsed = computed(() => (current.value?.started_at ? formatElapsed(current.value.started_at, now.value) : '00:00:00'))
 // Siapa yang sedang presentasi -- dipakai untuk banner & badge di ubin.
 const presenter = computed(() => call.screenShare.value?.participant ?? null)
+
+// Wajah yang disorot: klik untuk menyorot (naik ke posisi pertama + bingkai aksen), klik lagi untuk melepas.
+const pinnedIdentity = ref(null)
+const orderedParticipants = computed(() => {
+    const list = call.participants.value
+    const pinned = list.find((participant) => participant.identity === pinnedIdentity.value)
+    return pinned ? [pinned, ...list.filter((participant) => participant !== pinned)] : list
+})
+const togglePin = (participant) => {
+    pinnedIdentity.value = pinnedIdentity.value === participant.identity ? null : participant.identity
+}
+// Yang disorot keluar dari ruang: lepas sorotan.
+watch(
+    () => call.participants.value.map((participant) => participant.identity).join('|'),
+    () => {
+        if (pinnedIdentity.value && !call.participants.value.some((participant) => participant.identity === pinnedIdentity.value)) {
+            pinnedIdentity.value = null
+        }
+    },
+)
 const isLocal = (participant) => participant === call.room.value?.localParticipant
 const nameOf = (participant) => participant.name || participant.identity
 
@@ -362,12 +383,19 @@ onBeforeUnmount(() => {
                     />
                 </div>
                 <!-- Layar kecil: filmstrip mendatar yang bisa digeser; layar lebar: kolom yang menggulir ke bawah -->
-                <div class="flex min-h-0 items-start gap-2 overflow-x-auto pb-1 lg:grid lg:content-start lg:overflow-x-visible lg:overflow-y-auto lg:pb-0">
+                <div class="flex min-h-0 items-start gap-2 overflow-x-auto p-1 lg:flex-col lg:items-stretch lg:overflow-x-visible lg:overflow-y-auto">
                     <div
-                        v-for="participant in call.participants.value"
+                        v-for="participant in orderedParticipants"
                         :key="participant.identity"
                         class="tile w-44 shrink-0 lg:w-auto"
-                        :class="participant.isSpeaking && 'is-speaking'"
+                        :class="[participant.isSpeaking && 'is-speaking', pinnedIdentity === participant.identity && 'is-pinned']"
+                        role="button"
+                        tabindex="0"
+                        :aria-pressed="pinnedIdentity === participant.identity"
+                        :aria-label="`Sorot ${nameOf(participant)}`"
+                        @click="togglePin(participant)"
+                        @keydown.enter.prevent="togglePin(participant)"
+                        @keydown.space.prevent="togglePin(participant)"
                     >
                         <LiveVideoTile
                             v-if="call.cameraOf(participant)"
@@ -378,6 +406,7 @@ onBeforeUnmount(() => {
                             class="!rounded-none !border-0"
                         />
                         <div v-else class="tile-avatar"><span class="avatar">{{ (nameOf(participant) || '?').charAt(0).toUpperCase() }}</span></div>
+                        <span v-if="pinnedIdentity === participant.identity" class="pin-tag"><Pin class="size-3" /> Disorot</span>
                         <div class="tile-chip">
                             <MonitorUp v-if="participant === presenter" class="size-3 shrink-0 text-accent-400" />
                             <span class="tile-name">{{ nameOf(participant) }}</span>
@@ -390,10 +419,17 @@ onBeforeUnmount(() => {
             <!-- Grid peserta -->
             <div v-else class="grid flex-1 content-start gap-3" :class="gridClass">
                 <div
-                    v-for="participant in call.participants.value"
+                    v-for="participant in orderedParticipants"
                     :key="participant.identity"
                     class="tile"
-                    :class="participant.isSpeaking && 'is-speaking'"
+                    :class="[participant.isSpeaking && 'is-speaking', pinnedIdentity === participant.identity && 'is-pinned']"
+                        role="button"
+                        tabindex="0"
+                        :aria-pressed="pinnedIdentity === participant.identity"
+                        :aria-label="`Sorot ${nameOf(participant)}`"
+                        @click="togglePin(participant)"
+                        @keydown.enter.prevent="togglePin(participant)"
+                        @keydown.space.prevent="togglePin(participant)"
                 >
                     <LiveVideoTile
                         v-if="call.cameraOf(participant)"
@@ -407,6 +443,7 @@ onBeforeUnmount(() => {
                         <span class="avatar avatar-lg">{{ (nameOf(participant) || '?').charAt(0).toUpperCase() }}</span>
                     </div>
                     <span v-if="participant === presenter" class="presenting-tag"><MonitorUp class="size-3" /> Presentasi</span>
+                    <span v-if="pinnedIdentity === participant.identity" class="pin-tag"><Pin class="size-3" /> Disorot</span>
                     <div class="tile-chip tile-chip-lg">
                         <span class="tile-name">
                             {{ nameOf(participant) }}<template v-if="isLocal(participant)"> (Anda)</template>
@@ -953,6 +990,45 @@ onBeforeUnmount(() => {
     background-color: #141418;
     aspect-ratio: 16 / 9;
     transition: box-shadow 150ms;
+}
+
+/* Wajah bisa diklik untuk disorot: kursor + bingkai saat diarahkan, bingkai aksen tebal saat disorot. */
+.tile {
+    cursor: pointer;
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    transition:
+        box-shadow 150ms,
+        outline-color 150ms;
+}
+
+.tile:hover {
+    outline-color: rgb(255 255 255 / 0.4);
+}
+
+.tile:focus-visible {
+    outline-color: var(--color-accent-400);
+}
+
+.tile.is-pinned {
+    outline: 3px solid var(--color-accent-500);
+    outline-offset: 2px;
+}
+
+.pin-tag {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-radius: 0.5rem;
+    background-color: var(--color-accent-500);
+    padding: 0.2rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: #fff;
 }
 
 .tile.is-speaking {

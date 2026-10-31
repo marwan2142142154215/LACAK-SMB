@@ -25,6 +25,8 @@ const props = defineProps({
     searchPlaceholder: { type: String, default: 'Cari…' },
     emptyText: { type: String, default: 'Tidak ada yang cocok' },
     disabled: { type: Boolean, default: false },
+    /** Tinggi 36px untuk filter di toolbar (bawaan 40px). */
+    compact: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -54,11 +56,14 @@ const badgeClass = (option, active) =>
 </script>
 
 <template>
+    <!-- PopoverRoot tidak punya elemen sendiri; pembungkus ini yang menerima class dari pemanggil (lebar, posisi). -->
+    <div class="min-w-0">
     <PopoverRoot v-model:open="open">
         <PopoverTrigger
             :disabled="disabled"
             :aria-label="ariaLabel"
-            class="field-control flex h-10 items-center justify-between gap-2 py-0 text-left text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+            class="field-control flex w-full items-center justify-between gap-2 py-0 text-left text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+            :class="compact ? 'h-9' : 'h-10'"
         >
             <span class="flex min-w-0 items-center gap-2">
                 <span class="truncate">{{ selected?.label ?? '—' }}</span>
@@ -128,4 +133,5 @@ const badgeClass = (option, active) =>
             </PopoverContent>
         </PopoverPortal>
     </PopoverRoot>
+    </div>
 </template>
