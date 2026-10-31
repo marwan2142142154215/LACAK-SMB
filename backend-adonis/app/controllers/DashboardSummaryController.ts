@@ -4,6 +4,10 @@ import { accessOf } from '#services/Access'
 import { fail, success } from '#services/ApiResponse'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
 import { organizationFilter } from '#services/OrganizationScope'
+import { cached } from '#services/ResponseCache'
+
+/** Angka ringkas cukup diperbarui tiap 15 detik; strip dashboard memintanya tiap menit per tab. */
+const SUMMARY_CACHE_SECONDS = 15
 
 /**
  * Angka ringkas strip telemetri dashboard -- padanan DashboardSummaryController
@@ -17,6 +21,15 @@ export default class DashboardSummaryController {
             return ctx.response.status(403).send(fail('Tidak ada site yang bisa diakses'))
         }
 
+        // Hasil sama untuk semua user dengan cakupan site yang sama.
+        const scope = filter === 'all' ? 'all' : [...filter].sort((a, b) => a - b).join(',')
+
+        return cached(`dashboard-summary:${scope}`, SUMMARY_CACHE_SECONDS, async () =>
+            this.compute(filter)
+        )
+    }
+
+    private async compute(filter: 'all' | number[]) {
         const scoped = (table: string, column = 'organization_id') => {
             const query = db.from(table)
             if (filter !== 'all') query.whereIn(column, filter)

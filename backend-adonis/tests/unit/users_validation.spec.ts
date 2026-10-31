@@ -1,4 +1,5 @@
 import { test } from '@japa/runner'
+import { escapeLike, searchTermOf } from '#controllers/UsersController'
 import { errors as vineErrors } from '@vinejs/vine'
 import {
     dirtyLogged,
@@ -289,5 +290,21 @@ test.group('Staf & site: kode site & log aktivitas', () => {
             'created_at',
             'updated_at',
         ])
+    })
+})
+
+test.group('Daftar staf: pencarian', () => {
+    test('karakter khusus LIKE dianggap huruf biasa', ({ assert }) => {
+        assert.equal(escapeLike('100%_aman'), String.raw`100\%\_aman`)
+        assert.equal(escapeLike(String.raw`a\b`), String.raw`a\\b`)
+        assert.equal(escapeLike('budi'), 'budi')
+    })
+
+    test('kata kunci dipangkas, dibatasi 100 karakter, bukan teks -> kosong', ({ assert }) => {
+        assert.equal(searchTermOf('  budi  '), 'budi')
+        assert.equal(searchTermOf('x'.repeat(250)).length, 100)
+        assert.equal(searchTermOf(null), '')
+        assert.equal(searchTermOf(['a']), '')
+        assert.equal(searchTermOf(42), '')
     })
 })

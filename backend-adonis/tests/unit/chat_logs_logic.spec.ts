@@ -41,6 +41,7 @@ import {
     unitStatuses,
 } from '#services/ServerStatus'
 import { laravelUrlSigner } from '#services/laravel/index'
+import { throttleKey } from '#middleware/ThrottleMiddleware'
 
 /** PNG 800x600 minimal (signature + IHDR). */
 function png(width: number, height: number) {
@@ -498,5 +499,21 @@ test.group('Status server: proses pm2', () => {
     test('keluaran rusak -> semua unknown, tidak melempar error', ({ assert }) => {
         const units = pm2Statuses(['lacak-api'], 'bukan json')
         assert.equal(units[0].status, 'unknown')
+    })
+})
+
+test.group('Throttle: kunci penghitung per route', () => {
+    test('route berbeda memakai penghitung berbeda untuk user yang sama', ({ assert }) => {
+        const start = throttleKey('user:7', 'post', '/api/v1/live/sessions/start')
+        const status = throttleKey('user:7', 'GET', '/api/v1/system/status')
+        assert.notEqual(start, status)
+        assert.equal(start, 'throttle:user:7:POST:/api/v1/live/sessions/start')
+    })
+
+    test('user berbeda pada route yang sama tidak berbagi penghitung', ({ assert }) => {
+        assert.notEqual(
+            throttleKey('user:1', 'GET', '/api/v1/system/status'),
+            throttleKey('user:2', 'GET', '/api/v1/system/status')
+        )
     })
 })

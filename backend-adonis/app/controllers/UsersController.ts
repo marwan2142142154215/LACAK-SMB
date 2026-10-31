@@ -51,13 +51,29 @@ export default class UsersController {
         if (!manager && !hasGrantBasedAccess(access)) return forbidden(ctx)
 
         const input = laravelInput(ctx)
-        const perPage = perPageOf(input, 20)
+        // Batas atas per_page: satu permintaan tidak boleh menarik seluruh tabel.
+        const perPage = Math.min(perPageOf(input, 20), MAX_PER_PAGE)
         const page = pageOf(input)
         const organizationId = requestInteger(input, 'organization_id')
+        const search = searchTermOf(input.search)
+        const role =
+            typeof input.role === 'string' && ROLE_NAMES.includes(input.role) ? input.role : null
+        const status =
+            input.status === 'active' || input.status === 'suspended' ? input.status : null
 
         const filtered = () => {
             const query = usersQuery()
             if (organizationId) query.where('organization_id', organizationId)
+            if (search) {
+                const pattern = `%${escapeLike(search)}%`
+                query.where((match) =>
+                    match
+                        .whereILike('name', pattern)
+                        .orWhereILike('username', pattern)
+                        .orWhereILike('email', pattern)
+                )
+            }
+            if (role) query.whereIn('id', usersWithRoles([role]))
             if (!manager) {
                 query
                     .whereIn('organization_id', access.grantedOrganizationIds)
@@ -67,18 +83,39 @@ export default class UsersController {
             return query
         }
 
-        const [countRow, rows] = await Promise.all([
-            filtered().count('* as total').first(),
+        // Hitungan aktif/disuspen mengikuti pencarian & peran tetapi TIDAK filter status,
+        // supaya angka ringkasan di header tetap menunjukkan sebarannya.
+        const [countRows, rows] = await Promise.all([
+            filtered().select('is_active').count('* as total').groupBy('is_active'),
             filtered()
+                .if(status === 'active', (query) => query.where('is_active', true))
+                .if(status === 'suspended', (query) => query.where('is_active', false))
                 .orderBy('name')
+                .orderBy('id')
                 .select(USER_COLUMNS)
                 .offset((page - 1) * perPage)
                 .limit(perPage),
         ])
 
+        const countOf = (active: boolean) =>
+            Number(countRows.find((row) => Boolean(row.is_active) === active)?.total ?? 0)
+        const activeCount = countOf(true)
+        const suspendedCount = countOf(false)
+        const total =
+            status === 'active'
+                ? activeCount
+                : status === 'suspended'
+                  ? suspendedCount
+                  : activeCount + suspendedCount
+
         return success('Daftar staf', {
             items: await userResources(rows as UserRow[]),
-            total: Number(countRow?.total ?? 0),
+            total,
+            active_count: activeCount,
+            suspended_count: suspendedCount,
+            page,
+            per_page: perPage,
+            last_page: Math.max(Math.ceil(total / perPage), 1),
         })
     }
 
@@ -318,6 +355,21 @@ async function canManage(ctx: HttpContext) {
 }
 
 const STAFF_ROLE = 'staff_viewer'
+
+/** Per halaman paling banyak yang dilayani daftar staf. */
+const MAX_PER_PAGE = 100
+const MAX_SEARCH_LENGTH = 100
+const ROLE_NAMES = ['super_admin', 'admin', 'leader', 'site_admin', 'staff_viewer']
+
+/** Kata kunci pencarian: teks, dipangkas, dibatasi panjangnya; selain itu kosong. */
+export function searchTermOf(value: unknown): string {
+    return typeof value === 'string' ? value.trim().slice(0, MAX_SEARCH_LENGTH) : ''
+}
+
+/** Karakter khusus LIKE (% _ \\) dianggap huruf biasa, bukan pola dari pengguna. */
+export function escapeLike(term: string): string {
+    return term.replace(/[\\%_]/g, (char) => `\\${char}`)
+}
 
 /** id user yang punya salah satu peran ini (subquery). */
 function usersWithRoles(roles: string[]) {

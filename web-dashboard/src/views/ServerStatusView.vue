@@ -142,6 +142,8 @@ const gaugeTone = (percent) =>
 
 async function check({ manual = false } = {}) {
     if (loading.value) return
+    // Tab di latar belakang tidak perlu memantau: hemat permintaan ke server.
+    if (!manual && document.hidden) return
     loading.value = true
     try {
         const response = await api.get('/system/status')
@@ -149,7 +151,9 @@ async function check({ manual = false } = {}) {
         failed.value = false
     } catch (err) {
         failed.value = !err.response || err.response.status >= 500
-        if (manual || !failed.value) toast.error('Gagal memeriksa server', err.response?.data?.message)
+        // Pemeriksaan otomatis yang kena batas (429) dilewati diam-diam: data terakhir tetap
+        // tampil dan pemeriksaan berikutnya jalan sendiri. Toast hanya untuk klik manual.
+        if (manual) toast.error('Gagal memeriksa server', err.response?.data?.message)
     } finally {
         loading.value = false
         const status = failed.value ? 'down' : (snapshot.value?.overall ?? 'unknown')

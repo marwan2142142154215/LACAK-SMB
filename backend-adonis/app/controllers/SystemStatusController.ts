@@ -1,7 +1,11 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { accessOf, can } from '#services/Access'
 import { fail, success } from '#services/ApiResponse'
+import { cached } from '#services/ResponseCache'
 import { snapshot } from '#services/ServerStatus'
+
+/** Satu hasil pemeriksaan dipakai bersama semua yang membuka halaman, selama 10 detik. */
+const SNAPSHOT_CACHE_SECONDS = 10
 
 /**
  * Status semua layanan server (menu Akses > Status server) -- hanya
@@ -17,6 +21,9 @@ export default class SystemStatusController {
                 .send(fail('Anda tidak berwenang melakukan tindakan ini'))
         }
 
-        return success('Status server', await snapshot())
+        return success(
+            'Status server',
+            await cached('server-status', SNAPSHOT_CACHE_SECONDS, snapshot)
+        )
     }
 }

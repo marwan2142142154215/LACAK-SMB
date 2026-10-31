@@ -8,25 +8,39 @@ import redis from '@adonisjs/redis/services/main'
  * permintaan per `minutes` menit per user (kalau sudah login) atau per
  * alamat IP. Lewat batas -> 429 dengan pesan yang sama (handler.ts).
  *
- * Sama dengan ThrottleRequests Laravel (tanpa limiter bernama), kuncinya
- * TIDAK memuat route: semua route ber-throttle berbagi satu penghitung per
- * user/IP, dan tiap route membandingkannya dengan batasnya sendiri.
+ * Penghitung dipisah per route (metode + pola URL) dan per user/IP: lalu
+ * lintas satu route tidak menghabiskan jatah route lain. Sebelumnya semua route
+ * berbagi satu penghitung, sehingga halaman yang polling rutin (mis. Status
+ * server) bisa membuat route lain yang batasnya kecil (mis. mulai kerja,
+ * 10/menit) ditolak 429 padahal pemakainya wajar.
  *
  * Pemakaian: router.post(...).use(middleware.throttle({ max: 5, minutes: 1 }))
  * Pasang SETELAH middleware auth kalau batasnya per user.
  */
+/** Kunci penghitung: siapa (user/IP) + route mana. */
+export function throttleKey(who: string, method: string, pattern: string): string {
+    return `throttle:${who}:${method.toUpperCase()}:${pattern}`
+}
+
 export default class ThrottleMiddleware {
     async handle(ctx: HttpContext, next: NextFn, options: { max: number; minutes: number }) {
         const who = ctx.authUser ? `user:${ctx.authUser.id}` : `ip:${ctx.request.ip()}`
-        const key = `throttle:${who}`
+        const key = throttleKey(who, ctx.request.method(), ctx.route?.pattern ?? ctx.request.url())
+        const windowSeconds = options.minutes * 60
 
+        // Kunci dibuat BERSAMA masa berlakunya (NX = hanya kalau belum ada), lalu dihitung.
+        // Cara lama (INCR lalu EXPIRE) meninggalkan penghitung tanpa masa berlaku kalau
+        // proses mati di antara dua perintah itu -> pengguna terblokir selamanya.
+        await redis.set(key, 0, 'EX', windowSeconds, 'NX')
         const hits = await redis.incr(key)
-        if (hits === 1) {
-            await redis.expire(key, options.minutes * 60)
-        }
 
         if (hits > options.max) {
-            const retryAfter = Math.max(await redis.ttl(key), 1)
+            let ttl = await redis.ttl(key)
+            if (ttl < 0) {
+                await redis.expire(key, windowSeconds)
+                ttl = windowSeconds
+            }
+            const retryAfter = Math.max(ttl, 1)
             ctx.response.header('Retry-After', String(retryAfter))
             throw new Exception('Terlalu banyak permintaan', {
                 status: 429,

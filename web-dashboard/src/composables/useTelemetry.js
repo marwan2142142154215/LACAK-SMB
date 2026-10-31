@@ -18,6 +18,8 @@ export function useTelemetry() {
     let timer = null
 
     async function refresh() {
+        // Tab di latar belakang tidak perlu memperbarui angka.
+        if (document.hidden) return
         const [summaryResult, liveResult] = await Promise.allSettled([
             api.get('/dashboard-summary'),
             auth.hasPermission('live.watch') ? api.get('/live/sites') : Promise.resolve(null),

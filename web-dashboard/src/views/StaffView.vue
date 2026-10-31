@@ -1,12 +1,13 @@
 <script setup>
-import { Ban, CheckCircle2, KeyRound, Pencil, ShieldOff, Trash2, UserPlus, Users } from '@lucide/vue'
-import { computed, onMounted, ref } from 'vue'
+import { Ban, CheckCircle2, ChevronDown, KeyRound, Pencil, Search, ShieldOff, Trash2, UserPlus, Users } from '@lucide/vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BasePagination from '@/components/ui/BasePagination.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -112,15 +113,81 @@ async function submitPassword() {
     }
 }
 
+// Daftar dimuat per halaman (10) dengan pencarian & filter di server, bukan seluruh staf sekaligus.
+const PER_PAGE = 10
+const SEARCH_DEBOUNCE_MS = 350
+
+const page = ref(1)
+const total = ref(0)
+const lastPage = ref(1)
+const counts = ref({ active: 0, suspended: 0 })
+const search = ref('')
+const statusFilter = ref('')
+const roleFilter = ref('')
+const refreshing = ref(false)
+let loadSeq = 0
+let searchTimer = null
+
+const hasFilters = computed(() => Boolean(search.value.trim() || statusFilter.value || roleFilter.value))
+
 async function loadStaff() {
-    loading.value = true
+    // Hanya jawaban permintaan terbaru yang dipakai (ketikan cepat tidak menimpa hasil baru).
+    const seq = ++loadSeq
+    refreshing.value = true
     try {
-        const response = await api.get('/users', { params: { per_page: 1000 } })
-        staff.value = response.data.data.items
+        const response = await api.get('/users', {
+            params: {
+                per_page: PER_PAGE,
+                page: page.value,
+                search: search.value.trim() || undefined,
+                status: statusFilter.value || undefined,
+                role: roleFilter.value || undefined,
+            },
+        })
+        if (seq !== loadSeq) return
+        const data = response.data.data
+        // Halaman ini sudah kosong (mis. baris terakhirnya dihapus): mundur ke halaman terakhir.
+        if (data.items.length === 0 && page.value > 1 && data.total > 0) {
+            page.value = Math.max(Math.ceil(data.total / PER_PAGE), 1)
+            return loadStaff()
+        }
+        staff.value = data.items
+        total.value = data.total
+        lastPage.value = data.last_page ?? 1
+        counts.value = { active: data.active_count ?? 0, suspended: data.suspended_count ?? 0 }
+    } catch (err) {
+        if (seq === loadSeq) toast.error('Gagal memuat daftar staf', err.response?.data?.message)
     } finally {
-        loading.value = false
+        if (seq === loadSeq) {
+            loading.value = false
+            refreshing.value = false
+        }
     }
 }
+
+function goToPage(next) {
+    page.value = next
+    loadStaff()
+}
+
+function resetFilters() {
+    search.value = ''
+    statusFilter.value = ''
+    roleFilter.value = ''
+}
+
+watch(search, () => {
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+        page.value = 1
+        loadStaff()
+    }, SEARCH_DEBOUNCE_MS)
+})
+watch([statusFilter, roleFilter], () => {
+    page.value = 1
+    loadStaff()
+})
+onBeforeUnmount(() => clearTimeout(searchTimer))
 
 async function loadOrganizations() {
     if (!canManageAll.value) {
@@ -222,8 +289,6 @@ async function confirmDelete() {
     }
 }
 
-const activeCount = computed(() => staff.value.filter((user) => user.is_active).length)
-
 function menuItems(user) {
     if (!canManageAll.value) {
         return [
@@ -260,15 +325,54 @@ onMounted(async () => {
                 <BaseButton @click="openCreate"><UserPlus class="size-4" /> Tambah staf</BaseButton>
             </template>
             <template v-if="!loading" #readouts>
-                <Readout label="Total" :value="staff.length" />
-                <Readout label="Aktif" :value="activeCount" led="accent" />
-                <Readout label="Disuspen" :value="staff.length - activeCount" :led="staff.length - activeCount ? 'danger' : 'muted'" />
+                <Readout label="Total" :value="counts.active + counts.suspended" />
+                <Readout label="Aktif" :value="counts.active" led="accent" />
+                <Readout label="Disuspen" :value="counts.suspended" :led="counts.suspended ? 'danger' : 'muted'" />
             </template>
         </PageHeader>
 
         <div class="p-4 sm:p-8">
-            <BaseCard title="Semua staf" :count="loading ? null : staff.length" flush>
+            <BaseCard title="Semua staf" :count="loading ? null : total" flush>
+                <div class="flex flex-wrap items-center gap-2 border-b border-base-800 px-5 py-3">
+                    <label class="relative min-w-52 flex-1">
+                        <span class="sr-only">Cari staf</span>
+                        <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-base-500" />
+                        <input
+                            v-model="search"
+                            type="search"
+                            maxlength="100"
+                            placeholder="Cari nama, username, atau email…"
+                            class="field-control h-9 pl-9 text-sm"
+                        />
+                    </label>
+                    <label class="relative">
+                        <span class="sr-only">Filter peran</span>
+                        <select v-model="roleFilter" class="field-control h-9 appearance-none pr-8 text-sm">
+                            <option value="">Semua peran</option>
+                            <option v-for="(label, role) in ROLE_LABELS" :key="role" :value="role">{{ label }}</option>
+                        </select>
+                        <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
+                    </label>
+                    <label class="relative">
+                        <span class="sr-only">Filter status</span>
+                        <select v-model="statusFilter" class="field-control h-9 appearance-none pr-8 text-sm">
+                            <option value="">Semua status</option>
+                            <option value="active">Aktif</option>
+                            <option value="suspended">Disuspen</option>
+                        </select>
+                        <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
+                    </label>
+                </div>
+
                 <div v-if="loading" class="px-5 py-12 text-center text-sm text-base-500">Memuat daftar staf…</div>
+                <EmptyState
+                    v-else-if="staff.length === 0 && hasFilters"
+                    :icon="Search"
+                    title="Tidak ada staf yang cocok"
+                    description="Coba kata kunci lain atau hapus filter."
+                >
+                    <BaseButton variant="outline" @click="resetFilters">Hapus filter</BaseButton>
+                </EmptyState>
                 <EmptyState
                     v-else-if="staff.length === 0"
                     :icon="Users"
@@ -277,7 +381,7 @@ onMounted(async () => {
                 >
                     <BaseButton v-if="canManageAll" @click="openCreate"><UserPlus class="size-4" /> Tambah staf</BaseButton>
                 </EmptyState>
-                <div v-else class="overflow-x-auto">
+                <div v-else class="overflow-x-auto transition-opacity" :class="refreshing && 'opacity-60'">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -334,6 +438,15 @@ onMounted(async () => {
                         </tbody>
                     </table>
                 </div>
+                <BasePagination
+                    v-if="!loading"
+                    :page="page"
+                    :last-page="lastPage"
+                    :total="total"
+                    :per-page="PER_PAGE"
+                    :disabled="refreshing"
+                    @update:page="goToPage"
+                />
             </BaseCard>
         </div>
 
