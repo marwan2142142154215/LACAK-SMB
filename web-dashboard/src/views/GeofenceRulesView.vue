@@ -1,10 +1,11 @@
 <script setup>
-import { AlertTriangle, MapPinned, Pencil, Plus, Trash2 } from '@lucide/vue'
-import { computed, onMounted, ref } from 'vue'
+import { AlertTriangle, ChevronDown, MapPinned, Pencil, Plus, Search, Trash2 } from '@lucide/vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
+import BasePagination from '@/components/ui/BasePagination.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -76,15 +77,81 @@ async function toggleActive(rule) {
     }
 }
 
+// Aturan dimuat per halaman dengan pencarian & filter di server. 12 per halaman = pas untuk
+// kisi 2 dan 3 kolom (tanpa kartu yatim di baris terakhir).
+const PER_PAGE = 12
+const SEARCH_DEBOUNCE_MS = 350
+
+const page = ref(1)
+const total = ref(0)
+const counts = ref({ active: 0, inactive: 0, ble: 0 })
+const search = ref('')
+const statusFilter = ref('')
+const refreshing = ref(false)
+const lastPage = computed(() => Math.max(Math.ceil(total.value / PER_PAGE), 1))
+const hasFilters = computed(() => Boolean(search.value.trim() || statusFilter.value))
+let loadSeq = 0
+let searchTimer = null
+
 async function loadRules() {
-    loading.value = true
+    // Hanya jawaban permintaan terbaru yang dipakai (ketikan cepat tidak menimpa hasil baru).
+    const seq = ++loadSeq
+    refreshing.value = true
     try {
-        const response = await api.get('/geofence-rules', { params: { per_page: 100 } })
-        rules.value = response.data.data.items
+        const response = await api.get('/geofence-rules', {
+            params: {
+                per_page: PER_PAGE,
+                page: page.value,
+                search: search.value.trim() || undefined,
+                status: statusFilter.value || undefined,
+            },
+        })
+        if (seq !== loadSeq) return
+        const data = response.data.data
+        // Halaman ini sudah kosong (mis. aturan terakhirnya dihapus): mundur ke halaman terakhir.
+        if (data.items.length === 0 && page.value > 1 && data.total > 0) {
+            page.value = Math.max(Math.ceil(data.total / PER_PAGE), 1)
+            return loadRules()
+        }
+        rules.value = data.items
+        total.value = data.total
+        counts.value = {
+            active: data.active_count ?? 0,
+            inactive: data.inactive_count ?? 0,
+            ble: data.ble_count ?? 0,
+        }
+    } catch (err) {
+        if (seq === loadSeq) toast.error('Gagal memuat aturan geofence', err.response?.data?.message)
     } finally {
-        loading.value = false
+        if (seq === loadSeq) {
+            loading.value = false
+            refreshing.value = false
+        }
     }
 }
+
+function goToPage(next) {
+    page.value = next
+    loadRules()
+}
+
+function resetFilters() {
+    search.value = ''
+    statusFilter.value = ''
+}
+
+watch(search, () => {
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+        page.value = 1
+        loadRules()
+    }, SEARCH_DEBOUNCE_MS)
+})
+watch(statusFilter, () => {
+    page.value = 1
+    loadRules()
+})
+onBeforeUnmount(() => clearTimeout(searchTimer))
 
 async function loadOrganizations() {
     if (!canPickSite.value) return
@@ -149,9 +216,6 @@ async function confirmDelete() {
     }
 }
 
-const activeCount = computed(() => rules.value.filter((rule) => rule.is_active).length)
-const bleCount = computed(() => rules.value.filter((rule) => rule.anchor_device_id).length)
-
 function siteName(rule) {
     return organizations.value.find((org) => org.id === rule.organization_id)?.name ?? null
 }
@@ -192,14 +256,42 @@ onMounted(async () => {
                 <BaseButton @click="openCreate"><Plus class="size-4" /> Tambah aturan</BaseButton>
             </template>
             <template v-if="!loading" #readouts>
-                <Readout label="Aturan" :value="rules.length" />
-                <Readout label="Aktif" :value="activeCount" led="accent" />
-                <Readout label="Pakai BLE" :value="bleCount" led="copper" />
+                <Readout label="Aturan" :value="counts.active + counts.inactive" />
+                <Readout label="Aktif" :value="counts.active" led="accent" />
+                <Readout label="Pakai BLE" :value="counts.ble" led="copper" />
             </template>
         </PageHeader>
 
         <div class="p-4 sm:p-8">
+            <div class="mb-4 flex flex-wrap items-center gap-2">
+                <label class="relative min-w-52 flex-1">
+                    <span class="sr-only">Cari aturan</span>
+                    <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-base-500" />
+                    <input
+                        v-model="search"
+                        type="search"
+                        maxlength="100"
+                        placeholder="Cari nama aturan, WiFi, atau site…"
+                        class="field-control h-9 pl-9 text-sm"
+                    />
+                </label>
+                <label class="relative">
+                    <span class="sr-only">Filter status</span>
+                    <select v-model="statusFilter" class="field-control h-9 appearance-none pr-8 text-sm">
+                        <option value="">Semua status</option>
+                        <option value="active">Aktif</option>
+                        <option value="inactive">Nonaktif</option>
+                    </select>
+                    <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
+                </label>
+            </div>
+
             <div v-if="loading" class="py-12 text-center text-sm text-base-500">Memuat aturan…</div>
+            <div v-else-if="rules.length === 0 && hasFilters" class="rounded-xl border border-base-800 bg-base-900/70">
+                <EmptyState :icon="Search" title="Tidak ada aturan yang cocok" description="Coba kata kunci lain atau hapus filter.">
+                    <BaseButton variant="outline" @click="resetFilters">Hapus filter</BaseButton>
+                </EmptyState>
+            </div>
             <div v-else-if="rules.length === 0" class="rounded-xl border border-base-800 bg-base-900/70">
                 <EmptyState
                     :icon="MapPinned"
@@ -209,7 +301,11 @@ onMounted(async () => {
                     <BaseButton @click="openCreate"><Plus class="size-4" /> Tambah aturan</BaseButton>
                 </EmptyState>
             </div>
-            <ul v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <ul
+                v-else
+                class="grid grid-cols-1 gap-4 transition-opacity md:grid-cols-2 xl:grid-cols-3"
+                :class="refreshing && 'opacity-60'"
+            >
                 <li
                     v-for="rule in rules"
                     :key="rule.id"
@@ -265,6 +361,16 @@ onMounted(async () => {
                     </div>
                 </li>
             </ul>
+            <BasePagination
+                v-if="!loading"
+                class="mt-4 rounded-xl border"
+                :page="page"
+                :last-page="lastPage"
+                :total="total"
+                :per-page="PER_PAGE"
+                :disabled="refreshing"
+                @update:page="goToPage"
+            />
         </div>
 
         <BaseDialog

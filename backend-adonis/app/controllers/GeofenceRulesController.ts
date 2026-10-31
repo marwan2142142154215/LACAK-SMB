@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import { accessOf, can } from '#services/Access'
 import { fail, success } from '#services/ApiResponse'
+import { escapeLike, searchTermOf } from '#services/SearchTerm'
 import { laravelDate, logModelEvent, writeActivity } from '#services/ActivityLog'
 import { authorizedOrganizationId, organizationFilter } from '#services/OrganizationScope'
 import {
@@ -118,25 +119,76 @@ export default class GeofenceRulesController {
         }
 
         const { page, perPage } = paginationOf(ctx, 20)
+        const search = searchTermOf(ctx.request.input('search'))
+        const rawStatus = String(ctx.request.input('status') ?? '')
+        const status = rawStatus === 'active' || rawStatus === 'inactive' ? rawStatus : null
+
+        // Site yang boleh dilihat + pencarian (nama aturan, WiFi, nama site), tanpa filter status.
         // with('anchorDevice'): device yang sudah di-soft-delete dianggap tidak ada.
-        const query = db
-            .from('geofence_rules')
-            .leftJoin('devices', (join) => {
+        const matching = () => {
+            const query = db.from('geofence_rules').leftJoin('devices', (join) => {
                 join.on('devices.id', '=', 'geofence_rules.anchor_device_id').andOnNull(
                     'devices.deleted_at'
                 )
             })
-            .select('geofence_rules.*', 'devices.device_name as anchor_device_name')
-            .orderBy('geofence_rules.rule_name')
-        if (filter !== 'all') {
-            query.whereIn('geofence_rules.organization_id', filter)
+            if (filter !== 'all') {
+                query.whereIn('geofence_rules.organization_id', filter)
+            }
+            if (search) {
+                const pattern = `%${escapeLike(search)}%`
+                query.where((match) =>
+                    match
+                        .whereILike('geofence_rules.rule_name', pattern)
+                        .orWhereILike('geofence_rules.allowed_ssid', pattern)
+                        .orWhereIn(
+                            'geofence_rules.organization_id',
+                            db
+                                .from('organizations')
+                                .whereNull('deleted_at')
+                                .whereILike('name', pattern)
+                                .select('id')
+                        )
+                )
+            }
+            return query
         }
 
-        const rules = await query.paginate(page, perPage)
+        const [countRows, rows] = await Promise.all([
+            matching()
+                .select('geofence_rules.is_active')
+                .count('* as total')
+                .count('geofence_rules.anchor_device_id as ble')
+                .groupBy('geofence_rules.is_active'),
+            matching()
+                .if(status === 'active', (query) => query.where('geofence_rules.is_active', true))
+                .if(status === 'inactive', (query) =>
+                    query.where('geofence_rules.is_active', false)
+                )
+                .select('geofence_rules.*', 'devices.device_name as anchor_device_name')
+                .orderBy('geofence_rules.rule_name')
+                .orderBy('geofence_rules.id')
+                .offset((page - 1) * perPage)
+                .limit(perPage),
+        ])
+
+        const totalOf = (active: boolean) =>
+            Number(countRows.find((row) => Boolean(row.is_active) === active)?.total ?? 0)
+        const activeCount = totalOf(true)
+        const inactiveCount = totalOf(false)
+        const bleCount = countRows.reduce((sum, row) => sum + Number(row.ble ?? 0), 0)
+        const total =
+            status === 'active'
+                ? activeCount
+                : status === 'inactive'
+                  ? inactiveCount
+                  : activeCount + inactiveCount
 
         return success('Daftar aturan geofence', {
-            items: rules.all().map((rule) => geofenceRuleResource(rule as GeofenceRuleRow)),
-            total: rules.total,
+            items: rows.map((rule) => geofenceRuleResource(rule as GeofenceRuleRow)),
+            total,
+            active_count: activeCount,
+            inactive_count: inactiveCount,
+            ble_count: bleCount,
         })
     }
 

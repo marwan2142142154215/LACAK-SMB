@@ -175,6 +175,9 @@ export function requestedOrganizationId(ctx: HttpContext): number | null {
  * per_page 0/tidak terbaca = 15 (perPage bawaan Eloquent); page yang bukan
  * bilangan bulat >= 1 = halaman 1.
  */
+/** Per halaman paling banyak untuk daftar aturan & binding. */
+const MAX_PER_PAGE = 100
+
 export function paginationOf(ctx: HttpContext, defaultPerPage: number) {
     return paginationFrom(ctx.request.input('page'), ctx.request.input('per_page'), defaultPerPage)
 }
@@ -188,6 +191,7 @@ export function paginationFrom(page: unknown, perPage: unknown, defaultPerPage: 
         page: pageNumber >= 1 ? pageNumber : 1,
         // Negatif membuat backend-api gagal SQL (LIMIT negatif); di sini
         // diperlakukan sama seperti 0.
-        perPage: size > 0 ? size : 15,
+        // Dibatasi MAX_PER_PAGE: satu permintaan tidak boleh menarik seluruh tabel.
+        perPage: Math.min(size > 0 ? size : 15, MAX_PER_PAGE),
     }
 }
