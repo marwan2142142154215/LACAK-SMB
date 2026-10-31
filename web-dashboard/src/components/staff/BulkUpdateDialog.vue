@@ -46,7 +46,7 @@ let searchSeq = 0
 
 const SITE_MODES = [
     { value: '', label: 'Tidak diubah' },
-    { value: 'add', label: 'Tambah site (akses lama dibiarkan)' },
+    { value: 'add', label: 'Tempatkan / tambah ke site' },
     { value: 'replace', label: 'Ganti site (akses lama dilepas)' },
     { value: 'remove', label: 'Cabut site' },
 ]
@@ -69,7 +69,26 @@ watch(
 )
 
 const selectedIds = computed(() => selected.value.map((user) => user.id))
-const siteReady = computed(() => siteMode.value === '' || allSites.value || sites.value.length > 0)
+// Peran terikat satu site (mis. Staff Viewer): staf ditempatkan di TEPAT satu site.
+const roleScope = computed(() => props.roles.find((item) => item.name === role.value)?.site_scope ?? null)
+const singleSite = computed(() => roleScope.value === 'own')
+const siteReady = computed(() => {
+    if (siteMode.value === '') return true
+    if (singleSite.value) return siteMode.value !== 'remove' && !allSites.value && sites.value.length === 1
+    return allSites.value || sites.value.length > 0
+})
+// Peran terikat satu site tidak punya "semua site": lepas centangnya supaya tidak tersangkut.
+watch(singleSite, (single) => {
+    if (single) allSites.value = false
+})
+const siteHint = computed(() => {
+    if (singleSite.value) {
+        return 'Peran ini terikat satu site: pilih tepat satu site, staf akan ditempatkan di sana (Tempatkan / Ganti).'
+    }
+    if (roleScope.value === 'all') return 'Peran ini sudah melihat semua site, jadi tidak perlu diatur.'
+    if (roleScope.value === 'granted') return 'Peran ini melihat site yang diberikan: pilih site yang boleh dilihat.'
+    return "Admin/Leader (site yang diberikan): daftar site yang boleh dilihat. Staff Viewer/Site Admin: satu site tempat ditempatkan. Yang tidak cocok dilewati dan dilaporkan."
+})
 const hasChange = computed(() => Boolean(role.value || status.value || siteMode.value))
 const canSubmit = computed(
     () => selected.value.length > 0 && selected.value.length <= MAX_USERS && hasChange.value && siteReady.value,
@@ -190,6 +209,7 @@ const summary = computed(() => {
                 <li class="rounded-lg border border-base-800 p-3">
                     <p class="text-xs text-base-500">Peran diganti</p>
                     <p class="font-mono text-lg text-base-50">{{ outcome.role_changed }}</p>
+                    <p v-if="outcome.role_unchanged" class="text-xs text-base-500">{{ outcome.role_unchanged }} sudah peran itu</p>
                 </li>
                 <li class="rounded-lg border border-base-800 p-3">
                     <p class="text-xs text-base-500">Diaktifkan</p>
@@ -298,7 +318,7 @@ const summary = computed(() => {
                 </p>
             </section>
 
-            <BaseSelect v-model="role" label="Peran" hint="Menggantikan peran lama staf yang dipilih.">
+            <BaseSelect v-model="role" label="Peran" hint="Peran lama staf dipindahkan ke peran ini. Yang sudah memakai peran ini dibiarkan.">
                 <option value="">Tidak diubah</option>
                 <option v-for="item in roles" :key="item.name" :value="item.name">{{ item.label }}</option>
             </BaseSelect>
@@ -317,12 +337,12 @@ const summary = computed(() => {
                 <BaseSelect
                     v-model="siteMode"
                     label="Akses site"
-                    hint="Hanya berlaku untuk peran yang melihat 'site yang diberikan' (mis. Admin, Leader); staf lain dilewati dan dilaporkan."
+                    :hint="siteHint"
                 >
                     <option v-for="mode in SITE_MODES" :key="mode.value" :value="mode.value">{{ mode.label }}</option>
                 </BaseSelect>
                 <template v-if="siteMode">
-                    <label class="flex items-start gap-2 text-sm text-base-100">
+                    <label v-if="!singleSite" class="flex items-start gap-2 text-sm text-base-100">
                         <input v-model="allSites" type="checkbox" class="mt-0.5 size-4 accent-copper-500" />
                         Semua site (termasuk site yang dibuat nanti tidak otomatis ikut)
                     </label>

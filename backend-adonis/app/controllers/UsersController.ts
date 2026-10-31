@@ -13,6 +13,7 @@ import {
     parseBulkSiteAccess,
     partitionUsers,
     resolveOrganizations,
+    scopesOfUsers,
     summarize,
     type SkippedUser,
 } from '#services/BulkSiteAccess'
@@ -504,37 +505,86 @@ export default class UsersController {
                 })
             }
 
+            // Peran dipindahkan: semua peran lama dilepas, diganti satu peran pilihan. Staf yang
+            // peran satu-satunya sudah peran itu dibiarkan (tidak disentuh, tidak dihitung berubah).
+            let roleMoved: number[] = []
             if (roleId !== null && accountIds.length > 0) {
-                await trx
+                const current = await trx
                     .from('model_has_roles')
                     .where('model_type', LARAVEL_USER_MORPH)
                     .whereIn('model_id', accountIds)
-                    .delete()
-                await trx.table('model_has_roles').multiInsert(
-                    accountIds.map((id) => ({
-                        role_id: roleId,
-                        model_type: LARAVEL_USER_MORPH,
-                        model_id: id,
-                    }))
-                )
+                    .select('model_id', 'role_id')
+                const rolesOf = new Map<number, number[]>()
+                for (const row of current) {
+                    const list = rolesOf.get(Number(row.model_id)) ?? []
+                    list.push(Number(row.role_id))
+                    rolesOf.set(Number(row.model_id), list)
+                }
+                roleMoved = accountIds.filter((id) => {
+                    const list = rolesOf.get(id) ?? []
+                    return !(list.length === 1 && list[0] === roleId)
+                })
+                if (roleMoved.length > 0) {
+                    await trx
+                        .from('model_has_roles')
+                        .where('model_type', LARAVEL_USER_MORPH)
+                        .whereIn('model_id', roleMoved)
+                        .delete()
+                    await trx.table('model_has_roles').multiInsert(
+                        roleMoved.map((id) => ({
+                            role_id: roleId,
+                            model_type: LARAVEL_USER_MORPH,
+                            model_id: id,
+                        }))
+                    )
+                }
             }
 
             let siteUserIds: number[] = []
             if (input.sites) {
-                const partition = await partitionUsers(trx, eligible)
-                siteUserIds = partition.eligible
-                // Staf tanpa akses per site dicatat sekali saja (kalau belum tercatat karena hal lain).
-                for (const entry of partition.skipped) {
-                    if (!skipped.some((item) => item.id === entry.id)) skipped.push(entry)
+                // Cara mengatur site mengikuti cakupan peran SETELAH perubahan peran di atas.
+                const scopes = await scopesOfUsers(trx, eligible)
+                const skipSite = (id: number, reason: string) => {
+                    if (skipped.some((item) => item.id === id)) return
+                    skipped.push({ id, name: found.get(id)?.name ?? null, reason })
                 }
+                const grantedIds = eligible.filter((id) => scopes.get(id) === 'granted')
+                const ownIds = eligible.filter((id) => scopes.get(id) === 'own')
+                for (const id of eligible.filter((item) => scopes.get(item) === 'all')) {
+                    skipSite(id, 'Peran ini sudah melihat semua site')
+                }
+
                 await applyBulkSiteAccess(trx, {
-                    userIds: siteUserIds,
+                    userIds: grantedIds,
                     organizationIds: siteIds,
                     mode: input.sites.mode,
                     grantedBy: actorId,
                     removeEverything:
                         input.sites.mode === 'remove' && input.sites.organizationIds === 'all',
                 })
+                siteUserIds = [...grantedIds]
+
+                // Peran terikat satu site (mis. Staff Viewer): staf ditempatkan di site yang dipilih.
+                if (ownIds.length > 0) {
+                    if (input.sites.mode === 'remove') {
+                        for (const id of ownIds) {
+                            skipSite(
+                                id,
+                                'Staf terikat satu site: ganti ke site lain, bukan dicabut'
+                            )
+                        }
+                    } else if (input.sites.organizationIds === 'all' || siteIds.length !== 1) {
+                        for (const id of ownIds) {
+                            skipSite(id, 'Peran ini terikat satu site: pilih tepat satu site')
+                        }
+                    } else {
+                        await trx
+                            .from('users')
+                            .whereIn('id', ownIds)
+                            .update({ organization_id: siteIds[0], updated_at: new Date() })
+                        siteUserIds = [...siteUserIds, ...ownIds]
+                    }
+                }
             }
 
             const activated: number[] = []
@@ -570,7 +620,8 @@ export default class UsersController {
             return {
                 kind: 'done',
                 skipped,
-                roleChanged: roleId !== null ? accountIds.length : 0,
+                roleChanged: roleMoved.length,
+                roleUnchanged: roleId !== null ? accountIds.length - roleMoved.length : 0,
                 activated,
                 suspended,
                 siteChanged: siteUserIds.length,
@@ -618,6 +669,7 @@ export default class UsersController {
                     site_mode: input.sites?.mode ?? null,
                     all_sites: input.sites?.organizationIds === 'all',
                     role_changed: outcome.roleChanged,
+                    role_unchanged: outcome.roleUnchanged,
                     activated: outcome.activated.length,
                     suspended: outcome.suspended.length,
                     site_changed: outcome.siteChanged,
@@ -632,6 +684,7 @@ export default class UsersController {
             {
                 requested: input.userIds.length,
                 role_changed: outcome.roleChanged,
+                role_unchanged: outcome.roleUnchanged,
                 activated: outcome.activated.length,
                 suspended: outcome.suspended.length,
                 site_changed: outcome.siteChanged,

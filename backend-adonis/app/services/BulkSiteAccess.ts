@@ -1,6 +1,6 @@
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
-import { BUILT_IN_SCOPES } from '#services/RoleRules'
+import { BUILT_IN_SCOPES, widestScope, type SiteScope } from '#services/RoleRules'
 
 /** Peran bawaan ber-cakupan "granted" (tetap) dan semua nama peran bawaan. */
 const GRANT_ROLES = Object.keys(BUILT_IN_SCOPES).filter(
@@ -153,6 +153,32 @@ export async function partitionUsers(
         }
     }
     return { eligible: userIds.filter((id) => eligibleIds.has(id)), skipped }
+}
+
+/**
+ * Cakupan site tiap user (terluas dari semua perannya; peran bawaan memakai cakupan tetapnya).
+ * Menentukan cara "mengatur site": 'granted' = daftar akses (user_site_access), 'own' = satu site
+ * tempat staf ditempatkan (users.organization_id), 'all' = sudah melihat semua site.
+ */
+export async function scopesOfUsers(
+    client: TransactionClientContract,
+    userIds: number[]
+): Promise<Map<number, SiteScope>> {
+    const rows = await client
+        .from('model_has_roles')
+        .join('roles', 'roles.id', 'model_has_roles.role_id')
+        .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
+        .whereIn('model_has_roles.model_id', userIds)
+        .select('model_has_roles.model_id', 'roles.name', 'roles.site_scope')
+
+    const scopes = new Map<number, SiteScope[]>()
+    for (const row of rows) {
+        const id = Number(row.model_id)
+        const list = scopes.get(id) ?? []
+        list.push(BUILT_IN_SCOPES[row.name] ?? (row.site_scope as SiteScope))
+        scopes.set(id, list)
+    }
+    return new Map(userIds.map((id) => [id, widestScope(scopes.get(id) ?? [])]))
 }
 
 /** Site yang dipilih -> daftar id. 'all' = semua site belum dihapus; daftar = harus ada semua. */
