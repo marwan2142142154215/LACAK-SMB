@@ -6,7 +6,7 @@ import { accessOf, can } from '#services/Access'
 import { fail, success } from '#services/ApiResponse'
 import { laravelDate } from '#services/ActivityLog'
 import { hashLaravelPassword, verifyLaravelPassword } from '#services/laravel/Bcrypt'
-import { authorizedOrganizationId } from '#services/OrganizationScope'
+import { canAccessOrganization } from '#services/OrganizationScope'
 import {
     eloquentNow,
     findDeviceOrFail,
@@ -50,7 +50,7 @@ export default class DeviceOtpController {
                 .send(fail('Anda tidak berwenang melakukan tindakan ini'))
         }
 
-        if (authorizedOrganizationId(access, device.organization_id) === null) {
+        if (!canAccessOrganization(access, device.organization_id)) {
             return ctx.response
                 .status(403)
                 .send(fail('Anda tidak berwenang membuat OTP untuk device ini'))
@@ -100,9 +100,11 @@ export default class DeviceOtpController {
         // cuma 6 digit, jadi tanpa ini ribuan tebakan bisa dilakukan selama
         // OTP berlaku. Setelah batas tercapai, minta OTP baru dari admin.
         const attemptsKey = `device_otp_attempts:${device.id}`
-        const attempts = Number(await redis.get(attemptsKey)) || 0
+        // INCR atomik sebelum verifikasi: permintaan paralel tidak bisa melewati batas percobaan.
+        const attempts = await redis.incr(attemptsKey)
+        await redis.expire(attemptsKey, OTP_ATTEMPT_WINDOW_MINUTES * 60)
 
-        if (attempts >= MAX_OTP_ATTEMPTS) {
+        if (attempts > MAX_OTP_ATTEMPTS) {
             return ctx.response
                 .status(429)
                 .send(fail('Terlalu banyak percobaan OTP. Minta admin membuat OTP baru.'))
@@ -123,13 +125,6 @@ export default class DeviceOtpController {
             (await verifyLaravelPassword(String(data.code), otp.otp_code_hash))
 
         if (!valid) {
-            // Cache::put(): jendela 5 menit dihitung ulang dari tebakan salah terakhir.
-            await redis.set(
-                attemptsKey,
-                String(attempts + 1),
-                'EX',
-                OTP_ATTEMPT_WINDOW_MINUTES * 60
-            )
             return ctx.response.status(422).send(fail('Kode OTP salah atau sudah kedaluwarsa'))
         }
 

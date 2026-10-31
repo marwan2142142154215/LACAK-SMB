@@ -3,7 +3,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import { accessOf, can } from '#services/Access'
 import { fail, success } from '#services/ApiResponse'
-import { authorizedOrganizationId } from '#services/OrganizationScope'
+import { canAccessOrganization } from '#services/OrganizationScope'
 import { eloquentNow, findDeviceOrFail, saveDevice } from '#services/DeviceResource'
 import { claimDeviceValidator } from '#validators/Devices'
 
@@ -95,7 +95,7 @@ export default class DeviceEnrollmentController {
                 .send(fail('Anda tidak berwenang melakukan tindakan ini'))
         }
 
-        if (authorizedOrganizationId(access, device.organization_id) === null) {
+        if (!canAccessOrganization(access, device.organization_id)) {
             return ctx.response
                 .status(403)
                 .send(fail('Anda tidak berwenang mendaftarkan ulang device ini'))

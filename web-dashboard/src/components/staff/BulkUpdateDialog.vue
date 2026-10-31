@@ -98,11 +98,13 @@ const roleLabel = computed(() => props.roles.find((item) => item.name === role.v
 
 async function runSearch() {
     const term = search.value.trim()
+    // Nomor urut dinaikkan SEBELUM cek kosong, supaya respons lama yang telat tidak mengisi ulang.
+    const seq = ++searchSeq
     if (!term) {
         results.value = []
+        searching.value = false
         return
     }
-    const seq = ++searchSeq
     searching.value = true
     try {
         const response = await api.get('/users', { params: { search: term, per_page: SEARCH_RESULTS } })

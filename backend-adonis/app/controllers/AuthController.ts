@@ -127,7 +127,13 @@ export default class AuthController {
                 .whereRaw('LOWER(username) = ?', [identifier.toLowerCase()])
                 .first()
 
-            if (!user || !(await verifyLaravelPassword(password, user.password))) {
+            // Hash tiruan: username yang tidak ada tetap menjalankan bcrypt, supaya waktu respons
+            // tidak membedakan "username tidak ada" dari "password salah".
+            const passwordOk = await verifyLaravelPassword(
+                password,
+                user?.password ?? DUMMY_PASSWORD_HASH
+            )
+            if (!user || !passwordOk) {
                 return ctx.response.status(401).send(fail('Username atau password salah'))
             }
         }
@@ -243,8 +249,8 @@ export default class AuthController {
         // Batasi percobaan per challenge: setelah beberapa kali salah, sesi
         // login dibatalkan supaya kode tidak bisa ditebak beruntun (selain
         // throttle per-IP di route).
-        const attempts = await TwoFactor.getAttempts(challengeToken)
-        if (attempts >= TwoFactor.MAX_2FA_ATTEMPTS) {
+        const attempts = await TwoFactor.countAttempt(challengeToken)
+        if (attempts > TwoFactor.MAX_2FA_ATTEMPTS) {
             await TwoFactor.forgetChallenge(challengeToken)
             return ctx.response
                 .status(429)
@@ -254,10 +260,6 @@ export default class AuthController {
         const user = await activeUsers().where('id', userId).firstOrFail()
 
         if (!(await consumeTwoFactorCode(user, String(input.code)))) {
-            await TwoFactor.putAttempts(
-                challengeToken,
-                (await TwoFactor.getAttempts(challengeToken)) + 1
-            )
             return ctx.response.status(422).send(fail('Kode 2FA salah'))
         }
 
@@ -311,6 +313,9 @@ export default class AuthController {
         return success('Sesi masih berlaku', await userPayload(authUser!))
     }
 }
+
+/** Hash bcrypt tiruan (tidak cocok dengan password mana pun) untuk menyamakan waktu respons login. */
+const DUMMY_PASSWORD_HASH = '$2y$10$Y18XUtkwVNaSkDxG0mGKX.51ec8i1y3rdvE4Cc.QSg9izFzIo/CiO'
 
 /** Sama dengan AuthController::userPayload() di backend-api. */
 export async function userPayload(user: User) {

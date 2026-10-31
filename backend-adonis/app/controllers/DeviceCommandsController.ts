@@ -2,7 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import { accessOf, can } from '#services/Access'
 import { fail, success } from '#services/ApiResponse'
-import { authorizedOrganizationId } from '#services/OrganizationScope'
+import { canAccessOrganization } from '#services/OrganizationScope'
 import {
     deviceCommandResource,
     eloquentNow,
@@ -37,7 +37,7 @@ export default class DeviceCommandsController {
         const access = await accessOf(ctx)
         if (!can(access, 'devices.view')) return forbidden(ctx)
 
-        if (authorizedOrganizationId(access, device.organization_id) === null) {
+        if (!canAccessOrganization(access, device.organization_id)) {
             return ctx.response
                 .status(403)
                 .send(fail('Anda tidak berwenang melihat riwayat perintah device ini'))
@@ -65,7 +65,7 @@ export default class DeviceCommandsController {
         const access = await accessOf(ctx)
         if (!can(access, COMMAND_PERMISSIONS[data.command_type])) return forbidden(ctx)
 
-        if (authorizedOrganizationId(access, device.organization_id) === null) {
+        if (!canAccessOrganization(access, device.organization_id)) {
             return ctx.response
                 .status(403)
                 .send(fail('Anda tidak berwenang mengirim perintah ke device ini'))

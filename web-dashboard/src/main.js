@@ -60,7 +60,7 @@ api.interceptors.response.use(
             // Token tidak berlaku lagi -> siaran Live Kerja di tab ini ikut
             // berhenti, jangan terus menyiarkan tanpa akun yang login.
             useLiveStore(pinia)
-                .disconnect()
+                .shutdown()
                 .catch(() => {})
             // Satu akun = satu sesi: login di perangkat lain mengakhiri sesi ini.
             if (error.response.data?.errors?.reason === 'session_replaced') {
@@ -74,7 +74,7 @@ api.interceptors.response.use(
             if (auth.isAuthenticated) {
                 auth.clearSession()
                 useLiveStore(pinia)
-                    .disconnect()
+                    .shutdown()
                     .catch(() => {})
             }
             forgetIpAccess()

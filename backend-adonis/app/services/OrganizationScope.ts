@@ -18,6 +18,16 @@ export function hasGrantBasedAccess(access: Access): boolean {
 }
 
 /**
+ * Boleh mengakses sumber daya milik site ini? Sumber daya TANPA site (organization_id null) hanya
+ * untuk yang melihat semua site: null bukan "site sendiri", jadi tidak ikut aturan authorizedOrganizationId.
+ */
+export function canAccessOrganization(access: Access, organizationId: number | null): boolean {
+    if (hasCrossOrganizationAccess(access)) return true
+    if (organizationId === null) return false
+    return authorizedOrganizationId(access, organizationId) !== null
+}
+
+/**
  * Site yang boleh dipakai untuk permintaan ini, atau null kalau ditolak.
  * Admin/leader WAJIB menyebut site; staf tanpa site diminta = site sendiri.
  */

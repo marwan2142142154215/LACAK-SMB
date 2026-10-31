@@ -51,9 +51,14 @@ const bodyParserConfig = defineConfig({
      */
     multipart: {
         /**
-         * Automatically process uploaded files into the system tmp directory.
+         * Unggahan multipart HANYA diproses di route yang memang menerima berkas (bodyparser jalan
+         * sebelum auth, jadi di route lain berkas besar tidak boleh ditulis ke disk).
          */
-        autoProcess: true,
+        autoProcess: [
+            '/api/v1/apk-builds',
+            '/api/v1/chat/messages',
+            '/api/v1/chat/groups/:id/messages',
+        ],
 
         /**
          * Normalize empty string values to null.

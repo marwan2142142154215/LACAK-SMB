@@ -1,7 +1,8 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
-import { accessOf, can, type Access } from '#services/Access'
+import { accessOf, can, hasRole, type Access } from '#services/Access'
+import { roleNamesOf } from '#services/Permissions'
 import {
     laravelDate,
     logModelEvent,
@@ -143,34 +144,44 @@ export default class UsersController {
             messagesProvider: laravelMessages,
         })
         const actorId = ctx.authUser!.id
+        if (data.role === 'super_admin' && !hasRole(await accessOf(ctx), 'super_admin')) {
+            return forbidden(ctx)
+        }
         const password = await hashLaravelPassword(data.password)
 
-        const userId = await db.transaction(async (trx) => {
-            const now = new Date()
-            const [created] = await trx
-                .table('users')
-                .insert({
-                    name: data.name,
-                    username: data.username,
-                    email: data.email,
-                    password,
-                    organization_id: data.organization_id ?? null,
-                    // Login pertama tetap memicu enrollment 2FA lewat
-                    // AuthController, sama seperti akun lain.
-                    is_active: true,
-                    created_at: now,
-                    updated_at: now,
-                })
-                .returning('id')
-            const id = Number(typeof created === 'object' ? created.id : created)
+        let userId: number
+        try {
+            userId = await db.transaction(async (trx) => {
+                const now = new Date()
+                const [created] = await trx
+                    .table('users')
+                    .insert({
+                        name: data.name,
+                        username: data.username,
+                        email: data.email,
+                        password,
+                        organization_id: data.organization_id ?? null,
+                        // Login pertama tetap memicu enrollment 2FA lewat
+                        // AuthController, sama seperti akun lain.
+                        is_active: true,
+                        created_at: now,
+                        updated_at: now,
+                    })
+                    .returning('id')
+                const id = Number(typeof created === 'object' ? created.id : created)
 
-            await assignRole(trx, id, data.role)
+                await assignRole(trx, id, data.role)
 
-            if (data.site_access && data.site_access.length > 0) {
-                await syncSites(trx, id, data.site_access, actorId)
-            }
-            return id
-        })
+                if (data.site_access && data.site_access.length > 0) {
+                    await syncSites(trx, id, data.site_access, actorId)
+                }
+                return id
+            })
+        } catch (error) {
+            const conflict = uniqueConflict(ctx, error)
+            if (conflict) return conflict
+            throw error
+        }
 
         await logUserSnapshot(ctx, 'created', userId)
 
@@ -183,6 +194,7 @@ export default class UsersController {
         const user = await findUser(routeId(ctx.params.user))
         if (!user) return notFound(ctx)
         if (!(await canManage(ctx))) return forbidden(ctx)
+        if (await superAdminShielded(ctx, user.id)) return forbidden(ctx)
 
         return success('Detail staf', await userResource(user))
     }
@@ -191,11 +203,16 @@ export default class UsersController {
         const user = await findUser(routeId(ctx.params.user))
         if (!user) return notFound(ctx)
         if (!(await canManage(ctx))) return forbidden(ctx)
+        if (await superAdminShielded(ctx, user.id)) return forbidden(ctx)
 
         const data = await updateUserValidator.validate(
             laravelInput(ctx, { sometimes: UPDATE_USER_SOMETIMES }),
             { messagesProvider: laravelMessages, meta: { userId: user.id } }
         )
+
+        if (data.role === 'super_admin' && !hasRole(await accessOf(ctx), 'super_admin')) {
+            return forbidden(ctx)
+        }
 
         // array_filter(): nilai null dibuang, jadi organization_id tidak bisa
         // dikosongkan lewat endpoint ini (sama seperti backend-api).
@@ -215,23 +232,29 @@ export default class UsersController {
             ([key, value]) => key === 'password' || (user as Record<string, unknown>)[key] !== value
         )
 
-        await db.transaction(async (trx) => {
-            if (dirty.length > 0) {
-                await trx
-                    .from('users')
-                    .where('id', user.id)
-                    .update({ ...Object.fromEntries(dirty), updated_at: new Date() })
-            }
-            if (data.role !== undefined) {
-                // syncRoles(): lepas semua peran lalu pasang yang baru.
-                await trx
-                    .from('model_has_roles')
-                    .where('model_type', LARAVEL_USER_MORPH)
-                    .where('model_id', user.id)
-                    .delete()
-                await assignRole(trx, user.id, data.role)
-            }
-        })
+        try {
+            await db.transaction(async (trx) => {
+                if (dirty.length > 0) {
+                    await trx
+                        .from('users')
+                        .where('id', user.id)
+                        .update({ ...Object.fromEntries(dirty), updated_at: new Date() })
+                }
+                if (data.role !== undefined) {
+                    // syncRoles(): lepas semua peran lalu pasang yang baru.
+                    await trx
+                        .from('model_has_roles')
+                        .where('model_type', LARAVEL_USER_MORPH)
+                        .where('model_id', user.id)
+                        .delete()
+                    await assignRole(trx, user.id, data.role)
+                }
+            })
+        } catch (error) {
+            const conflict = uniqueConflict(ctx, error)
+            if (conflict) return conflict
+            throw error
+        }
 
         await logUserChanges(
             ctx,
@@ -247,6 +270,7 @@ export default class UsersController {
         const user = await findUser(routeId(ctx.params.user))
         if (!user) return notFound(ctx)
         if (!(await canManage(ctx))) return forbidden(ctx)
+        if (await superAdminShielded(ctx, user.id)) return forbidden(ctx)
 
         if (user.id === ctx.authUser!.id) {
             return ctx.response.status(422).send(fail('Tidak bisa menghapus akun sendiri'))
@@ -318,6 +342,7 @@ export default class UsersController {
         const user = await findUser(routeId(ctx.params.user))
         if (!user) return notFound(ctx)
         if (!(await canManage(ctx))) return forbidden(ctx)
+        if (await superAdminShielded(ctx, user.id)) return forbidden(ctx)
 
         await db.transaction(async (trx) => {
             const current = await trx
@@ -353,6 +378,7 @@ export default class UsersController {
         const user = await findUser(routeId(ctx.params.user))
         if (!user) return notFound(ctx)
         if (!(await canManage(ctx))) return forbidden(ctx)
+        if (await superAdminShielded(ctx, user.id)) return forbidden(ctx)
 
         const data = await syncSiteAccessValidator.validate(
             laravelInput(ctx, { requiredArrays: ['organization_ids'] }),
@@ -436,6 +462,9 @@ export default class UsersController {
         }
         const input = parsed.data
         const actorId = ctx.authUser!.id
+        const actorAccess = await accessOf(ctx)
+        const actorIsSuperAdmin = hasRole(actorAccess, 'super_admin')
+        if (input.role === 'super_admin' && !actorIsSuperAdmin) return forbidden(ctx)
 
         let roleId: number | null = null
         if (input.role) {
@@ -483,6 +512,18 @@ export default class UsersController {
                 .where('roles.name', 'telegram_bot_service')
                 .select('model_has_roles.model_id')
             const serviceIds = new Set(serviceRows.map((row) => Number(row.model_id)))
+            // Akun Super Admin hanya boleh diubah Super Admin.
+            const superAdminIds = new Set<number>()
+            if (!actorIsSuperAdmin) {
+                const superRows = await trx
+                    .from('model_has_roles')
+                    .join('roles', 'roles.id', 'model_has_roles.role_id')
+                    .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
+                    .whereIn('model_has_roles.model_id', input.userIds)
+                    .where('roles.name', 'super_admin')
+                    .select('model_has_roles.model_id')
+                for (const row of superRows) superAdminIds.add(Number(row.model_id))
+            }
 
             const skipped: SkippedUser[] = []
             const eligible: number[] = []
@@ -491,6 +532,12 @@ export default class UsersController {
                 if (!row) skipped.push({ id, name: null, reason: 'Staf tidak ditemukan' })
                 else if (serviceIds.has(id)) {
                     skipped.push({ id, name: row.name, reason: 'Akun layanan tidak bisa diubah' })
+                } else if (superAdminIds.has(id)) {
+                    skipped.push({
+                        id,
+                        name: row.name,
+                        reason: 'Akun Super Admin hanya bisa diubah Super Admin',
+                    })
                 } else eligible.push(id)
             }
 
@@ -530,13 +577,17 @@ export default class UsersController {
                         .where('model_type', LARAVEL_USER_MORPH)
                         .whereIn('model_id', roleMoved)
                         .delete()
-                    await trx.table('model_has_roles').multiInsert(
-                        roleMoved.map((id) => ({
-                            role_id: roleId,
-                            model_type: LARAVEL_USER_MORPH,
-                            model_id: id,
-                        }))
-                    )
+                    await trx
+                        .table('model_has_roles')
+                        .multiInsert(
+                            roleMoved.map((id) => ({
+                                role_id: roleId,
+                                model_type: LARAVEL_USER_MORPH,
+                                model_id: id,
+                            }))
+                        )
+                        .onConflict(['role_id', 'model_id', 'model_type'])
+                        .ignore()
                 }
             }
 
@@ -766,6 +817,32 @@ export default class UsersController {
     }
 }
 
+/**
+ * Dua permintaan username/email sama bersamaan: pengecekan validator lolos untuk keduanya, indeks
+ * unik database menolak yang kedua. Jadikan 422 gaya validasi (bukan 500).
+ */
+function uniqueConflict(ctx: HttpContext, error: unknown) {
+    const { code, constraint } = error as { code?: string; constraint?: string }
+    if (code !== '23505') return null
+    const field = constraint?.includes('username') ? 'username' : 'email'
+    return ctx.response.status(422).send(
+        fail('Isian tidak lolos validasi', {
+            [field]: [`The ${field} has already been taken.`],
+        })
+    )
+}
+
+/** Akun Super Admin hanya boleh disentuh Super Admin (pemegang users.manage lain tidak bisa mengambil alihnya). */
+async function isSuperAdminUser(userId: number, access: Access): Promise<boolean> {
+    if (hasRole(access, 'super_admin')) return false
+    const roles = await roleNamesOf(userId)
+    return roles.includes('super_admin')
+}
+
+async function superAdminShielded(ctx: HttpContext, userId: number): Promise<boolean> {
+    return isSuperAdminUser(userId, await accessOf(ctx))
+}
+
 async function canManage(ctx: HttpContext) {
     return can(await accessOf(ctx), 'users.manage')
 }
@@ -801,7 +878,7 @@ function usersWithRolesExcept(role: string) {
  * diberikan kepadanya -- tidak bisa menyentuh admin, leader, atau root.
  */
 async function canChangeStatus(access: Access, user: UserRow): Promise<boolean> {
-    if (can(access, 'users.manage')) return true
+    if (can(access, 'users.manage')) return !(await isSuperAdminUser(user.id, access))
     if (!hasGrantBasedAccess(access)) return false
     if (
         user.organization_id === null ||

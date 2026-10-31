@@ -4,7 +4,11 @@ import { accessOf, can } from '#services/Access'
 import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
 import { escapeLike, searchTermOf } from '#services/SearchTerm'
-import { authorizedOrganizationId, organizationFilter } from '#services/OrganizationScope'
+import {
+    authorizedOrganizationId,
+    canAccessOrganization,
+    organizationFilter,
+} from '#services/OrganizationScope'
 import {
     deviceResource,
     eloquentNow,
@@ -161,7 +165,7 @@ export default class DevicesController {
         const access = await accessOf(ctx)
         if (!can(access, 'devices.view')) return forbidden(ctx)
 
-        if (authorizedOrganizationId(access, device.organization_id) === null) {
+        if (!canAccessOrganization(access, device.organization_id)) {
             return ctx.response.status(403).send(fail('Anda tidak berwenang melihat device ini'))
         }
 
@@ -184,7 +188,7 @@ export default class DevicesController {
             messagesProvider: updateDeviceValidator.messagesProvider,
         })
 
-        if (authorizedOrganizationId(access, device.organization_id) === null) {
+        if (!canAccessOrganization(access, device.organization_id)) {
             return ctx.response.status(403).send(fail('Anda tidak berwenang mengubah device ini'))
         }
 
@@ -207,7 +211,7 @@ export default class DevicesController {
         const access = await accessOf(ctx)
         if (!can(access, 'devices.manage')) return forbidden(ctx)
 
-        if (authorizedOrganizationId(access, device.organization_id) === null) {
+        if (!canAccessOrganization(access, device.organization_id)) {
             return ctx.response
                 .status(403)
                 .send(fail('Anda tidak berwenang memindahkan device ini'))
@@ -263,7 +267,7 @@ export default class DevicesController {
         const access = await accessOf(ctx)
         if (!can(access, 'devices.manage')) return forbidden(ctx)
 
-        if (authorizedOrganizationId(access, device.organization_id) === null) {
+        if (!canAccessOrganization(access, device.organization_id)) {
             return ctx.response.status(403).send(fail('Anda tidak berwenang menghapus device ini'))
         }
 

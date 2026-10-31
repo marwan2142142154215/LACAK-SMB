@@ -182,7 +182,7 @@ async function queryEntries(filters: Filters): Promise<ActivityRow[]> {
 
 /** '%'.str_replace(['%', '_'], ['\%', '\_'], mb_strtolower($search)).'%' */
 export function searchPattern(search: string): string {
-    return `%${search.toLowerCase().replace(/[%_]/g, (char) => `\\${char}`)}%`
+    return `%${search.toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`)}%`
 }
 
 /** with(['causer', 'subject']) -- morphTo; baris soft-deleted tidak ikut dimuat. */

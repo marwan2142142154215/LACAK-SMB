@@ -18,8 +18,13 @@ router
         router
             .group(() => {
                 router.get('/apk-builds', [ApkBuildsController, 'index'])
-                router.post('/apk-builds', [ApkBuildsController, 'store'])
-                router.post('/apk-builds/generate', [ApkBuildsController, 'generate'])
+                router
+                    .post('/apk-builds', [ApkBuildsController, 'store'])
+                    .use(middleware.throttle({ max: 10, minutes: 1 }))
+                // Memicu build Gradle di server: dibatasi ketat.
+                router
+                    .post('/apk-builds/generate', [ApkBuildsController, 'generate'])
+                    .use(middleware.throttle({ max: 6, minutes: 1 }))
                 router.get('/apk-builds/:apk_build', [ApkBuildsController, 'show'])
                 router.delete('/apk-builds/:apk_build', [ApkBuildsController, 'destroy'])
             })

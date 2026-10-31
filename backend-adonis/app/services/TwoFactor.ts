@@ -183,6 +183,17 @@ export async function putAttempts(token: string, attempts: number) {
     await redis.set(attemptsKey(token), String(attempts), 'EX', CHALLENGE_TTL_MINUTES * 60)
 }
 
+/**
+ * Hitung satu percobaan SECARA ATOMIK (INCR) sebelum kode diperiksa, lalu perbarui TTL-nya. Permintaan
+ * paralel tidak bisa lagi membaca hitungan yang sama untuk melewati batas.
+ */
+export async function countAttempt(token: string): Promise<number> {
+    const key = attemptsKey(token)
+    const attempts = await redis.incr(key)
+    await redis.expire(key, CHALLENGE_TTL_MINUTES * 60)
+    return attempts
+}
+
 export async function forgetChallenge(token: string) {
     await redis.del(challengeKey(token), attemptsKey(token))
 }

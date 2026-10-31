@@ -254,7 +254,7 @@ async function handleLogout() {
         // Logout = selesai kerja juga -- jangan tinggalkan kamera menyiarkan
         // atas nama akun yang sudah keluar.
         if (live.isBroadcasting) await live.endWork().catch(() => {})
-        await live.disconnect()
+        await live.shutdown()
         if (briefingCall.inCall.value) await briefingCall.leave().catch(() => {})
         chat.stop()
         await auth.logout()

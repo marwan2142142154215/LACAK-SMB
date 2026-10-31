@@ -47,7 +47,9 @@ router
 
                 router.get('/devices/:device/commands', [DeviceCommandsController, 'index'])
                 router.post('/devices/:device/commands', [DeviceCommandsController, 'store'])
-                router.post('/devices/:device/otp', [DeviceOtpController, 'generate'])
+                router
+                    .post('/devices/:device/otp', [DeviceOtpController, 'generate'])
+                    .use(middleware.throttle({ max: 20, minutes: 1 }))
                 router.post('/devices/:device/re-enroll', [DeviceEnrollmentController, 'reEnroll'])
                 router.get('/devices/:device/violations', [ViolationLogsController, 'index'])
             })

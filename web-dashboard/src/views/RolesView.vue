@@ -90,8 +90,12 @@ function togglePermission(name, checked) {
     form.value.permissions = checked ? [...new Set([...current, name])] : current.filter((item) => item !== name)
 }
 
+// Izin pengelolaan akses (sensitif) hanya milik Super Admin: tidak bisa diberikan ke peran lain.
+const isSensitiveLocked = (permission) =>
+    permission.sensitive && !(editTarget.value?.permissions ?? []).includes(permission.name)
+
 function toggleGroup(group, checked) {
-    const names = group.items.map((item) => item.name)
+    const names = group.items.filter((item) => !isSensitiveLocked(item)).map((item) => item.name)
     const rest = form.value.permissions.filter((item) => !names.includes(item))
     form.value.permissions = checked ? [...rest, ...names] : rest
 }
@@ -271,13 +275,13 @@ onMounted(loadRoles)
                                         type="checkbox"
                                         class="mt-0.5 size-4 accent-copper-500"
                                         :checked="form.permissions.includes(permission.name)"
-                                        :disabled="isLocked"
+                                        :disabled="isLocked || isSensitiveLocked(permission)"
                                         @change="togglePermission(permission.name, $event.target.checked)"
                                     />
                                     <span class="min-w-0">
                                         <span class="flex items-center gap-1.5 text-sm text-base-100">
                                             {{ permission.label }}
-                                            <BaseBadge v-if="permission.sensitive" variant="warning">Sensitif</BaseBadge>
+                                            <BaseBadge v-if="permission.sensitive" variant="warning">Hanya Super Admin</BaseBadge>
                                         </span>
                                         <span class="block text-xs text-base-500">{{ permission.description }}</span>
                                     </span>

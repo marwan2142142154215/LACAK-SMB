@@ -609,6 +609,15 @@ export const useLiveStore = defineStore('live', () => {
         }, delay)
     }
 
+    /**
+     * Akhiri semuanya saat logout / 401 / IP ditolak: putus sambungan DAN batalkan percobaan sambung
+     * ulang siaran yang masih terjadwal (kalau tidak, ia jalan sesudah logout dengan state lama).
+     */
+    async function shutdown() {
+        cancelRejoin()
+        await disconnect()
+    }
+
     function cancelRejoin() {
         clearTimeout(rejoinTimer)
         rejoinTimer = null
@@ -1354,6 +1363,7 @@ export const useLiveStore = defineStore('live', () => {
         setBreak,
         localCameraSettings,
         disconnect,
+        shutdown,
         setVisibleParticipants,
         setMicrophone,
         toggleListen,

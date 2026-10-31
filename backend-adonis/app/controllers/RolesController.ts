@@ -12,6 +12,7 @@ import {
     parseRoleInput,
     permissionsActorLacks,
     scopeExceedsActor,
+    SENSITIVE_PERMISSIONS,
     SITE_SCOPES,
     type SiteScope,
 } from '#services/RoleRules'
@@ -263,6 +264,20 @@ async function checkGrant(
     const unknown = requested.filter((item) => !known.has(item))
     if (unknown.length > 0) {
         invalid(ctx, { permissions: [`Izin tidak dikenal: ${unknown.join(', ')}`] })
+        return null
+    }
+
+    // Izin pengelolaan akses (kelola staf/peran/site/keamanan) hanya milik Super Admin. Memberikannya
+    // ke peran lain = pemegangnya bisa mengubah password / 2FA / peran Super Admin lalu mengambil alih.
+    const sensitive = requested.filter(
+        (item) => SENSITIVE_PERMISSIONS.includes(item) && !currentPermissions.includes(item)
+    )
+    if (sensitive.length > 0) {
+        invalid(ctx, {
+            permissions: [
+                `Izin ini hanya untuk Super Admin dan tidak bisa diberikan ke peran lain: ${sensitive.join(', ')}`,
+            ],
+        })
         return null
     }
 
