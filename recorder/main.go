@@ -15,16 +15,13 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-
-	"github.com/livekit/protocol/logger"
-	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 func main() {
 	envFile := flag.String("env", "", "berkas .env untuk dibaca (mis. ../backend-adonis/.env); variabel yang sudah diset tidak ditimpa")
 	flag.Parse()
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	setupLogging("warn") // dipasang ulang di bawah memakai RECORDER_SDK_LOG_LEVEL setelah konfigurasi terbaca
 
 	if *envFile != "" {
 		if err := loadEnvFile(*envFile); err != nil {
@@ -39,10 +36,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Log SDK LiveKit & Pion (paket duplikat, ICE, dst.) hanya WARN ke atas; di INFO volumenya besar sekali.
-	// Log rekorder sendiri (masuk room, rekaman tersimpan, galat) tetap tercatat.
-	logger.InitFromConfig(&logger.Config{Level: envOr("RECORDER_SDK_LOG_LEVEL", "warn")}, "recorder")
-	lksdk.SetLogger(logger.GetLogger())
+	setupLogging(envOr("RECORDER_SDK_LOG_LEVEL", "warn"))
 
 	cleanOldTempFiles(cfg.TmpDir, 24*time.Hour)
 

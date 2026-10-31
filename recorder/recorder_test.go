@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -322,5 +324,14 @@ func TestReadErrorClassification(t *testing.T) {
 
 	if isReadTimeout(errors.New("jaringan putus")) || isTrackEnded(errors.New("jaringan putus")) {
 		t.Error("galat lain harus diperlakukan sebagai galat sungguhan")
+	}
+}
+
+func TestSetupLoggingKeepsAppInfoLogs(t *testing.T) {
+	// Regresi: logger.InitFromConfig menimpa slog bawaan dengan level SDK ("warn"); log rekorder sendiri
+	// (INFO: "rekaman tersimpan", "rekorder masuk ke room") tidak boleh ikut tersaring.
+	setupLogging("warn")
+	if !slog.Default().Enabled(context.Background(), slog.LevelInfo) {
+		t.Fatal("slog bawaan harus tetap mencatat INFO setelah setupLogging")
 	}
 }
