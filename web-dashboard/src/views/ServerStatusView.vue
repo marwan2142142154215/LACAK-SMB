@@ -79,6 +79,7 @@ const services = computed(() => snapshot.value?.services ?? [])
 const problems = computed(() => services.value.filter((service) => service.status === 'down' || service.status === 'warn'))
 const okCount = computed(() => services.value.filter((service) => service.status === 'ok').length)
 const units = computed(() => snapshot.value?.units ?? [])
+const usesPm2 = computed(() => snapshot.value?.units_manager === 'pm2')
 const system = computed(() => snapshot.value?.system ?? null)
 
 const overall = computed(() => {
@@ -268,7 +269,7 @@ onBeforeUnmount(() => clearInterval(timer))
 
             <div class="grid gap-5 xl:grid-cols-2">
                 <!-- Unit systemd -->
-                <BaseCard title="Layanan sistem (systemd)" :count="units.length || null">
+                <BaseCard :title="usesPm2 ? 'Proses server (pm2)' : 'Layanan sistem (systemd)'" :count="units.length || null">
                     <ul v-if="units.length" class="divide-y divide-base-800">
                         <li v-for="unit in units" :key="unit.name" class="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
                             <span class="led" :class="meta(unit.status).led" />
@@ -282,13 +283,14 @@ onBeforeUnmount(() => clearInterval(timer))
                         </li>
                     </ul>
                     <p v-else class="text-sm text-pretty text-base-500">
-                        Status unit systemd hanya tampil saat backend berjalan di server Linux. Daftar unit diatur lewat
-                        <code class="font-mono text-base-300">LACAKSMB_STATUS_SYSTEMD_UNITS</code>.
+                        Status proses hanya tampil saat backend berjalan di server Linux. Pengelola proses
+                        (<code class="font-mono text-base-300">LACAKSMB_STATUS_PROCESS_MANAGER</code>) dan daftarnya
+                        diatur lewat <code class="font-mono text-base-300">.env</code> backend.
                     </p>
                     <p v-if="units.some((unit) => unit.status === 'down')" class="mt-4 text-xs text-pretty text-base-500">
                         Jalankan di server:
                         <code class="font-mono text-base-300"
-                            >sudo systemctl restart
+                            >{{ usesPm2 ? 'pm2 restart' : 'sudo systemctl restart' }}
                             {{
                                 units
                                     .filter((unit) => unit.status === 'down')

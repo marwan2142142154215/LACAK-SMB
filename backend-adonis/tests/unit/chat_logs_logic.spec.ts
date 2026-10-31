@@ -32,7 +32,9 @@ import {
     heartbeatStatus,
     livekitHttpUrl,
     overallStatus,
+    parsePm2List,
     parseUnits,
+    pm2Statuses,
     probeOk,
     queueVerdict,
     storageVerdict,
@@ -460,5 +462,41 @@ test.group('Status server', () => {
         assert.equal(overallStatus(['ok', 'unknown']), 'ok')
         assert.equal(overallStatus(['ok', 'warn']), 'warn')
         assert.equal(overallStatus(['warn', 'down']), 'down')
+    })
+})
+
+test.group('Status server: proses pm2', () => {
+    const jlist = JSON.stringify([
+        { name: 'lacak-api', pm2_env: { status: 'online' } },
+        { name: 'lacak-gateway', pm2_env: { status: 'errored' } },
+        { name: 'lacak-bot', pm2_env: { status: 'stopped' } },
+        { name: 'lacak-api-queue', pm2_env: { status: 'waiting restart' } },
+    ])
+
+    test('status tiap proses dipetakan ke ok / warn / down / unknown', ({ assert }) => {
+        const units = pm2Statuses(
+            ['lacak-api', 'lacak-gateway', 'lacak-bot', 'lacak-api-queue', 'lacak-hilang'],
+            jlist
+        )
+        assert.deepEqual(
+            units.map((unit) => [unit.name, unit.status]),
+            [
+                ['lacak-api', 'ok'],
+                ['lacak-gateway', 'down'],
+                ['lacak-bot', 'down'],
+                ['lacak-api-queue', 'warn'],
+                ['lacak-hilang', 'unknown'],
+            ]
+        )
+    })
+
+    test('baris info pm2 sebelum JSON diabaikan', ({ assert }) => {
+        const states = parsePm2List(`[PM2] Spawning PM2 daemon\n${jlist}\n`)
+        assert.equal(states.get('lacak-api'), 'online')
+    })
+
+    test('keluaran rusak -> semua unknown, tidak melempar error', ({ assert }) => {
+        const units = pm2Statuses(['lacak-api'], 'bukan json')
+        assert.equal(units[0].status, 'unknown')
     })
 })

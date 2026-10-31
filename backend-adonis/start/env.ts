@@ -81,6 +81,10 @@ export default await Env.create(new URL('../', import.meta.url), {
     LACAKSMB_STATUS_GATEWAY_URL: Env.schema.string.optional(),
     LACAKSMB_STATUS_LIVEKIT_URL: Env.schema.string.optional(),
     LACAKSMB_STATUS_SYSTEMD_UNITS: Env.schema.string.optional(),
+    // Pengelola proses yang ditampilkan di Status server: systemd (bawaan) atau pm2.
+    LACAKSMB_STATUS_PROCESS_MANAGER: Env.schema.enum.optional(['systemd', 'pm2'] as const),
+    // Nama proses pm2 yang dipantau, dipisah koma (bawaan: semua proses lacak-*).
+    LACAKSMB_STATUS_PM2_PROCESSES: Env.schema.string.optional(),
     LACAKSMB_TRACKER_PROJECT_PATH: Env.schema.string.optional(),
     LACAKSMB_MASTER_PROJECT_PATH: Env.schema.string.optional(),
     LACAKSMB_LIVE_PROJECT_PATH: Env.schema.string.optional(),

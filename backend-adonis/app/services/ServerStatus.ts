@@ -58,7 +58,7 @@ export async function snapshot() {
             queueService(),
             httpServices(),
             storageService(),
-            systemdUnits(),
+            processUnits(),
             systemInfo(),
         ])
     const services = [api, database, cache, scheduler, queue, ...http, storage]
@@ -68,6 +68,7 @@ export async function snapshot() {
         overall: overallStatus(services.map((entry) => entry.status)),
         services,
         units,
+        units_manager: processManager(),
         system,
     }
 }
@@ -305,6 +306,79 @@ export function storageVerdict(free: number, total: number): [Status, string] {
         status,
         `Sisa ${formatBytes(free)} dari ${formatBytes(total)} (${Math.round(freeRatio * 100)}%)`,
     ]
+}
+
+export type ProcessManager = 'systemd' | 'pm2'
+
+/** Pengelola proses yang dipantau di panel "Layanan sistem": systemd (bawaan) atau pm2. */
+export function processManager(): ProcessManager {
+    return env.get('LACAKSMB_STATUS_PROCESS_MANAGER') ?? 'systemd'
+}
+
+function processUnits(): Promise<Unit[]> {
+    return processManager() === 'pm2' ? pm2Units() : systemdUnits()
+}
+
+const DEFAULT_PM2_PROCESSES =
+    'lacak-api,lacak-api-queue,lacak-api-scheduler,lacak-gateway,lacak-bot'
+
+/** Status proses pm2 (nama proses dari ecosystem.config.cjs) lewat `pm2 jlist`. */
+async function pm2Units(): Promise<Unit[]> {
+    const names = parseUnits(env.get('LACAKSMB_STATUS_PM2_PROCESSES', DEFAULT_PM2_PROCESSES))
+    if (!names.length || process.platform === 'win32') {
+        return []
+    }
+
+    const output = await new Promise<string>((resolve) => {
+        execFile(
+            'pm2',
+            ['jlist'],
+            { timeout: 8000, maxBuffer: 8 * 1024 * 1024 },
+            (_error, stdout) => resolve(String(stdout ?? ''))
+        )
+    })
+
+    return pm2Statuses(names, output)
+}
+
+/**
+ * `pm2 jlist` mencetak daftar proses sebagai satu baris JSON, kadang didahului
+ * baris info pm2 (mis. "[PM2] Spawning PM2 daemon"). Ambil baris JSON-nya saja.
+ */
+export function parsePm2List(output: string): Map<string, string> {
+    const states = new Map<string, string>()
+
+    for (const line of output.split(/\r?\n/).reverse()) {
+        if (!line.trimStart().startsWith('[')) continue
+        try {
+            const list = JSON.parse(line) as Array<{
+                name?: string
+                pm2_env?: { status?: string }
+            }>
+            for (const entry of list) {
+                if (entry.name) states.set(entry.name, entry.pm2_env?.status ?? 'unknown')
+            }
+            return states
+        } catch {
+            // Bukan JSON (mis. baris info pm2): coba baris sebelumnya.
+        }
+    }
+    return states
+}
+
+export function pm2Statuses(names: string[], output: string): Unit[] {
+    const states = parsePm2List(output)
+    return names.map((name) => {
+        const state = states.get(name) ?? 'unknown'
+        return { name, state, status: pm2Status(state) }
+    })
+}
+
+function pm2Status(state: string): Status {
+    if (state === 'online') return OK
+    if (['launching', 'waiting restart', 'stopping'].includes(state)) return WARN
+    if (['stopped', 'errored'].includes(state)) return DOWN
+    return UNKNOWN
 }
 
 /**
