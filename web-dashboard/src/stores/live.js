@@ -493,6 +493,7 @@ export const useLiveStore = defineStore('live', () => {
     }
 
     async function disconnect() {
+        watchSelection.value = null
         stopTransportCheck()
         stopHeartbeat()
         stopIdleWatch()
@@ -700,6 +701,10 @@ export const useLiveStore = defineStore('live', () => {
         await Promise.all(doomed.map(([, room]) => room.removeAllListeners().disconnect()))
         bump()
     }
+
+    // Pilihan site di Live Kerja ('all' atau id site), disimpan di sini supaya tetap sama saat
+    // pindah menu lalu kembali (jumlah room yang terbuka TIDAK bisa dipakai menebaknya).
+    const watchSelection = ref(null)
 
     // Daftar room yang diinginkan oleh pemanggilan setWatchRooms() terbaru.
     let wantedRooms = new Set()
@@ -1358,6 +1363,7 @@ export const useLiveStore = defineStore('live', () => {
         addWatchSites,
         removeWatchSites,
         setWatchRooms,
+        watchSelection,
         startWork,
         resumeIfBroadcasting,
         endWork,

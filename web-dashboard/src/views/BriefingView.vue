@@ -22,6 +22,7 @@ import { useRoute } from 'vue-router'
 
 import BackgroundPicker from '@/components/live/BackgroundPicker.vue'
 import LiveVideoTile from '@/components/live/LiveVideoTile.vue'
+import { connectErrorMessage } from '@/lib/connectError'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -170,7 +171,7 @@ async function joinBriefing(briefing) {
         const { data } = await api.post(`/briefings/${briefing.id}/join`)
         await enter(data.data, data.data.briefing.is_host)
     } catch (err) {
-        toast.error('Gagal bergabung', err.response?.data?.message ?? err.message)
+        toast.error('Gagal bergabung', connectErrorMessage(err))
         load()
     }
 }

@@ -34,6 +34,7 @@ import LivePairTile from '@/components/live/LivePairTile.vue'
 import LoginDeviceIcon from '@/components/live/LoginDeviceIcon.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import SearchSelect from '@/components/ui/SearchSelect.vue'
+import { connectErrorMessage } from '@/lib/connectError'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import WarnStaffDialog from '@/components/work/WarnStaffDialog.vue'
@@ -497,8 +498,9 @@ async function selectSite(siteId) {
         // "Semua site": hanya room site yang sedang ada staf live (bukan 49 room sekaligus);
         // site lain dibuka belakangan begitu ada staf yang mulai kerja (applyLiveStatus / syncLazyRooms).
         await live.setWatchRooms(wantedRoomKeys(), { allowEmpty: siteId === ALL_SITES })
+        live.watchSelection = siteId
     } catch (err) {
-        toast.error('Gagal membuka siaran', err.response?.data?.message ?? err.message)
+        toast.error('Gagal membuka siaran', connectErrorMessage(err))
     }
 }
 
@@ -642,11 +644,13 @@ onMounted(async () => {
     // Koneksi tetap hidup saat pindah halaman (disimpan di store) -- jangan
     // sambung ulang kalau memang sudah terhubung.
     if (live.mode !== 'idle') {
-        selectedSiteId.value = live.watchedSiteIds.length > 1 ? ALL_SITES : live.organizationId
+        // Pilihan terakhir diingat di store; tanpa itu (mis. sedang siaran) turunkan dari room yang terbuka.
+        selectedSiteId.value = live.watchSelection ?? (live.watchedSiteIds.length > 1 ? ALL_SITES : live.organizationId)
         // Leader yang siarannya baru dilanjutkan: hanya ruang leader yang
         // tersambung -- tonton lagi site-site yang dipegangnya.
         if (isLeader.value && live.isBroadcasting && live.watchedSiteIds.length === 1) await selectSite(ALL_SITES)
-        return
+        // Pilihan tidak diketahui: jangan dibiarkan kosong, lanjut ke pilihan bawaan di bawah.
+        if (selectedSiteId.value !== null) return
     }
 
     // Penonton multi-site langsung melihat semua staf yang live.
