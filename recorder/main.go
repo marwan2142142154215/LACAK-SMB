@@ -15,6 +15,9 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/livekit/protocol/logger"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 func main() {
@@ -35,6 +38,11 @@ func main() {
 		slog.Error("konfigurasi tidak valid", "err", err)
 		os.Exit(1)
 	}
+
+	// Log SDK LiveKit & Pion (paket duplikat, ICE, dst.) hanya WARN ke atas; di INFO volumenya besar sekali.
+	// Log rekorder sendiri (masuk room, rekaman tersimpan, galat) tetap tercatat.
+	logger.InitFromConfig(&logger.Config{Level: envOr("RECORDER_SDK_LOG_LEVEL", "warn")}, "recorder")
+	lksdk.SetLogger(logger.GetLogger())
 
 	cleanOldTempFiles(cfg.TmpDir, 24*time.Hour)
 
