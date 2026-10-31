@@ -43,6 +43,10 @@ router
         router.post('/users/:user/reactivate', [UsersController, 'reactivate'])
         router.post('/users/:user/reset-2fa', [UsersController, 'reset2fa'])
         router.put('/users/:user/site-access', [UsersController, 'syncSiteAccess'])
+        // Update massal staf: peran, status (aktifkan / suspen), dan akses site sekaligus.
+        router
+            .post('/users/bulk-update', [UsersController, 'bulkUpdate'])
+            .use(middleware.throttle({ max: 10, minutes: 1 }))
         // Atur akses site banyak user sekaligus (tambah / cabut / ganti, atau semua site).
         router
             .post('/users/bulk-site-access', [UsersController, 'bulkSiteAccess'])

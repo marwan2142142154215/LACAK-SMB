@@ -1,5 +1,5 @@
 <script setup>
-import { Ban, CheckCircle2, ChevronDown, KeyRound, MapPinned, Pencil, Search, ShieldOff, Trash2, UserPlus, Users } from '@lucide/vue'
+import { Ban, CheckCircle2, ChevronDown, KeyRound, Pencil, Search, ShieldOff, Trash2, UserCog, Users } from '@lucide/vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
@@ -9,6 +9,7 @@ import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BasePagination from '@/components/ui/BasePagination.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
+import BulkUpdateDialog from '@/components/staff/BulkUpdateDialog.vue'
 import SitePicker from '@/components/staff/SitePicker.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
@@ -84,12 +85,6 @@ const needsSiteAccess = computed(() => scopeOfRole(form.value.role) === 'granted
 
 function resetForm() {
     form.value = { name: '', username: '', email: '', password: '', role: 'admin', organization_id: null, site_access: [] }
-}
-
-function openCreate() {
-    editTarget.value = null
-    resetForm()
-    dialogOpen.value = true
 }
 
 function openEdit(user) {
@@ -183,18 +178,15 @@ function goToPage(next) {
 }
 
 // ---- Pilih banyak staf & atur site massal -------------------------------------------------
-// Hanya peran ber-cakupan "site yang diberikan" (Admin, Leader, atau peran buatan sendiri) yang punya
-// akses per site (user_site_access); peran lain tidak bisa dicentang. Pilihan bertahan saat
-// pindah halaman atau mengganti filter.
-const selectedIds = ref([])
-const bulkOpen = ref(false)
-const bulkMode = ref('add')
-const bulkAllSites = ref(false)
-const bulkSites = ref([])
-const bulkSubmitting = ref(false)
+// Pilihan staf untuk Update massal (centang di tabel; bertahan saat pindah halaman atau mengganti filter).
+// Dialog Update juga bisa mencari email sendiri, jadi centang di sini hanya jalan pintas.
+const selectedUsers = ref([])
+const selectedIds = computed(() => selectedUsers.value.map((user) => user.id))
+const updateOpen = ref(false)
 
-const isSelectable = (user) => scopeOfRole(user.role) === 'granted'
-const selectableOnPage = computed(() => staff.value.filter(isSelectable))
+const pick = (user) => ({ id: user.id, name: user.name, email: user.email })
+const isSelectable = () => true
+const selectableOnPage = computed(() => staff.value)
 const allOnPageSelected = computed(
     () => selectableOnPage.value.length > 0 && selectableOnPage.value.every((user) => selectedIds.value.includes(user.id)),
 )
@@ -202,62 +194,24 @@ const someOnPageSelected = computed(
     () => !allOnPageSelected.value && selectableOnPage.value.some((user) => selectedIds.value.includes(user.id)),
 )
 
-function toggleSelected(userId) {
-    selectedIds.value = selectedIds.value.includes(userId)
-        ? selectedIds.value.filter((id) => id !== userId)
-        : [...selectedIds.value, userId]
+function toggleSelected(user) {
+    selectedUsers.value = selectedIds.value.includes(user.id)
+        ? selectedUsers.value.filter((item) => item.id !== user.id)
+        : [...selectedUsers.value, pick(user)]
 }
 
 function togglePageSelection() {
     const pageIds = selectableOnPage.value.map((user) => user.id)
-    selectedIds.value = allOnPageSelected.value
-        ? selectedIds.value.filter((id) => !pageIds.includes(id))
-        : [...new Set([...selectedIds.value, ...pageIds])]
+    selectedUsers.value = allOnPageSelected.value
+        ? selectedUsers.value.filter((item) => !pageIds.includes(item.id))
+        : [...selectedUsers.value, ...selectableOnPage.value.filter((user) => !selectedIds.value.includes(user.id)).map(pick)]
 }
 
-function openBulk() {
-    bulkMode.value = 'add'
-    bulkAllSites.value = false
-    bulkSites.value = []
-    bulkOpen.value = true
-}
+const clearSelection = () => (selectedUsers.value = [])
 
-const bulkModeHint = computed(
-    () =>
-        ({
-            add: 'Site yang dipilih DITAMBAHKAN ke akses yang sudah dimiliki tiap staf.',
-            replace: 'Akses site tiap staf DIGANTI persis dengan pilihan di bawah. Site lain yang tadinya dimiliki dicabut.',
-            remove: 'Site yang dipilih DICABUT dari tiap staf. Site lainnya tidak berubah.',
-        })[bulkMode.value],
-)
-const bulkReady = computed(() => bulkAllSites.value || bulkSites.value.length > 0)
-
-async function submitBulk() {
-    bulkSubmitting.value = true
-    try {
-        const response = await api.post('/users/bulk-site-access', {
-            user_ids: selectedIds.value,
-            mode: bulkMode.value,
-            ...(bulkAllSites.value ? { all_sites: true } : { organization_ids: bulkSites.value }),
-        })
-        const result = response.data.data
-        toast.success(response.data.message, `${result.site_count} site`)
-        if (result.skipped.length > 0) {
-            toast.info(
-                `${result.skipped.length} staf dilewati`,
-                result.skipped.map((user) => user.name ?? `#${user.id}`).join(', '),
-            )
-        }
-        bulkOpen.value = false
-        selectedIds.value = []
-        await loadStaff()
-    } catch (err) {
-        const errors = err.response?.data?.errors
-        const detail = errors ? Object.values(errors).flat().join(' ') : err.response?.data?.message
-        toast.error('Gagal mengatur site massal', detail)
-    } finally {
-        bulkSubmitting.value = false
-    }
+async function onUpdateDone() {
+    clearSelection()
+    await loadStaff()
 }
 
 /** Ringkasan kolom "Akses site": banyak site (mis. auditor) tidak membanjiri baris tabel. */
@@ -419,7 +373,7 @@ onMounted(async () => {
             "
         >
             <template v-if="canManageAll" #actions>
-                <BaseButton @click="openCreate"><UserPlus class="size-4" /> Tambah staf</BaseButton>
+                <BaseButton @click="updateOpen = true"><UserCog class="size-4" /> Update staf</BaseButton>
             </template>
             <template v-if="!loading" #readouts>
                 <Readout label="Total" :value="counts.active + counts.suspended" />
@@ -469,12 +423,12 @@ onMounted(async () => {
                         <span class="font-mono font-semibold">{{ selectedIds.length }}</span> staf dipilih
                     </p>
                     <div class="flex items-center gap-2">
-                        <BaseButton size="sm" variant="ghost" @click="selectedIds = []">Batal pilih</BaseButton>
-                        <BaseButton size="sm" @click="openBulk"><MapPinned class="size-3.5" /> Atur site massal</BaseButton>
+                        <BaseButton size="sm" variant="ghost" @click="clearSelection">Batal pilih</BaseButton>
+                        <BaseButton size="sm" @click="updateOpen = true"><UserCog class="size-3.5" /> Update terpilih</BaseButton>
                     </div>
                 </div>
                 <p v-else-if="canManageAll && !loading && staff.some(isSelectable)" class="border-b border-base-800 px-5 py-2 text-xs text-base-500">
-                    Centang beberapa Admin atau Leader untuk mengatur akses site mereka sekaligus.
+                    Centang beberapa staf lalu pilih Update untuk mengganti peran, status, dan site mereka sekaligus.
                 </p>
 
                 <div v-if="loading" class="px-5 py-12 text-center text-sm text-base-500">Memuat daftar staf…</div>
@@ -490,10 +444,8 @@ onMounted(async () => {
                     v-else-if="staff.length === 0"
                     :icon="Users"
                     title="Belum ada staf"
-                    description="Tambahkan staf supaya mereka bisa masuk dan memantau site mereka."
-                >
-                    <BaseButton v-if="canManageAll" @click="openCreate"><UserPlus class="size-4" /> Tambah staf</BaseButton>
-                </EmptyState>
+                    description="Staf muncul otomatis setelah login lewat Account Center (belum aktif), lalu diaktifkan lewat Update staf."
+                />
                 <div v-else class="overflow-x-auto transition-opacity" :class="refreshing && 'opacity-60'">
                     <table class="data-table">
                         <thead>
@@ -502,7 +454,7 @@ onMounted(async () => {
                                     <input
                                         type="checkbox"
                                         class="size-4 accent-accent-500"
-                                        aria-label="Pilih semua Admin dan Leader di halaman ini"
+                                        aria-label="Pilih semua staf di halaman ini"
                                         :checked="allOnPageSelected"
                                         :indeterminate="someOnPageSelected"
                                         :disabled="selectableOnPage.length === 0"
@@ -525,7 +477,7 @@ onMounted(async () => {
                                         class="size-4 accent-accent-500"
                                         :aria-label="`Pilih ${user.name}`"
                                         :checked="selectedIds.includes(user.id)"
-                                        @change="toggleSelected(user.id)"
+                                        @change="toggleSelected(user)"
                                     />
                                 </td>
                                 <td>
@@ -641,60 +593,13 @@ onMounted(async () => {
             </template>
         </BaseDialog>
 
-        <BaseDialog
-            :open="bulkOpen"
-            title="Atur site massal"
-            :description="`Berlaku untuk ${selectedIds.length} staf terpilih (Admin / Leader). Mereka hanya bisa melihat data site yang diberikan.`"
-            size="lg"
-            @update:open="(v) => (bulkOpen = v)"
-        >
-            <form id="bulk-site-form" class="space-y-4" @submit.prevent="submitBulk">
-                <fieldset>
-                    <legend class="field-label">Tindakan</legend>
-                    <div class="grid gap-2 sm:grid-cols-3">
-                        <label
-                            v-for="option in [
-                                { value: 'add', label: 'Tambah site' },
-                                { value: 'replace', label: 'Ganti semua' },
-                                { value: 'remove', label: 'Cabut site' },
-                            ]"
-                            :key="option.value"
-                            class="flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm"
-                            :class="bulkMode === option.value ? 'border-accent-500 bg-accent-500/10 text-base-50' : 'border-base-700 text-base-300'"
-                        >
-                            <input v-model="bulkMode" type="radio" name="bulk-mode" :value="option.value" class="accent-accent-500" />
-                            {{ option.label }}
-                        </label>
-                    </div>
-                    <p class="mt-2 text-xs text-pretty text-base-400">{{ bulkModeHint }}</p>
-                </fieldset>
-
-                <label class="flex cursor-pointer items-start gap-2.5 rounded-lg border border-base-700 bg-base-850 p-3 text-sm text-base-100">
-                    <input v-model="bulkAllSites" type="checkbox" class="mt-0.5 size-4 accent-accent-500" />
-                    <span>
-                        <span class="font-medium">Semua site yang tersedia</span>
-                        <span class="block text-xs text-base-400">
-                            Berlaku untuk seluruh site saat ini (cocok untuk auditor). Site baru yang dibuat kemudian tidak otomatis ikut; ulangi
-                            langkah ini setelah menambah site.
-                        </span>
-                    </span>
-                </label>
-
-                <SitePicker v-model="bulkSites" :sites="organizations" label="Pilih site" :disabled="bulkAllSites" />
-            </form>
-            <template #footer>
-                <BaseButton variant="ghost" @click="bulkOpen = false">Batal</BaseButton>
-                <BaseButton
-                    type="submit"
-                    form="bulk-site-form"
-                    :variant="bulkMode === 'remove' ? 'danger' : 'primary'"
-                    :disabled="!bulkReady"
-                    :loading="bulkSubmitting"
-                >
-                    {{ bulkMode === 'remove' ? 'Cabut akses' : bulkMode === 'replace' ? 'Ganti akses' : 'Tambah akses' }}
-                </BaseButton>
-            </template>
-        </BaseDialog>
+        <BulkUpdateDialog
+            v-model:open="updateOpen"
+            :preselected="selectedUsers"
+            :roles="roleOptions"
+            :organizations="organizations"
+            @done="onUpdateDone"
+        />
 
         <BaseDialog
             :open="passwordDialogOpen"

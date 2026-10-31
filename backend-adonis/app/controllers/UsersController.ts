@@ -14,10 +14,12 @@ import {
     partitionUsers,
     resolveOrganizations,
     summarize,
+    type SkippedUser,
 } from '#services/BulkSiteAccess'
 import { removeBroadcaster } from '#services/Livekit'
 import { hasGrantBasedAccess } from '#services/OrganizationScope'
 import { ROLE_NAME_PATTERN } from '#services/RoleRules'
+import { parseBulkUserUpdate } from '#services/BulkUserUpdate'
 import { escapeLike, searchTermOf } from '#services/SearchTerm'
 import { closeSession, openSessionOf } from '#services/WorkPresence'
 import { fail, success } from '#services/ApiResponse'
@@ -371,6 +373,229 @@ export default class UsersController {
         })
 
         return success('Akses site diperbarui', await freshUserResource(user.id))
+    }
+
+    /**
+     * Update massal (menu Staf > Update): ganti peran, aktifkan / suspen, dan/atau atur akses
+     * site banyak staf sekaligus. Hanya pemegang users.manage (super_admin). Satu transaksi;
+     * staf yang tidak boleh diubah (akun layanan, akun sendiri untuk peran & status, peran
+     * tanpa akses per site untuk bagian site) dilewati dan dilaporkan.
+     */
+    async bulkUpdate(ctx: HttpContext) {
+        if (!(await canManage(ctx))) return forbidden(ctx)
+
+        const parsed = parseBulkUserUpdate(ctx.request.all())
+        if (!parsed.ok) {
+            return ctx.response
+                .status(422)
+                .send(fail('Data yang diberikan tidak valid.', parsed.errors))
+        }
+        const input = parsed.data
+        const actorId = ctx.authUser!.id
+
+        let roleId: number | null = null
+        if (input.role) {
+            const role = await db
+                .from('roles')
+                .where({ name: input.role, guard_name: 'web' })
+                .whereNot('name', 'telegram_bot_service')
+                .select('id')
+                .first()
+            if (!role) {
+                return ctx.response.status(422).send(
+                    fail('Data yang diberikan tidak valid.', {
+                        role: ['Peran tidak ditemukan.'],
+                    })
+                )
+            }
+            roleId = Number(role.id)
+        }
+
+        const outcome = await db.transaction(async (trx) => {
+            // Site dicek lebih dulu: ada yang tidak valid = tidak ada satu pun perubahan ditulis.
+            let siteIds: number[] = []
+            if (input.sites) {
+                const resolved = await resolveOrganizations(trx, input.sites.organizationIds)
+                if (resolved.missing.length > 0) {
+                    return { kind: 'missing', missing: resolved.missing } as const
+                }
+                if (input.sites.mode !== 'remove' && resolved.ids.length === 0) {
+                    return { kind: 'noSites' } as const
+                }
+                siteIds = resolved.ids
+            }
+
+            const rows = await trx
+                .from('users')
+                .whereIn('id', input.userIds)
+                .whereNull('deleted_at')
+                .select('id', 'name', 'is_active')
+            const found = new Map(rows.map((row) => [Number(row.id), row]))
+            const serviceRows = await trx
+                .from('model_has_roles')
+                .join('roles', 'roles.id', 'model_has_roles.role_id')
+                .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
+                .whereIn('model_has_roles.model_id', input.userIds)
+                .where('roles.name', 'telegram_bot_service')
+                .select('model_has_roles.model_id')
+            const serviceIds = new Set(serviceRows.map((row) => Number(row.model_id)))
+
+            const skipped: SkippedUser[] = []
+            const eligible: number[] = []
+            for (const id of input.userIds) {
+                const row = found.get(id)
+                if (!row) skipped.push({ id, name: null, reason: 'Staf tidak ditemukan' })
+                else if (serviceIds.has(id)) {
+                    skipped.push({ id, name: row.name, reason: 'Akun layanan tidak bisa diubah' })
+                } else eligible.push(id)
+            }
+
+            // Peran & status akun sendiri tidak diubah di sini (supaya tidak mengunci diri sendiri).
+            let accountIds = eligible
+            if ((roleId !== null || input.status) && eligible.includes(actorId)) {
+                accountIds = eligible.filter((id) => id !== actorId)
+                skipped.push({
+                    id: actorId,
+                    name: found.get(actorId)?.name ?? null,
+                    reason: 'Peran & status akun sendiri tidak bisa diubah di sini',
+                })
+            }
+
+            if (roleId !== null && accountIds.length > 0) {
+                await trx
+                    .from('model_has_roles')
+                    .where('model_type', LARAVEL_USER_MORPH)
+                    .whereIn('model_id', accountIds)
+                    .delete()
+                await trx.table('model_has_roles').multiInsert(
+                    accountIds.map((id) => ({
+                        role_id: roleId,
+                        model_type: LARAVEL_USER_MORPH,
+                        model_id: id,
+                    }))
+                )
+            }
+
+            let siteUserIds: number[] = []
+            if (input.sites) {
+                const partition = await partitionUsers(trx, eligible)
+                siteUserIds = partition.eligible
+                // Staf tanpa akses per site dicatat sekali saja (kalau belum tercatat karena hal lain).
+                for (const entry of partition.skipped) {
+                    if (!skipped.some((item) => item.id === entry.id)) skipped.push(entry)
+                }
+                await applyBulkSiteAccess(trx, {
+                    userIds: siteUserIds,
+                    organizationIds: siteIds,
+                    mode: input.sites.mode,
+                    grantedBy: actorId,
+                    removeEverything:
+                        input.sites.mode === 'remove' && input.sites.organizationIds === 'all',
+                })
+            }
+
+            const activated: number[] = []
+            const suspended: number[] = []
+            if (input.status === 'active') {
+                for (const id of accountIds)
+                    if (found.get(id)?.is_active !== true) activated.push(id)
+                if (activated.length > 0) {
+                    await trx
+                        .from('users')
+                        .whereIn('id', activated)
+                        .update({ is_active: true, updated_at: new Date() })
+                }
+            } else if (input.status === 'suspended') {
+                for (const id of accountIds)
+                    if (found.get(id)?.is_active !== false) suspended.push(id)
+                if (suspended.length > 0) {
+                    await trx
+                        .from('users')
+                        .whereIn('id', suspended)
+                        .update({ is_active: false, updated_at: new Date() })
+                }
+                // Semua sesi login yang disuspen dicabut supaya langsung keluar.
+                if (accountIds.length > 0) {
+                    await trx
+                        .from('personal_access_tokens')
+                        .where('tokenable_type', LARAVEL_USER_MORPH)
+                        .whereIn('tokenable_id', accountIds)
+                        .delete()
+                }
+            }
+
+            return {
+                kind: 'done',
+                skipped,
+                roleChanged: roleId !== null ? accountIds.length : 0,
+                activated,
+                suspended,
+                siteChanged: siteUserIds.length,
+                touched: new Set([...accountIds, ...siteUserIds]).size,
+            } as const
+        })
+
+        if (outcome.kind === 'missing') {
+            return ctx.response.status(422).send(
+                fail('Data yang diberikan tidak valid.', {
+                    organization_ids: [`Site tidak ditemukan: ${outcome.missing.join(', ')}`],
+                })
+            )
+        }
+        if (outcome.kind === 'noSites') {
+            return ctx.response.status(422).send(
+                fail('Data yang diberikan tidak valid.', {
+                    organization_ids: ['Belum ada site yang bisa diberikan.'],
+                })
+            )
+        }
+
+        // Yang baru disuspen langsung keluar dari Live Kerja; kegagalan satu staf tidak menghentikan yang lain.
+        let liveErrors = 0
+        for (const id of outcome.suspended) {
+            try {
+                await endLiveWork(ctx, id, 'suspended')
+            } catch {
+                liveErrors += 1
+            }
+        }
+
+        if (outcome.touched > 0) {
+            await writeActivity(ctx, {
+                logName: 'default',
+                description: 'Staf diperbarui massal',
+                event: 'updated',
+                subjectType: LARAVEL_USER_MORPH,
+                subjectId: null,
+                organizationId: null,
+                properties: {
+                    user_ids: input.userIds.slice(0, 200),
+                    role: input.role,
+                    status: input.status,
+                    site_mode: input.sites?.mode ?? null,
+                    all_sites: input.sites?.organizationIds === 'all',
+                    role_changed: outcome.roleChanged,
+                    activated: outcome.activated.length,
+                    suspended: outcome.suspended.length,
+                    site_changed: outcome.siteChanged,
+                },
+            })
+        }
+
+        return success(
+            outcome.touched > 0
+                ? `${outcome.touched} staf diperbarui`
+                : 'Tidak ada staf yang bisa diperbarui',
+            {
+                requested: input.userIds.length,
+                role_changed: outcome.roleChanged,
+                activated: outcome.activated.length,
+                suspended: outcome.suspended.length,
+                site_changed: outcome.siteChanged,
+                live_errors: liveErrors,
+                skipped: outcome.skipped,
+            }
+        )
     }
 
     /**
