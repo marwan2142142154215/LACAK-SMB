@@ -1,6 +1,7 @@
 import { createHash, createHmac } from 'node:crypto'
 import { test } from '@japa/runner'
 import { recordingEnabled, recordingPath, verifyWebhook } from '#services/Recording'
+import { spacesKey, spacesPrefix, stripSpacesPrefix } from '#services/Storage'
 
 // Sama dengan LIVEKIT_API_KEY / LIVEKIT_API_SECRET di .env.test.
 const API_KEY = 'kunci-uji'
@@ -52,5 +53,19 @@ test.group('Rekaman Live Kerja: penyimpanan', () => {
 
     test('rekaman mati selama Spaces belum diisi', ({ assert }) => {
         assert.isFalse(recordingEnabled())
+    })
+})
+
+test.group('Penyimpanan Spaces: folder khusus proyek', () => {
+    test('kunci objek selalu diawali folder lacaklive', ({ assert }) => {
+        assert.equal(spacesPrefix(), 'lacaklive')
+        assert.equal(spacesKey('recordings/1/2/x.webm'), 'lacaklive/recordings/1/2/x.webm')
+        assert.equal(spacesKey('/apk-builds/3/a.apk'), 'lacaklive/apk-builds/3/a.apk')
+    })
+
+    test('stripSpacesPrefix membalik spacesKey dan membiarkan path tanpa awalan', ({ assert }) => {
+        const path = 'chat/5/abc.png'
+        assert.equal(stripSpacesPrefix(spacesKey(path)), path)
+        assert.equal(stripSpacesPrefix(path), path)
     })
 })

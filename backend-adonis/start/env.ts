@@ -68,6 +68,8 @@ export default await Env.create(new URL('../', import.meta.url), {
     DO_SPACES_REGION: Env.schema.string.optional(),
     DO_SPACES_BUCKET: Env.schema.string.optional(),
     DO_SPACES_ENDPOINT: Env.schema.string.optional(),
+    // Folder khusus proyek di dalam bucket (bawaan "lacaklive").
+    DO_SPACES_PREFIX: Env.schema.string.optional(),
     DO_SPACES_URL: Env.schema.string.optional(),
 
     // Lain-lain dari config/lacaksmb.php backend-api

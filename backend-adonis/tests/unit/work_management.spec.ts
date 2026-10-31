@@ -71,8 +71,14 @@ test.group('Absensi: satu hari', () => {
         assert.equal(day({ now: wib('2026-10-26', '09:00') }).status, 'not_started')
         assert.equal(day({ now: wib('2026-10-26', '07:00') }).status, 'upcoming')
         assert.equal(
-            day({ leave: { user_id: 7, type: 'sakit', start_date: '2026-10-26', end_date: '2026-10-26' } })
-                .status,
+            day({
+                leave: {
+                    user_id: 7,
+                    type: 'sakit',
+                    start_date: '2026-10-26',
+                    end_date: '2026-10-26',
+                },
+            }).status,
             'leave'
         )
         // Minggu: bukan hari kerja shift ini.
@@ -80,7 +86,12 @@ test.group('Absensi: satu hari', () => {
     })
 
     test('shift malam selesai keesokan harinya', ({ assert }) => {
-        const night: Shift = { ...SHIFT, start_time: '22:00', end_time: '06:00', days: [1, 2, 3, 4, 5, 6, 7] }
+        const night: Shift = {
+            ...SHIFT,
+            start_time: '22:00',
+            end_time: '06:00',
+            days: [1, 2, 3, 4, 5, 6, 7],
+        }
         const result = day({
             shift: night,
             now: wib('2026-10-27', '12:00'),

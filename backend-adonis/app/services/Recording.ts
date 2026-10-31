@@ -3,7 +3,7 @@ import db from '@adonisjs/lucid/services/db'
 import log from '@adonisjs/core/services/logger'
 import env from '#start/env'
 import { issue, liveKitConfig, roomForOrganization } from '#services/Livekit'
-import { disk } from '#services/Storage'
+import { disk, spacesKey, stripSpacesPrefix } from '#services/Storage'
 import { openSessionOf } from '#services/WorkPresence'
 
 /**
@@ -107,7 +107,7 @@ export async function startTrackRecording(input: {
         const info = await egressApi('StartTrackEgress', {
             room_name: roomForOrganization(input.organizationId),
             track_id: input.trackSid,
-            file: { filepath, s3: spacesUpload() },
+            file: { filepath: spacesKey(filepath), s3: spacesUpload() },
         })
         const egressId = String(info.egress_id ?? info.egressId ?? '')
         if (!egressId) throw new Error('Egress tidak mengembalikan egress_id')
@@ -196,7 +196,7 @@ export async function handleEgressEnded(event: Record<string, unknown>) {
         .where('id', recording.id)
         .update({
             status: failed ? 'failed' : 'completed',
-            file_path: String(field(file, 'filename') ?? recording.file_path),
+            file_path: stripSpacesPrefix(String(field(file, 'filename') ?? recording.file_path)),
             size_bytes: size || null,
             error: errorText || null,
             ended_at: new Date(),

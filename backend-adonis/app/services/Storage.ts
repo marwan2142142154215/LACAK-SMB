@@ -17,9 +17,13 @@ import env from '#start/env'
  *
  * - "local"  = folder STORAGE_PATH (dulu storage/app/private backend-api,
  *              LARAVEL_STORAGE_PATH), jadi file lama tetap terbaca.
- * - "spaces" = DigitalOcean Spaces (S3), kredensial DO_SPACES_*.
+ * - "spaces" = DigitalOcean Spaces (S3), kredensial DO_SPACES_*. Semua objek
+ *              disimpan di bawah folder khusus proyek (DO_SPACES_PREFIX,
+ *              bawaan "lacaklive") supaya satu bucket bisa dipakai banyak
+ *              proyek tanpa tercampur.
  *
- * Path selalu relatif terhadap akar disk, sama dengan kolom file_path di DB.
+ * Path selalu relatif terhadap akar disk, sama dengan kolom file_path di DB:
+ * awalan folder TIDAK disimpan di DB, hanya ditambahkan saat bicara ke Spaces.
  */
 export type DiskName = 'local' | 'spaces'
 
@@ -41,6 +45,25 @@ export type TemporaryUrlOptions = {
     expiresInSeconds: number
     responseContentDisposition?: string
     responseContentType?: string
+}
+
+/** Folder proyek di bucket. Kosong/tidak diisi = "lacaklive" (tidak pernah di akar bucket). */
+const DEFAULT_SPACES_PREFIX = 'lacaklive'
+
+export function spacesPrefix(): string {
+    const configured = (env.get('DO_SPACES_PREFIX') ?? '').replace(/^\/+|\/+$/g, '')
+    return configured || DEFAULT_SPACES_PREFIX
+}
+
+/** Path relatif disk -> kunci objek di bucket: "recordings/1/x.webm" -> "lacaklive/recordings/1/x.webm". */
+export function spacesKey(path: string): string {
+    return `${spacesPrefix()}/${path.replace(/^\/+/, '')}`
+}
+
+/** Kebalikan spacesKey(): buang awalan folder proyek bila ada. */
+export function stripSpacesPrefix(key: string): string {
+    const prefix = `${spacesPrefix()}/`
+    return key.startsWith(prefix) ? key.slice(prefix.length) : key
 }
 
 class LocalDisk implements Disk {
@@ -111,7 +134,7 @@ class SpacesDisk implements Disk {
         await this.client.send(
             new PutObjectCommand({
                 Bucket: this.bucket,
-                Key: path,
+                Key: spacesKey(path),
                 Body: contents,
                 ACL: 'private',
                 ContentType: contentType,
@@ -121,7 +144,9 @@ class SpacesDisk implements Disk {
 
     async exists(path: string) {
         try {
-            await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: path }))
+            await this.client.send(
+                new HeadObjectCommand({ Bucket: this.bucket, Key: spacesKey(path) })
+            )
             return true
         } catch {
             return false
@@ -131,7 +156,7 @@ class SpacesDisk implements Disk {
     async read(path: string) {
         try {
             const object = await this.client.send(
-                new GetObjectCommand({ Bucket: this.bucket, Key: path })
+                new GetObjectCommand({ Bucket: this.bucket, Key: spacesKey(path) })
             )
             return { stream: object.Body as Readable, size: object.ContentLength ?? null }
         } catch {
@@ -140,7 +165,9 @@ class SpacesDisk implements Disk {
     }
 
     async delete(path: string) {
-        await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: path }))
+        await this.client.send(
+            new DeleteObjectCommand({ Bucket: this.bucket, Key: spacesKey(path) })
+        )
     }
 
     async temporaryUrl(path: string, options: TemporaryUrlOptions) {
@@ -148,7 +175,7 @@ class SpacesDisk implements Disk {
             this.client,
             new GetObjectCommand({
                 Bucket: this.bucket,
-                Key: path,
+                Key: spacesKey(path),
                 ResponseContentDisposition: options.responseContentDisposition,
                 ResponseContentType: options.responseContentType,
             }),
