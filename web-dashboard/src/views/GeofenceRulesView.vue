@@ -8,6 +8,7 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import BasePagination from '@/components/ui/BasePagination.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import SiteFilter from '@/components/ui/SiteFilter.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Readout from '@/components/ui/Readout.vue'
@@ -33,8 +34,12 @@ const editTarget = ref(null)
 const isGrantBased = computed(() => !auth.isSuperAdmin && ['admin', 'leader'].some((role) => auth.user?.roles?.includes(role)))
 const canPickSite = computed(() => auth.isSuperAdmin || isGrantBased.value)
 
+// Site TIDAK dipilihkan otomatis kalau ada lebih dari satu: aturan berlaku untuk site-nya, jadi pembuatnya
+// harus sengaja memilih. Hanya bila cuma ada satu site, itu yang dipakai.
+const onlySiteId = () => (organizations.value.length === 1 ? organizations.value[0].id : null)
+
 const emptyForm = () => ({
-    organization_id: isGrantBased.value ? (organizations.value[0]?.id ?? null) : (auth.user?.organization_id ?? null),
+    organization_id: isGrantBased.value ? onlySiteId() : (auth.user?.organization_id ?? null),
     rule_name: '',
     allowed_ssid: '',
     allowed_ip_cidr: '',
@@ -87,9 +92,10 @@ const total = ref(0)
 const counts = ref({ active: 0, inactive: 0, ble: 0 })
 const search = ref('')
 const statusFilter = ref('')
+const siteFilter = ref('')
 const refreshing = ref(false)
 const lastPage = computed(() => Math.max(Math.ceil(total.value / PER_PAGE), 1))
-const hasFilters = computed(() => Boolean(search.value.trim() || statusFilter.value))
+const hasFilters = computed(() => Boolean(search.value.trim() || statusFilter.value || siteFilter.value))
 let loadSeq = 0
 let searchTimer = null
 
@@ -104,6 +110,7 @@ async function loadRules() {
                 page: page.value,
                 search: search.value.trim() || undefined,
                 status: statusFilter.value || undefined,
+                organization_id: siteFilter.value || undefined,
             },
         })
         if (seq !== loadSeq) return
@@ -138,6 +145,7 @@ function goToPage(next) {
 function resetFilters() {
     search.value = ''
     statusFilter.value = ''
+    siteFilter.value = ''
 }
 
 watch(search, () => {
@@ -147,7 +155,7 @@ watch(search, () => {
         loadRules()
     }, SEARCH_DEBOUNCE_MS)
 })
-watch(statusFilter, () => {
+watch([statusFilter, siteFilter], () => {
     page.value = 1
     loadRules()
 })
@@ -160,9 +168,7 @@ async function loadOrganizations() {
         params: { per_page: 200 },
     })
     organizations.value = auth.isSuperAdmin ? response.data.data.items : response.data.data
-    if (!form.value.organization_id && organizations.value.length) {
-        form.value.organization_id = organizations.value[0].id
-    }
+    if (!form.value.organization_id) form.value.organization_id = onlySiteId()
 }
 
 async function loadDevices() {
@@ -284,6 +290,7 @@ onMounted(async () => {
                     </select>
                     <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
                 </label>
+                <SiteFilter v-if="organizations.length > 1" v-model="siteFilter" :sites="organizations" />
             </div>
 
             <div v-if="loading" class="py-12 text-center text-sm text-base-500">Memuat aturan…</div>
@@ -386,6 +393,7 @@ onMounted(async () => {
         >
             <form id="geofence-form" class="space-y-4" @submit.prevent="submitForm">
                 <BaseSelect v-if="canPickSite && !editTarget" v-model="form.organization_id" label="Site" required>
+                    <option :value="null" disabled>Pilih site</option>
                     <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
                 </BaseSelect>
                 <BaseInput v-model="form.rule_name" label="Nama aturan" placeholder="Kantor Pusat" required />

@@ -2,7 +2,19 @@ import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { accessOf, can, type Access } from '#services/Access'
-import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/ActivityLog'
+import {
+    laravelDate,
+    logModelEvent,
+    WORK_SESSION_MORPH,
+    writeActivity,
+} from '#services/ActivityLog'
+import {
+    applyBulkSiteAccess,
+    parseBulkSiteAccess,
+    partitionUsers,
+    resolveOrganizations,
+    summarize,
+} from '#services/BulkSiteAccess'
 import { removeBroadcaster } from '#services/Livekit'
 import { hasGrantBasedAccess } from '#services/OrganizationScope'
 import { escapeLike, searchTermOf } from '#services/SearchTerm'
@@ -347,7 +359,88 @@ export default class UsersController {
             syncSites(trx, user.id, data.organization_ids, ctx.authUser!.id)
         )
 
+        await writeActivity(ctx, {
+            logName: 'default',
+            description: 'Akses site diperbarui',
+            event: 'updated',
+            subjectType: LARAVEL_USER_MORPH,
+            subjectId: user.id,
+            organizationId: null,
+            properties: { site_count: new Set(data.organization_ids).size },
+        })
+
         return success('Akses site diperbarui', await freshUserResource(user.id))
+    }
+
+    /**
+     * Atur akses site banyak user sekaligus (tambah / cabut / ganti), termasuk
+     * "semua site". Hanya pemegang users.manage (super_admin). Satu transaksi.
+     */
+    async bulkSiteAccess(ctx: HttpContext) {
+        if (!(await canManage(ctx))) return forbidden(ctx)
+
+        const parsed = parseBulkSiteAccess(ctx.request.all())
+        if (!parsed.ok) {
+            return ctx.response
+                .status(422)
+                .send(fail('Data yang diberikan tidak valid.', parsed.errors))
+        }
+        const input = parsed.data
+
+        const outcome = await db.transaction(async (trx) => {
+            const { eligible, skipped } = await partitionUsers(trx, input.userIds)
+            const { ids, missing } = await resolveOrganizations(trx, input.organizationIds)
+            if (missing.length > 0) return { kind: 'missing', missing } as const
+            if (input.mode !== 'remove' && ids.length === 0) return { kind: 'noSites' } as const
+
+            await applyBulkSiteAccess(trx, {
+                userIds: eligible,
+                organizationIds: ids,
+                mode: input.mode,
+                grantedBy: ctx.authUser!.id,
+                removeEverything: input.mode === 'remove' && input.organizationIds === 'all',
+            })
+            return { kind: 'done', eligible, skipped, siteCount: ids.length } as const
+        })
+
+        if (outcome.kind === 'missing') {
+            return ctx.response.status(422).send(
+                fail('Data yang diberikan tidak valid.', {
+                    organization_ids: [`Site tidak ditemukan: ${outcome.missing.join(', ')}`],
+                })
+            )
+        }
+        if (outcome.kind === 'noSites') {
+            return ctx.response.status(422).send(
+                fail('Data yang diberikan tidak valid.', {
+                    organization_ids: ['Belum ada site yang bisa diberikan.'],
+                })
+            )
+        }
+
+        if (outcome.eligible.length > 0) {
+            await writeActivity(ctx, {
+                logName: 'default',
+                description: 'Akses site diatur massal',
+                event: 'updated',
+                subjectType: LARAVEL_USER_MORPH,
+                subjectId: null,
+                organizationId: null,
+                properties: summarize(input, outcome.siteCount, outcome.eligible.length),
+            })
+        }
+
+        return success(
+            outcome.eligible.length > 0
+                ? `Akses site ${outcome.eligible.length} user diperbarui`
+                : 'Tidak ada user yang bisa diatur',
+            {
+                updated_users: outcome.eligible.length,
+                site_count: outcome.siteCount,
+                mode: input.mode,
+                skipped: outcome.skipped,
+            }
+        )
     }
 }
 

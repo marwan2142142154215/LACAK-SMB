@@ -12,6 +12,7 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import BasePagination from '@/components/ui/BasePagination.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import SiteFilter from '@/components/ui/SiteFilter.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Readout from '@/components/ui/Readout.vue'
@@ -89,9 +90,13 @@ const totalAll = ref(0)
 const countByStatus = ref({})
 const search = ref('')
 const statusFilter = ref('')
+const siteFilter = ref('')
+const typeFilter = ref('')
 const refreshing = ref(false)
 const lastPage = computed(() => Math.max(Math.ceil(total.value / PER_PAGE), 1))
-const hasFilters = computed(() => Boolean(search.value.trim() || statusFilter.value))
+const hasFilters = computed(() =>
+    Boolean(search.value.trim() || statusFilter.value || siteFilter.value || typeFilter.value),
+)
 let loadSeq = 0
 let searchTimer = null
 
@@ -121,6 +126,8 @@ async function loadBuilds() {
                 page: page.value,
                 search: search.value.trim() || undefined,
                 status: statusFilter.value || undefined,
+                organization_id: siteFilter.value || undefined,
+                apk_type: typeFilter.value || undefined,
             },
         })
         if (seq !== loadSeq) return
@@ -152,6 +159,8 @@ function goToPage(next) {
 function resetFilters() {
     search.value = ''
     statusFilter.value = ''
+    siteFilter.value = ''
+    typeFilter.value = ''
 }
 
 watch(search, () => {
@@ -161,9 +170,15 @@ watch(search, () => {
         loadBuilds()
     }, SEARCH_DEBOUNCE_MS)
 })
-watch(statusFilter, () => {
+watch([statusFilter, siteFilter, typeFilter], () => {
     page.value = 1
     loadBuilds()
+})
+// Site yang dipilih di penyaring ikut menjadi pilihan awal form build/unggah (tetap terlihat & bisa diganti).
+watch(siteFilter, (id) => {
+    if (!id) return
+    generateForm.value.organization_id = id
+    uploadForm.value.organization_id = id
 })
 
 // Root memilih dari semua site; admin & leader dari site yang dipegangnya
@@ -176,9 +191,11 @@ async function loadOrganizations() {
         ? await api.get('/organizations', { params: { per_page: 200 } })
         : await api.get('/live/sites')
     organizations.value = auth.isSuperAdmin ? response.data.data.items : response.data.data
-    const fallback = organizations.value[0]?.id ?? null
-    if (!generateForm.value.organization_id) generateForm.value.organization_id = fallback
-    if (!uploadForm.value.organization_id) uploadForm.value.organization_id = fallback
+    // Site TIDAK dipilihkan otomatis kalau ada lebih dari satu: APK terikat ke site-nya, jadi pemilihnya
+    // harus sengaja memilih. Hanya bila cuma ada satu site, itu yang dipakai.
+    const only = organizations.value.length === 1 ? organizations.value[0].id : null
+    if (!generateForm.value.organization_id) generateForm.value.organization_id = only
+    if (!uploadForm.value.organization_id) uploadForm.value.organization_id = only
 }
 
 function handleFileChange(event) {
@@ -293,6 +310,18 @@ onBeforeUnmount(() => {
                         </select>
                         <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
                     </label>
+                    <SiteFilter v-if="organizations.length > 1" v-model="siteFilter" :sites="organizations" />
+                    <label class="relative">
+                        <span class="sr-only">Filter aplikasi</span>
+                        <select v-model="typeFilter" class="field-control h-9 appearance-none pr-8 text-sm">
+                            <option value="">Semua aplikasi</option>
+                            <option value="tracker">SMB Pelacak</option>
+                            <option value="master">SMB Admin</option>
+                            <option value="live">SMB Live Kerja</option>
+                            <option value="server">Server</option>
+                        </select>
+                        <ChevronDown class="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-base-500" />
+                    </label>
                 </div>
 
                 <div v-if="loading" class="px-5 py-12 text-center text-sm text-base-500">Memuat build…</div>
@@ -394,11 +423,17 @@ onBeforeUnmount(() => {
                     <option value="server">Server — lacak-server.exe untuk komputer kantor</option>
                 </BaseSelect>
                 <BaseSelect
-                    v-if="canPickSite && !UNIVERSAL_TYPES.includes(generateForm.apk_type)"
+                    v-if="canPickSite"
                     v-model="generateForm.organization_id"
-                    label="Site"
+                    :label="UNIVERSAL_TYPES.includes(generateForm.apk_type) ? 'Site tempat arsip' : 'Site tujuan APK'"
+                    :hint="
+                        UNIVERSAL_TYPES.includes(generateForm.apk_type)
+                            ? 'Aplikasi ini berlaku untuk semua site; site ini hanya tempat arsip dan unduhannya (terlihat oleh yang punya akses site ini).'
+                            : 'APK terikat ke site ini dan tidak bisa dipindah. Pastikan sudah benar.'
+                    "
                     required
                 >
+                    <option :value="null" disabled>Pilih site</option>
                     <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
                 </BaseSelect>
                 <BaseInput v-model="generateForm.version" label="Versi" placeholder="1.0.0" required />
@@ -449,7 +484,14 @@ onBeforeUnmount(() => {
             @update:open="(v) => (uploadDialogOpen = v)"
         >
             <form id="upload-form" class="space-y-4" @submit.prevent="submitUpload">
-                <BaseSelect v-if="canPickSite" v-model="uploadForm.organization_id" label="Site" required>
+                <BaseSelect
+                    v-if="canPickSite"
+                    v-model="uploadForm.organization_id"
+                    label="Site tujuan APK"
+                    hint="APK terikat ke site ini. Pastikan sudah benar."
+                    required
+                >
+                    <option :value="null" disabled>Pilih site</option>
                     <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
                 </BaseSelect>
                 <BaseInput v-model="uploadForm.version" label="Versi" placeholder="1.0.0" required />

@@ -34,6 +34,7 @@ const DEFAULT_MODEL_PER_PAGE = 15
 /** Per halaman paling banyak yang dilayani daftar APK build. */
 const MAX_PER_PAGE = 100
 const BUILD_STATUSES = ['pending', 'building', 'success', 'failed']
+const APK_TYPES = ['tracker', 'master', 'live', 'server']
 
 type ApkBuildRow = {
     id: number
@@ -73,6 +74,8 @@ export default class ApkBuildsController {
         const search = searchTermOf(ctx.request.input('search'))
         const rawStatus = String(ctx.request.input('status') ?? '')
         const status = BUILD_STATUSES.includes(rawStatus) ? rawStatus : null
+        const rawType = String(ctx.request.input('apk_type') ?? '')
+        const apkType = APK_TYPES.includes(rawType) ? rawType : null
 
         const scoped = () => {
             const query = buildsQuery()
@@ -83,6 +86,7 @@ export default class ApkBuildsController {
         }
         const matching = () => {
             const query = scoped()
+            if (apkType) query.where('apk_builds.apk_type', apkType)
             if (search) {
                 const pattern = `%${escapeLike(search)}%`
                 query.where((match) =>

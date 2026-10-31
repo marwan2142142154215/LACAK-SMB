@@ -42,6 +42,10 @@ router
         router.post('/users/:user/reactivate', [UsersController, 'reactivate'])
         router.post('/users/:user/reset-2fa', [UsersController, 'reset2fa'])
         router.put('/users/:user/site-access', [UsersController, 'syncSiteAccess'])
+        // Atur akses site banyak user sekaligus (tambah / cabut / ganti, atau semua site).
+        router
+            .post('/users/bulk-site-access', [UsersController, 'bulkSiteAccess'])
+            .use(middleware.throttle({ max: 10, minutes: 1 }))
 
         // Wajib/tidaknya 2FA -- security.manage (super_admin) saja.
         router.get('/settings/security', [SecuritySettingsController, 'show'])

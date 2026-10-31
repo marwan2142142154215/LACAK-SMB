@@ -108,7 +108,9 @@ async function loadOrganizations() {
     if (!auth.isSuperAdmin) return
     const response = await api.get('/organizations', { params: { per_page: 200 } })
     organizations.value = response.data.data.items
-    if (!form.value.organization_id && organizations.value.length) {
+    // Site tidak dipilihkan otomatis kalau ada lebih dari satu: binding berlaku untuk site-nya,
+    // jadi pembuatnya harus sengaja memilih.
+    if (!form.value.organization_id && organizations.value.length === 1) {
         form.value.organization_id = organizations.value[0].id
     }
 }
@@ -248,6 +250,7 @@ onMounted(async () => {
         >
             <form id="binding-form" class="space-y-4" @submit.prevent="submitForm">
                 <BaseSelect v-if="auth.isSuperAdmin" v-model="form.organization_id" label="Site" required>
+                    <option :value="null" disabled>Pilih site</option>
                     <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
                 </BaseSelect>
                 <BaseInput v-model="form.telegram_chat_id" label="Chat ID grup" placeholder="-100123456789" required />

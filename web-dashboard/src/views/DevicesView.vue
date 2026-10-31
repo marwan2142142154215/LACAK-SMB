@@ -11,6 +11,7 @@ import BaseInput from '@/components/ui/BaseInput.vue'
 import BasePagination from '@/components/ui/BasePagination.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import SiteFilter from '@/components/ui/SiteFilter.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Readout from '@/components/ui/Readout.vue'
@@ -63,6 +64,7 @@ const page = ref(1)
 const total = ref(0)
 const totalAll = ref(0)
 const countByStatus = ref({})
+const siteFilter = ref('')
 const refreshing = ref(false)
 const lastPage = computed(() => Math.max(Math.ceil(total.value / PER_PAGE), 1))
 let loadSeq = 0
@@ -105,6 +107,7 @@ async function loadDevices() {
                 page: page.value,
                 search: search.value.trim() || undefined,
                 status: statusFilter.value === 'all' ? undefined : statusFilter.value,
+                organization_id: siteFilter.value || undefined,
             },
         })
         if (seq !== loadSeq) return
@@ -140,7 +143,7 @@ watch(search, () => {
         loadDevices()
     }, SEARCH_DEBOUNCE_MS)
 })
-watch(statusFilter, () => {
+watch([statusFilter, siteFilter], () => {
     page.value = 1
     loadDevices()
 })
@@ -310,6 +313,8 @@ onMounted(() => {
                             }}</span>
                         </button>
                     </div>
+                    <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                    <SiteFilter v-if="sites.length > 1" v-model="siteFilter" :sites="sites" />
                     <label class="relative w-full sm:w-64">
                         <span class="sr-only">Cari device</span>
                         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-base-500" />
@@ -321,6 +326,7 @@ onMounted(() => {
                             class="field-control !py-2 pl-9"
                         />
                     </label>
+                    </div>
                 </div>
 
                 <div v-if="loading" class="px-5 py-12 text-center text-sm text-base-500">Memuat device…</div>
