@@ -24,4 +24,8 @@ server-gui/build/
 server-gui/dist/
 server-gui/lacak-server.spec
 lacak-server.exe
+
+# Binary rekorder Go (dibangun di server: cd recorder && go build -o lacak-recorder .)
+/recorder/lacak-recorder
+/recorder/lacak-recorder.exe
 server-gui/cloudflare_debug.log

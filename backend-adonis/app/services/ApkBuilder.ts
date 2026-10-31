@@ -46,22 +46,32 @@ export type ApkBuilderConfig = {
 }
 
 /**
- * config/lacaksmb.php backend-api. Bawaannya relatif terhadap folder
- * backend-adonis (setara base_path('..') di Laravel); di server sebaiknya
- * LACAKSMB_*_PROJECT_PATH diisi eksplisit.
+ * Akar repositori (folder yang berisi android-live-app dst.) dari folder aplikasi yang sedang jalan.
+ * Mode pengembangan: aplikasi jalan dari backend-adonis/ -> akar = satu tingkat di atasnya.
+ * Produksi: aplikasi jalan dari backend-adonis/build/ (hasil `node ace build`) -> akar = DUA tingkat
+ * di atas. Tanpa pembedaan ini, bawaan menunjuk ke backend-adonis/android-live-app (tidak ada).
+ */
+export function repositoryRoot(appPath: string): string {
+    // Pemisah Windows (\) disamakan jadi / (toWslPath dan buildScriptPath memang memakai /).
+    const parts = appPath.split('\\').join('/').replace(/\/+$/, '').split('/')
+    const upLevels = parts.at(-1) === 'build' ? 2 : 1
+    return parts.slice(0, parts.length - upLevels).join('/')
+}
+
+/**
+ * config/lacaksmb.php backend-api. Bawaannya relatif terhadap akar repositori (lihat repositoryRoot);
+ * LACAKSMB_*_PROJECT_PATH di .env selalu menang kalau diisi.
  */
 export function apkBuilderConfig(): ApkBuilderConfig {
+    const root = repositoryRoot(app.makePath())
     return {
         runner:
             env.get('LACAKSMB_APK_BUILD_RUNNER') ?? (process.platform === 'win32' ? 'wsl' : 'bash'),
         trackerProjectPath:
-            env.get('LACAKSMB_TRACKER_PROJECT_PATH') ?? app.makePath('..', 'android-tracked-app'),
-        masterProjectPath:
-            env.get('LACAKSMB_MASTER_PROJECT_PATH') ?? app.makePath('..', 'android-master-app'),
-        liveProjectPath:
-            env.get('LACAKSMB_LIVE_PROJECT_PATH') ?? app.makePath('..', 'android-live-app'),
-        serverExePath:
-            env.get('LACAKSMB_SERVER_EXE_PATH') ?? app.makePath('..', 'lacak-server.exe'),
+            env.get('LACAKSMB_TRACKER_PROJECT_PATH') ?? `${root}/android-tracked-app`,
+        masterProjectPath: env.get('LACAKSMB_MASTER_PROJECT_PATH') ?? `${root}/android-master-app`,
+        liveProjectPath: env.get('LACAKSMB_LIVE_PROJECT_PATH') ?? `${root}/android-live-app`,
+        serverExePath: env.get('LACAKSMB_SERVER_EXE_PATH') ?? `${root}/lacak-server.exe`,
         wslDistro: env.get('LACAKSMB_WSL_DISTRO') ?? 'Ubuntu',
         publicGatewayUrl: env.get('LACAKSMB_PUBLIC_GATEWAY_URL') ?? 'https://ws.salahmu.fun',
         publicBackendApiUrl:

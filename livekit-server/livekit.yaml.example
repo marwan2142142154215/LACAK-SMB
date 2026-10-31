@@ -30,12 +30,16 @@ room:
 logging:
   level: info
   pion_level: error
-# ---- Rekaman Live Kerja (opsional, lihat README "Rekaman") ----
-# Aktifkan bersama service egress (docker compose --profile recording up -d).
+# ---- Rekaman Live Kerja (opsional) ----
+# Tanpa Docker: rekorder ringan di folder recorder/ (lihat recorder/README.md). Yang dibutuhkan dari
+# LiveKit HANYA webhook ini (backend tahu ada track baru dari sini); Redis tidak diperlukan.
+# webhook:
+#   api_key: GANTI_API_KEY      # sama dengan key di bagian keys: di atas
+#   urls:
+#     - http://127.0.0.1:7564/api/v1/livekit/webhook
+#
+# Egress resmi (Docker) -- hanya kalau memilih jalur itu: aktifkan juga blok redis ini
+# (service egress: docker compose --profile recording up -d).
 # redis:
 #   address: 127.0.0.1:6379
 #   db: 5
-# webhook:
-#   api_key: GANTI_API_KEY
-#   urls:
-#     - https://api.salahmu.fun/api/v1/livekit/webhook

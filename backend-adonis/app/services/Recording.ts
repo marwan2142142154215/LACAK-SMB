@@ -25,6 +25,19 @@ export const RECORDING_SEGMENT_MINUTES = 60
 export const RECORDING_SOURCES = ['camera', 'screen_share'] as const
 export type RecordingSource = (typeof RECORDING_SOURCES)[number]
 
+/**
+ * Sumber yang benar-benar direkam: RECORDING_SOURCES di .env (pisah koma), bawaan semuanya.
+ * Kamera dan layar sama-sama besar (±1 GB/jam per kamera, ±0,3 GB/jam per layar); merekam layar saja
+ * memangkas penyimpanan dan beban jauh. Nilai yang tidak dikenal diabaikan.
+ */
+export function activeRecordingSources(
+    raw: string | undefined = env.get('RECORDING_SOURCES')
+): RecordingSource[] {
+    if (!raw || !raw.trim()) return [...RECORDING_SOURCES]
+    const wanted = raw.split(',').map((item) => item.trim().toLowerCase())
+    return RECORDING_SOURCES.filter((source) => wanted.includes(source))
+}
+
 export function recordingEnabled(): boolean {
     return Boolean(
         env.get('DO_SPACES_KEY') &&
@@ -46,10 +59,24 @@ function spacesUpload() {
     }
 }
 
-/** Panggil API Egress LiveKit (Twirp JSON) dengan token roomRecord. */
+/** Galat dari API Egress/rekorder, membawa kode HTTP supaya pemanggil bisa membedakan "tidak ditemukan". */
+export class EgressApiError extends Error {
+    constructor(
+        message: string,
+        readonly status: number
+    ) {
+        super(message)
+    }
+}
+
+/**
+ * Panggil API Egress (Twirp JSON) dengan token roomRecord. Tujuannya RECORDER_URL kalau diisi
+ * (rekorder ringan tanpa Docker, folder recorder/), selain itu server LiveKit (Egress resmi).
+ */
 async function egressApi(method: string, body: Record<string, unknown>) {
     const config = liveKitConfig()
-    const httpUrl = config.url.replace(/\/+$/, '').replace(/^ws(s?):\/\//, 'http$1://')
+    const target = env.get('RECORDER_URL') || config.url
+    const httpUrl = target.replace(/\/+$/, '').replace(/^ws(s?):\/\//, 'http$1://')
     const response = await fetch(`${httpUrl}/twirp/livekit.Egress/${method}`, {
         method: 'POST',
         headers: {
@@ -61,8 +88,9 @@ async function egressApi(method: string, body: Record<string, unknown>) {
     })
     const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null
     if (!response.ok) {
-        throw new Error(
-            `Egress ${method} gagal (${response.status}): ${String(payload?.msg ?? '')}`
+        throw new EgressApiError(
+            `Egress ${method} gagal (${response.status}): ${String(payload?.msg ?? '')}`,
+            response.status
         )
     }
     return payload ?? {}
@@ -132,11 +160,18 @@ export async function startTrackRecording(input: {
     }
 }
 
-export async function stopEgress(egressId: string) {
+/**
+ * Hentikan satu rekaman. 'unknown' = perekam tidak mengenal egress_id itu (mis. perekam di-restart,
+ * rekamannya sudah hilang) -- pemanggil harus menganggapnya selesai supaya rekaman tidak macet.
+ */
+export async function stopEgress(egressId: string): Promise<'stopped' | 'unknown' | 'error'> {
     try {
         await egressApi('StopEgress', { egress_id: egressId })
+        return 'stopped'
     } catch (error) {
+        if (error instanceof EgressApiError && error.status === 404) return 'unknown'
         log.warn({ err: error, egressId }, 'Gagal menghentikan rekaman Live Kerja')
+        return 'error'
     }
 }
 
@@ -157,7 +192,8 @@ export async function handleTrackPublished(event: Record<string, unknown>) {
     const userId = /^user-(\d+)$/.exec(String(identity ?? ''))?.[1]
     const trackSid = String(field(track, 'sid') ?? '')
     const source = String(field(track, 'source') ?? '').toLowerCase() as RecordingSource
-    if (!organizationId || !userId || !trackSid || !RECORDING_SOURCES.includes(source)) return
+    if (!organizationId || !userId || !trackSid || !activeRecordingSources().includes(source))
+        return
 
     const already = await db
         .from('live_recordings')
@@ -226,7 +262,19 @@ export async function rotateRecordings(now: Date = new Date()): Promise<number> 
             .from('live_recordings')
             .where('id', recording.id)
             .update({ status: 'rotating', updated_at: now })
-        await stopEgress(recording.egress_id)
+        const outcome = await stopEgress(recording.egress_id)
+        if (outcome === 'unknown') {
+            // Perekam tidak punya rekaman ini lagi: tutup barisnya sebagai gagal; karena statusnya 'rotating',
+            // handleEgressEnded langsung memulai rekaman berikutnya untuk track yang sama.
+            await handleEgressEnded({
+                event: 'egress_ended',
+                egressInfo: {
+                    egressId: recording.egress_id,
+                    status: 'EGRESS_FAILED',
+                    error: 'Rekaman tidak dikenal perekam (kemungkinan perekam di-restart)',
+                },
+            })
+        }
     }
     return due.length
 }

@@ -19,7 +19,13 @@
  */
 const path = require('node:path')
 
+const fs = require('node:fs')
+
 const dir = (name) => path.join(__dirname, name, 'build')
+
+// Rekorder ringan (folder recorder/, Go) hanya ikut dijalankan kalau binary-nya sudah dibangun di server:
+//   cd recorder && go build -o lacak-recorder .
+const recorderBinary = path.join(__dirname, 'recorder', 'lacak-recorder')
 
 /** Pengaturan bersama: batas restart meniru StartLimit systemd (5x / 5 menit). */
 const base = {
@@ -76,5 +82,20 @@ module.exports = {
             args: 'bot:run',
             kill_timeout: 10000,
         },
+        // Perekam Live Kerja tanpa Docker: menulis track VP8 staf ke WebM lalu mengunggah ke Spaces.
+        // Membaca key LiveKit dari .env backend. Berhenti dengan menyelesaikan berkas yang sedang berjalan.
+        ...(fs.existsSync(recorderBinary)
+            ? [
+                  {
+                      ...base,
+                      name: 'lacak-recorder',
+                      cwd: path.join(__dirname, 'recorder'),
+                      script: recorderBinary,
+                      interpreter: 'none',
+                      args: '-env ../backend-adonis/.env',
+                      kill_timeout: 100000,
+                  },
+              ]
+            : []),
     ],
 }

@@ -22,6 +22,17 @@ cp .env build/.env
 echo "==> Restart semua proses backend"
 pm2 restart lacak-api lacak-api-queue lacak-api-scheduler --update-env
 
+# Rekorder Live Kerja (opsional): dibangun hanya kalau Go terpasang dan folder recorder/ ada.
+if command -v go >/dev/null 2>&1 && [ -d "$ROOT/recorder" ]; then
+    echo "==> Rekorder: build"
+    (cd "$ROOT/recorder" && go build -o lacak-recorder .)
+    if pm2 describe lacak-recorder >/dev/null 2>&1; then
+        pm2 restart lacak-recorder --update-env
+    else
+        echo "    (belum terdaftar di pm2: pm2 start ecosystem.config.cjs --only lacak-recorder && pm2 save)"
+    fi
+fi
+
 echo "==> Dashboard: build & salin"
 cd "$ROOT/web-dashboard"
 npm ci

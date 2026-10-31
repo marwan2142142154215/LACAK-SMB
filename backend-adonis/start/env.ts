@@ -74,6 +74,11 @@ export default await Env.create(new URL('../', import.meta.url), {
     // Folder khusus proyek di dalam bucket (bawaan "lacaklive").
     DO_SPACES_PREFIX: Env.schema.string.optional(),
     DO_SPACES_URL: Env.schema.string.optional(),
+    // Rekorder ringan (folder recorder/) pengganti LiveKit Egress, mis. http://127.0.0.1:7870.
+    // Kosong = pakai Egress resmi lewat server LiveKit.
+    RECORDER_URL: Env.schema.string.optional(),
+    // Sumber yang direkam, pisah koma: camera, screen_share (bawaan keduanya).
+    RECORDING_SOURCES: Env.schema.string.optional(),
 
     // Lain-lain dari config/lacaksmb.php backend-api
     LACAKSMB_PUBLIC_GATEWAY_URL: Env.schema.string.optional(),
