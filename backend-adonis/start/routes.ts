@@ -66,7 +66,7 @@ router
                 router.delete('/briefing-schedules/:id', [BriefingsController, 'cancelSchedule'])
                 router
                     .post('/live/watch-token', [WorkSessionsController, 'watchToken'])
-                    .use(middleware.throttle({ max: 30, minutes: 1 }))
+                    .use(middleware.throttle({ max: 300, minutes: 1 }))
             })
             .use([middleware.auth(), middleware.extendToken()])
     })

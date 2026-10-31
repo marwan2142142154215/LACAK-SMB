@@ -8,6 +8,30 @@ import { createFaceWatch } from '@/lib/faceWatch'
 import { useAuthStore } from '@/stores/auth'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
+
+// "Semua site" membuka satu room per site. Permintaan token & sambungan WebSocket dibatasi paling
+// banyak ini sekaligus, supaya 49 site tidak menembak server dengan 49 permintaan dalam satu detik.
+const WATCH_CONNECT_CONCURRENCY = 6
+
+/** Seperti Promise.allSettled, tetapi paling banyak `limit` pekerjaan berjalan bersamaan. */
+async function settledPool(items, limit, worker) {
+    const results = new Array(items.length)
+    let next = 0
+
+    async function run() {
+        while (next < items.length) {
+            const index = next++
+            try {
+                results[index] = { status: 'fulfilled', value: await worker(items[index]) }
+            } catch (reason) {
+                results[index] = { status: 'rejected', reason }
+            }
+        }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run))
+    return results
+}
 // Kamera dicek tiap beberapa detik selama siaran; baru dianggap mati kalau
 // mati lebih lama dari batas ini (menyalakan ulang kamera butuh ~1 detik).
 const CAMERA_CHECK_MS = 2_000
@@ -605,15 +629,15 @@ export const useLiveStore = defineStore('live', () => {
             const broadcasting = mode.value === 'broadcasting' && ownRoom
             if (broadcasting) await disconnectWatchRooms()
             else await disconnect()
-            const results = await Promise.allSettled(
-                siteIds
-                    .filter((siteId) => !rooms.has(siteId))
-                    .map(async (siteId) => {
-                        const params = siteId === LEADERS_ROOM_KEY ? { room: LEADERS_ROOM_KEY } : { organization_id: siteId }
-                        const response = await api.post('/live/watch-token', params)
-                        const { livekit_url, token } = response.data.data
-                        await connect(livekit_url, token, siteId)
-                    }),
+            const results = await settledPool(
+                siteIds.filter((siteId) => !rooms.has(siteId)),
+                WATCH_CONNECT_CONCURRENCY,
+                async (siteId) => {
+                    const params = siteId === LEADERS_ROOM_KEY ? { room: LEADERS_ROOM_KEY } : { organization_id: siteId }
+                    const response = await api.post('/live/watch-token', params)
+                    const { livekit_url, token } = response.data.data
+                    await connect(livekit_url, token, siteId)
+                },
             )
             if (!rooms.size) throw results.find((result) => result.status === 'rejected')?.reason ?? new Error('Tidak ada site')
             watchedSiteIds.value = [...rooms.keys()]
