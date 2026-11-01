@@ -3,12 +3,14 @@ package com.lacaksmb.live.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -39,7 +41,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.lacaksmb.live.ui.theme.Accent300
 import com.lacaksmb.live.ui.theme.Accent400
 import com.lacaksmb.live.ui.theme.Accent500
 import com.lacaksmb.live.ui.theme.Base100
@@ -47,49 +48,58 @@ import com.lacaksmb.live.ui.theme.Base300
 import com.lacaksmb.live.ui.theme.Base400
 import com.lacaksmb.live.ui.theme.Base50
 import com.lacaksmb.live.ui.theme.Base500
-import com.lacaksmb.live.ui.theme.Base600
 import com.lacaksmb.live.ui.theme.Base700
 import com.lacaksmb.live.ui.theme.Base800
 import com.lacaksmb.live.ui.theme.Base850
 import com.lacaksmb.live.ui.theme.Base900
-import com.lacaksmb.live.ui.theme.Base950
 import com.lacaksmb.live.ui.theme.ButtonCornerRadius
 import com.lacaksmb.live.ui.theme.CardCornerRadius
-import com.lacaksmb.live.ui.theme.Copper400
-import com.lacaksmb.live.ui.theme.Copper500
 import com.lacaksmb.live.ui.theme.Danger400
+import com.lacaksmb.live.ui.theme.OnColor
+import com.lacaksmb.live.ui.theme.StBreak
+import com.lacaksmb.live.ui.theme.StWorking
 import com.lacaksmb.live.ui.theme.Danger500
 import com.lacaksmb.live.ui.theme.Warning400
 import com.lacaksmb.live.ui.theme.Warning500
 
 // Komponen UI bersama yang meniru bahasa visual web-dashboard
-// (lihat web-dashboard/src/components/ui, file BaseCard.vue dkk) — panel
-// kontrol keamanan gelap, aksen teal/tembaga. Dipakai di semua layar supaya
-// master app & web dashboard terasa satu produk.
+// (lihat web-dashboard/src/components/ui, file BaseCard.vue dkk) — gaya
+// "modern bersih": latar netral, aksen biru, sudut membulat sedang. Warna
+// dari token tema (Color.kt) jadi ikut terang/gelap. Dipakai di semua layar
+// supaya APK & web dashboard terasa satu produk.
 
 // ---- Badge (meniru BaseBadge.vue) -----------------------------------------
 
-enum class BadgeVariant { Neutral, Success, Warning, Danger, Accent }
+enum class BadgeVariant { Neutral, Success, Warning, Danger, Accent, Info }
 
 private data class BadgeColors(val background: Color, val text: Color)
 
+@Composable
 private fun colorsFor(variant: BadgeVariant): BadgeColors = when (variant) {
     BadgeVariant.Neutral -> BadgeColors(Base800, Base300)
-    BadgeVariant.Success -> BadgeColors(Accent500.copy(alpha = 0.16f), Accent300)
-    BadgeVariant.Warning -> BadgeColors(Warning500.copy(alpha = 0.16f), Warning400)
-    BadgeVariant.Danger -> BadgeColors(Danger500.copy(alpha = 0.16f), Danger400)
-    BadgeVariant.Accent -> BadgeColors(Copper500.copy(alpha = 0.16f), Copper400)
+    BadgeVariant.Success -> BadgeColors(StWorking.copy(alpha = 0.14f), StWorking)
+    BadgeVariant.Warning -> BadgeColors(Warning500.copy(alpha = 0.14f), Warning400)
+    BadgeVariant.Danger -> BadgeColors(Danger500.copy(alpha = 0.14f), Danger400)
+    BadgeVariant.Accent -> BadgeColors(Accent500.copy(alpha = 0.14f), Accent400)
+    BadgeVariant.Info -> BadgeColors(StBreak.copy(alpha = 0.14f), StBreak)
 }
 
 @Composable
-fun StatusBadge(text: String, variant: BadgeVariant = BadgeVariant.Neutral, modifier: Modifier = Modifier) {
+fun StatusBadge(
+    text: String,
+    variant: BadgeVariant = BadgeVariant.Neutral,
+    modifier: Modifier = Modifier,
+    dot: Boolean = false,
+) {
     val colors = colorsFor(variant)
     Row(
         modifier = modifier
             .background(colors.background, CircleShape)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        if (dot) Box(Modifier.size(6.dp).background(colors.text, CircleShape))
         Text(
             text = text,
             color = colors.text,
@@ -190,7 +200,7 @@ fun AppButton(
         } else if (icon != null) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
         }
-        Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
+        Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 
     when (variant) {
@@ -200,12 +210,12 @@ fun AppButton(
             shape = shape,
             colors = ButtonDefaults.buttonColors(
                 containerColor = Accent500,
-                contentColor = Base950,
+                contentColor = OnColor,
                 disabledContainerColor = Accent500.copy(alpha = 0.4f),
-                disabledContentColor = Base950.copy(alpha = 0.7f),
+                disabledContentColor = OnColor.copy(alpha = 0.7f),
             ),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-            modifier = modifier,
+            modifier = modifier.heightIn(min = 48.dp),
         ) { Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { content() } }
 
         AppButtonVariant.Danger -> Button(
@@ -214,22 +224,22 @@ fun AppButton(
             shape = shape,
             colors = ButtonDefaults.buttonColors(
                 containerColor = Danger500,
-                contentColor = Base50,
+                contentColor = OnColor,
                 disabledContainerColor = Danger500.copy(alpha = 0.4f),
-                disabledContentColor = Base50.copy(alpha = 0.7f),
+                disabledContentColor = OnColor.copy(alpha = 0.7f),
             ),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-            modifier = modifier,
+            modifier = modifier.heightIn(min = 48.dp),
         ) { Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { content() } }
 
         AppButtonVariant.Outline -> OutlinedButton(
             onClick = onClick,
             enabled = enabled && !loading,
             shape = shape,
-            border = BorderStroke(1.dp, Base600),
+            border = BorderStroke(1.dp, Base700),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = Base100, disabledContentColor = Base500),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-            modifier = modifier,
+            modifier = modifier.heightIn(min = 48.dp),
         ) { Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { content() } }
 
         AppButtonVariant.Ghost -> TextButton(
@@ -238,15 +248,15 @@ fun AppButton(
             shape = shape,
             colors = ButtonDefaults.textButtonColors(contentColor = Base300, disabledContentColor = Base500),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-            modifier = modifier,
+            modifier = modifier.heightIn(min = 48.dp),
         ) { Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { content() } }
     }
 }
 
 @Composable
 private fun LocalContentColorFor(variant: AppButtonVariant): Color = when (variant) {
-    AppButtonVariant.Primary -> Base950
-    AppButtonVariant.Danger -> Base50
+    AppButtonVariant.Primary -> OnColor
+    AppButtonVariant.Danger -> OnColor
     AppButtonVariant.Outline -> Base100
     AppButtonVariant.Ghost -> Base300
 }

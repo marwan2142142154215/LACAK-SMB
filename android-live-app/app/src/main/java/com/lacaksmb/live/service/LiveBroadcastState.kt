@@ -41,12 +41,29 @@ object LiveBroadcastState {
     /** Tidak ada wajah di kamera >= 30 detik (hanya dicatat, jam kerja tetap dihitung). */
     val faceMissing: StateFlow<Boolean> = _faceMissing.asStateFlow()
 
+    private val _onBreak = MutableStateFlow(false)
+    /**
+     * Staf sedang istirahat (tombol Istirahat) -- ikut dikirim di heartbeat
+     * (on_break), server mencatat status Break dan tidak menghitungnya jam
+     * kerja. Disimpan di sini (bukan di layar) supaya bertahan saat layar
+     * diputar / app kembali dari latar belakang; diambil ulang dari sesi di
+     * server setiap kali siaran tersambung.
+     */
+    val onBreak: StateFlow<Boolean> = _onBreak.asStateFlow()
+
+    private val _cameraActive = MutableStateFlow(false)
+    /** Kamera benar-benar mengirim gambar (watchdog melihat frame baru). */
+    val cameraActive: StateFlow<Boolean> = _cameraActive.asStateFlow()
+
     private val _liveSince = MutableStateFlow<Long?>(null)
     val liveSince: StateFlow<Long?> = _liveSince.asStateFlow()
 
     internal fun setStatus(status: BroadcastStatus) {
         _status.value = status
-        if (status is BroadcastStatus.Idle) _liveSince.value = null
+        if (status is BroadcastStatus.Idle) {
+            _liveSince.value = null
+            _onBreak.value = false
+        }
         if (status is BroadcastStatus.Live && _liveSince.value == null) _liveSince.value = System.currentTimeMillis()
     }
 
@@ -56,7 +73,16 @@ object LiveBroadcastState {
             _micState.value = MicState.None
             _screenSharing.value = false
             _faceMissing.value = false
+            _cameraActive.value = false
         }
+    }
+
+    internal fun setOnBreak(onBreak: Boolean) {
+        _onBreak.value = onBreak
+    }
+
+    internal fun setCameraActive(active: Boolean) {
+        _cameraActive.value = active
     }
 
     internal fun setFaceMissing(missing: Boolean) {

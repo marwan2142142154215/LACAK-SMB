@@ -76,8 +76,8 @@ import java.util.concurrent.atomic.AtomicLong
  * mikrofon (bisa dibisukan staf, pilihan bisu diingat), 720p + simulcast
  * h180/h360, layar 1080p 15fps + simulcast, dynacast, tidak berlangganan
  * video peserta lain, heartbeat tiap 30 detik (+ langsung saat layar/kamera
- * berubah) berisi camera_active & screen_active, dan 404 dari heartbeat =
- * server sudah menutup sesi -> berhenti.
+ * berubah) berisi camera_active, screen_active & on_break (tombol Istirahat),
+ * dan 404 dari heartbeat = server sudah menutup sesi -> berhenti.
  */
 class LiveBroadcastService : Service() {
 
@@ -150,6 +150,10 @@ class LiveBroadcastService : Service() {
             if (runJob?.isActive == true) scope.launch { applyBackground() }
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_SET_BREAK) {
+            if (runJob?.isActive == true) setBreak(intent.getBooleanExtra(EXTRA_ON_BREAK, false))
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_SET_MIC) {
             // Hanya berlaku untuk siaran yang sedang jalan -- service tidak
             // boleh dihidupkan oleh tombol mikrofon saja.
@@ -210,6 +214,13 @@ class LiveBroadcastService : Service() {
                 }
                 is ApiResult.Ok -> {
                     val data = result.data
+                    // Melanjutkan sesi yang masih terbuka (mis. app sempat
+                    // ditutup): ikuti status istirahat yang tercatat di server,
+                    // sama seperti web. Saat menyambung ulang, pilihan staf di
+                    // HP yang dipakai -- heartbeat berikutnya mengirimnya.
+                    if (!everLive) {
+                        LiveBroadcastState.setOnBreak(data?.optJSONObject("session")?.optBoolean("on_break", false) == true)
+                    }
                     val url = data?.optString("livekit_url").orEmpty()
                     val token = data?.optString("token").orEmpty()
                     if (url.isBlank() || token.isBlank()) {
@@ -352,6 +363,7 @@ class LiveBroadcastService : Service() {
             track.stop()
             throw IllegalStateException("Kamera tidak bisa dinyalakan")
         }
+        LiveBroadcastState.setCameraActive(true)
     }
 
     /** Pasang pilihan background yang tersimpan ke processor kamera. */
@@ -383,14 +395,19 @@ class LiveBroadcastService : Service() {
      * Kamera bisa berhenti tanpa memutus room (aplikasi kamera lain dibuka,
      * HP mencabut akses sebentar). Kalau tidak ada frame baru sejak cek
      * sebelumnya, matikan-nyalakan ulang kamera -- foreground service tipe
-     * camera membuat ini tetap diizinkan dari latar belakang.
+     * camera membuat ini tetap diizinkan dari latar belakang. Saat istirahat
+     * kamera tidak dipulihkan paksa (sama dengan web: staf boleh memakai
+     * kamera untuk hal lain); dipulihkan begitu staf kembali bekerja.
      */
     private suspend fun cameraWatchdog(room: Room) {
         var lastCount = frameCount.get()
         while (scope.isActive) {
             delay(CAMERA_WATCHDOG_MS)
             val now = frameCount.get()
-            if (now == lastCount && room.state == Room.State.CONNECTED && !userStopped) {
+            val stalled = now == lastCount
+            // Hanya untuk tampilan "Kamera mati" di layar; heartbeat tetap memakai status track.
+            LiveBroadcastState.setCameraActive(!stalled)
+            if (stalled && room.state == Room.State.CONNECTED && !userStopped && !LiveBroadcastState.onBreak.value) {
                 faceWatch.cameraUnavailable()
                 updateNotification("Kamera berhenti, menyalakan ulang...")
                 try {
@@ -414,7 +431,19 @@ class LiveBroadcastService : Service() {
             cameraActive = camera,
             screenActive = LiveBroadcastState.screenSharing.value,
             faceMissing = camera && LiveBroadcastState.faceMissing.value,
+            onBreak = LiveBroadcastState.onBreak.value,
         )
+    }
+
+    /**
+     * Mulai / akhiri istirahat (setara setBreak di web-dashboard live.js):
+     * kamera & layar tetap jalan, hanya statusnya yang dilaporkan ke server
+     * saat itu juga supaya jam istirahat tidak dihitung jam kerja.
+     */
+    private fun setBreak(onBreak: Boolean) {
+        LiveBroadcastState.setOnBreak(onBreak)
+        updateNotification(liveNotificationText())
+        reportStateNow()
     }
 
     /** Detak tambahan begitu layar/kamera berubah -- penonton tidak menunggu 30 detik. */
@@ -513,6 +542,9 @@ class LiveBroadcastService : Service() {
     }
 
     private fun liveNotificationText(): String {
+        if (LiveBroadcastState.onBreak.value) {
+            return "Sedang istirahat — tidak dihitung jam kerja. Tekan Lanjut kerja bila sudah kembali."
+        }
         if (!LiveBroadcastState.screenSharing.value) {
             return "Layar belum dibagikan — tidak dihitung kerja. Buka aplikasi lalu Bagikan layar."
         }
@@ -667,8 +699,9 @@ class LiveBroadcastService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
+        val onBreak = LiveBroadcastState.onBreak.value
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Sedang menyiarkan")
+            .setContentTitle(if (onBreak && room != null) "Sedang istirahat" else "Sedang menyiarkan")
             .setContentText(status)
             .setSmallIcon(android.R.drawable.presence_video_online)
             .setOngoing(true)
@@ -691,6 +724,17 @@ class LiveBroadcastService : Service() {
             builder.addAction(0, if (muteNext) "Bisukan" else "Nyalakan mikrofon", toggleMic)
         }
 
+        // Istirahat / lanjut kerja juga dari notifikasi, tanpa membuka aplikasi.
+        if (room != null) {
+            val toggleBreak = PendingIntent.getService(
+                this,
+                3,
+                Intent(this, LiveBroadcastService::class.java).setAction(ACTION_SET_BREAK).putExtra(EXTRA_ON_BREAK, !onBreak),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            builder.addAction(0, if (onBreak) "Lanjut kerja" else "Istirahat", toggleBreak)
+        }
+
         return builder.addAction(0, "Selesai kerja", stop).build()
     }
 
@@ -707,6 +751,8 @@ class LiveBroadcastService : Service() {
         private const val ACTION_SET_MIC = "com.lacaksmb.live.action.SET_MIC"
         private const val ACTION_SHARE_SCREEN = "com.lacaksmb.live.action.SHARE_SCREEN"
         private const val ACTION_SET_BACKGROUND = "com.lacaksmb.live.action.SET_BACKGROUND"
+        private const val ACTION_SET_BREAK = "com.lacaksmb.live.action.SET_BREAK"
+        private const val EXTRA_ON_BREAK = "on_break"
         private const val EXTRA_SCREEN_DATA = "screen_data"
         private const val SCREEN_NOTIFICATION_ID = 3002
         private const val EXTRA_MUTED = "muted"
@@ -746,6 +792,13 @@ class LiveBroadcastService : Service() {
         fun setMicMuted(context: Context, muted: Boolean) {
             context.startService(
                 Intent(context, LiveBroadcastService::class.java).setAction(ACTION_SET_MIC).putExtra(EXTRA_MUTED, muted),
+            )
+        }
+
+        /** Mulai ([onBreak] true) atau akhiri istirahat di siaran yang sedang jalan. */
+        fun setBreak(context: Context, onBreak: Boolean) {
+            context.startService(
+                Intent(context, LiveBroadcastService::class.java).setAction(ACTION_SET_BREAK).putExtra(EXTRA_ON_BREAK, onBreak),
             )
         }
 

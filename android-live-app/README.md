@@ -29,9 +29,13 @@ latar belakang.
   tetap berasal dari kamera, jadi watchdog kamera & cek wajah tidak berubah.
 - Memakai API backend yang sudah ada tanpa mengubah kontraknya:
   `POST /live/sessions/start` (→ `livekit_url`, `token`, `room`),
-  `POST /live/sessions/heartbeat` tiap 30 detik + saat layar/kamera berubah,
-  berisi `camera_active` & `screen_active` (404 = sesi ditutup server →
-  berhenti), `POST /live/sessions/end`.
+  `POST /live/sessions/heartbeat` tiap 30 detik + saat layar/kamera/istirahat
+  berubah, berisi `camera_active`, `screen_active` & `on_break` (404 = sesi
+  ditutup server → berhenti), `POST /live/sessions/end`.
+- Tombol **Istirahat / Lanjut kerja** (di layar & notifikasi), sama dengan
+  dashboard web: kamera & layar tetap disiarkan, server mencatat status Break
+  dan jamnya tidak dihitung kerja. Status istirahat ikut sesi di server, jadi
+  dilanjutkan saat app dibuka ulang.
 - Perilaku LiveKit sama dengan `web-dashboard/src/stores/live.js`: kamera +
   mikrofon (tombol Bisukan di layar & notifikasi, pilihan bisu diingat), 720p + simulcast h180/h360,
   layar 1080p 15fps + lapis 360p/720p, dynacast, tidak berlangganan video

@@ -106,15 +106,26 @@ class ApiClient(private val sessionStore: SessionStore) {
         execute(authedBuilder("/live/sessions/start").post(jsonBody(mapOf("device" to "android_app"))).build())
 
     /**
-     * Detak sesi + kondisi siaran (kamera & layar menyala?) -- server menghitung
-     * status kerja dari sini (layar mati = Screen off, tidak dihitung kerja).
+     * Detak sesi + kondisi siaran (kamera & layar menyala? sedang istirahat?)
+     * -- server menghitung status kerja dari sini (layar mati = Screen off,
+     * istirahat = Break; keduanya tidak dihitung kerja).
      * 404 = server sudah menutup sesi (timeout) -- siaran wajib berhenti.
      */
-    suspend fun heartbeatLiveSession(cameraActive: Boolean, screenActive: Boolean, faceMissing: Boolean): ApiResult = execute(
+    suspend fun heartbeatLiveSession(
+        cameraActive: Boolean,
+        screenActive: Boolean,
+        faceMissing: Boolean,
+        onBreak: Boolean,
+    ): ApiResult = execute(
         authedBuilder("/live/sessions/heartbeat")
             .post(
                 jsonBody(
-                    mapOf("camera_active" to cameraActive, "screen_active" to screenActive, "face_missing" to faceMissing),
+                    mapOf(
+                        "camera_active" to cameraActive,
+                        "screen_active" to screenActive,
+                        "face_missing" to faceMissing,
+                        "on_break" to onBreak,
+                    ),
                 ),
             )
             .build(),

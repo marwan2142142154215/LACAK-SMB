@@ -1,4 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">SMB Live Kerja</string>
+
+    <!-- Layar Live Kerja -->
+    <string name="live_title">Live Kerja</string>
+    <string name="live_logout">Keluar</string>
+    <string name="live_staff_fallback">Staf</string>
+    <string name="live_subtitle">Siaran layar HP &amp; kamera depan ke atasan</string>
+
+    <string name="live_status_idle">Tidak live</string>
+    <string name="live_status_connecting">Menyambung</string>
+    <string name="live_status_live">LIVE</string>
+    <string name="live_status_break">Istirahat</string>
+    <string name="live_status_screen_off">Layar mati</string>
+    <string name="live_status_camera_off">Kamera mati</string>
+    <string name="live_status_stopping">Berhenti</string>
+
+    <string name="live_desc_idle">Tekan Mulai kerja, izinkan kamera &amp; mikrofon, lalu pilih Bagikan seluruh layar. Layar HP, kamera depan, dan suara disiarkan ke atasan (mikrofon bisa dibisukan). Siaran tetap jalan saat Anda pindah aplikasi.</string>
+    <string name="live_desc_live">Anda boleh pindah aplikasi — siaran tetap jalan sampai Anda menekan Selesai kerja (di sini atau di notifikasi).</string>
+    <string name="live_desc_stopping">Menghentikan siaran...</string>
+
+    <string name="live_preview_off">Kamera belum menyala</string>
+    <string name="live_preview_connecting">Menyambungkan...</string>
+
+    <string name="live_ind_screen">Layar</string>
+    <string name="live_ind_camera">Kamera</string>
+    <string name="live_ind_mic">Mikrofon</string>
+    <string name="live_ind_shared">Dibagikan</string>
+    <string name="live_ind_on">Menyala</string>
+    <string name="live_ind_off">Mati</string>
+    <string name="live_ind_muted">Dibisukan</string>
+    <string name="live_ind_none">Tanpa izin</string>
+
+    <!-- Istirahat (sama dengan tombol Istirahat di dashboard web) -->
+    <string name="live_break_start">Istirahat</string>
+    <string name="live_break_end">Lanjut kerja</string>
+    <string name="live_break_started">Istirahat dimulai</string>
+    <string name="live_break_started_detail">Jam istirahat tidak dihitung sebagai jam kerja.</string>
+    <string name="live_break_ended">Kembali bekerja</string>
+    <string name="live_break_banner_title">Sedang istirahat</string>
+    <string name="live_break_banner_body">Waktu istirahat tidak dihitung sebagai jam kerja. Tekan Lanjut kerja bila sudah kembali.</string>
+
+    <string name="live_screen_off_title">Layar belum dibagikan</string>
+    <string name="live_screen_off_body">Status Anda Screen off dan tidak dihitung jam kerja.</string>
+    <string name="live_screen_share">Bagikan layar</string>
+    <string name="live_screen_share_denied">Layar tidak dibagikan. Selama layar tidak dibagikan, waktu Anda tidak dihitung sebagai jam kerja.</string>
+    <string name="live_face_missing">Wajah Anda tidak terlihat di kamera. Tercatat sebagai Wajah hilang di log kerja sampai wajah terlihat lagi.</string>
+    <string name="live_camera_permission">Izin kamera dibutuhkan untuk menyiarkan. Buka Pengaturan &gt; Aplikasi &gt; Lacak SMB Live &gt; Izin.</string>
+    <string name="live_no_permission">Akun ini tidak punya izin menyiarkan Live Kerja. Hubungi admin site.</string>
+
+    <string name="live_mic_mute">Bisukan</string>
+    <string name="live_mic_unmute">Nyalakan mic</string>
+    <string name="live_mic_settings">Izin mikrofon</string>
+
+    <string name="live_start">Mulai kerja</string>
+    <string name="live_end">Selesai kerja</string>
+    <string name="live_ending">Menghentikan...</string>
+
+    <string name="live_battery_title">Supaya siaran tidak dimatikan HP</string>
+    <string name="live_battery_body">Izinkan aplikasi ini berjalan tanpa pembatasan baterai, agar siaran tetap jalan saat layar mati.</string>
+    <string name="live_battery_open">Buka pengaturan baterai</string>
 </resources>

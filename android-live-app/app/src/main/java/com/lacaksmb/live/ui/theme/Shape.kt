@@ -4,10 +4,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
 
-// rounded-2xl (card) ~16dp, rounded-lg (button/input) ~8dp — sama seperti
+// rounded-2xl (card) ~16dp, rounded-lg (button/input) ~10dp — sama seperti
 // web-dashboard (BaseCard.vue, BaseButton.vue, BaseInput.vue).
 val CardCornerRadius = 16.dp
-val ButtonCornerRadius = 8.dp
+val ButtonCornerRadius = 10.dp
 val BadgeCornerRadius = 999.dp
 
 val LacakShapes = Shapes(
