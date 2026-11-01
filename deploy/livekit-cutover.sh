@@ -11,6 +11,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT/backend-adonis/.env}"
+# pm2 menjalankan backend dari folder build/ yang membaca build/.env (disalin oleh deploy.sh), bukan .env di atasnya.
+BUILD_ENV_FILE="${BUILD_ENV_FILE:-$ROOT/backend-adonis/build/.env}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/cadangan-livekit}"
 PM2="${PM2:-pm2}"
 CURL="${CURL:-curl}"
@@ -56,7 +58,17 @@ validate_snippet() {
 
 latest_backup() { ls -1t "$BACKUP_DIR"/backend.env.* 2>/dev/null | head -1 || true; }
 
+# Salin .env ke build/.env supaya proses pm2 benar-benar memakai nilai baru.
+sync_build_env() {
+    local dir
+    dir="$(dirname "$BUILD_ENV_FILE")"
+    [[ -d "$dir" ]] || die "folder build backend tidak ada: $dir (jalankan deploy.sh dulu)"
+    cp "$ENV_FILE" "$BUILD_ENV_FILE"
+    chmod 600 "$BUILD_ENV_FILE"
+}
+
 restart_backend() {
+    sync_build_env
     "$PM2" restart lacak-api lacak-api-queue lacak-api-scheduler --update-env
 }
 

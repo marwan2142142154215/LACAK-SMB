@@ -208,7 +208,6 @@ NGINX
 
 server {
     listen 443 ssl;
-    http2 on;
     server_name ${DOMAIN_LIVE};
     server_tokens off;
 
