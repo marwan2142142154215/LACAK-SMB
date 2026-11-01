@@ -442,11 +442,16 @@ const visibleGroups = computed(() => {
     const groups = []
     for (const member of visibleMembers.value) {
         const participant = participantOfMember(member)
-        if (!participant) continue
         const group = groupOfMember(member)
-        const last = groups.at(-1)
-        if (last?.key === group.key) last.items.push(participant)
-        else groups.push({ ...group, total: groupTotals.value[group.key] ?? 0, items: [participant] })
+        let target = groups.at(-1)
+        if (target?.key !== group.key) {
+            target = { ...group, total: groupTotals.value[group.key] ?? 0, items: [], pending: [] }
+            groups.push(target)
+        }
+        // Staf live yang videonya belum tersambung tetap tampil (kartu penanda), supaya dinding SELALU cocok
+        // dengan daftar "Status staf" dan tidak ada yang hilang diam-diam.
+        if (participant) target.items.push(participant)
+        else target.pending.push(member)
     }
     return groups
 })
@@ -1447,6 +1452,33 @@ onBeforeUnmount(() => {
                             >
                         </div>
                     </TransitionGroup>
+                    <!-- Live menurut data, tapi videonya belum ada di room yang dibuka. -->
+                    <div v-if="group.pending.length" class="grid gap-3" :class="[wallGridClass, group.items.length && 'mt-3']">
+                        <div
+                            v-for="member in group.pending"
+                            :key="member.user_id"
+                            class="flex min-h-24 flex-col justify-between gap-2 rounded-xl border border-dashed border-base-700 bg-base-900/60 p-3"
+                            :title="
+                                roomsPending
+                                    ? 'Sedang menyambungkan video staf ini.'
+                                    : 'Staf ini tercatat live, tapi siarannya belum masuk room yang bisa dilihat. Biasanya karena siaran dimulai sebelum pembaruan: minta staf menyegarkan halaman Live.'
+                            "
+                        >
+                            <div class="flex items-start justify-between gap-2">
+                                <span class="min-w-0 truncate text-sm font-semibold text-base-100">{{ member.name }}</span>
+                                <span
+                                    v-if="member.status"
+                                    class="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+                                    :class="workStatus(member.status).chip"
+                                    >{{ workStatus(member.status).label }}</span
+                                >
+                            </div>
+                            <p class="text-xs text-base-500">
+                                {{ roomsPending ? 'Menyambungkan video…' : 'Video belum tersambung' }}
+                                <template v-if="member.started_at"> · live {{ formatElapsed(member.started_at, now) }}</template>
+                            </p>
+                        </div>
+                    </div>
                     </div>
                     </template>
 

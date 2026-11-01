@@ -137,6 +137,45 @@ export async function removeBroadcaster(liveRoom: LiveRoom, userId: number) {
     }
 }
 
+/** Room Live Kerja format lama (sebelum ruang per peran): site-{id} dan leaders. */
+export const isLegacyLiveRoom = (name: string) => /^site-\d+$/.test(name) || name === 'leaders'
+
+export type LiveRoomInfo = { name: string; participants: number }
+
+async function roomService(
+    method: string,
+    body: Record<string, unknown>
+): Promise<Record<string, any>> {
+    const config = liveKitConfig()
+    const httpUrl = config.url.replace(/\/+$/, '').replace(/^ws(s?):\/\//, 'http$1://')
+    const grant = { roomList: true, roomAdmin: true }
+    const response = await fetch(`${httpUrl}/twirp/livekit.RoomService/${method}`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${issue('backend-api', 'backend-api', grant, config)}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10_000),
+    })
+    if (!response.ok) throw new Error(`LiveKit ${method} gagal: HTTP ${response.status}`)
+    return (await response.json()) as Record<string, any>
+}
+
+/** Semua room LiveKit yang sedang ada beserta jumlah pesertanya. */
+export async function listLiveRooms(): Promise<LiveRoomInfo[]> {
+    const data = await roomService('ListRooms', {})
+    return (data.rooms ?? []).map((room: Record<string, any>) => ({
+        name: String(room.name),
+        participants: Number(room.numParticipants ?? room.num_participants ?? 0),
+    }))
+}
+
+/** Tutup satu room: semua pesertanya terputus (siaran staf menyambung ulang sendiri lewat token baru). */
+export async function deleteLiveRoom(name: string): Promise<void> {
+    await roomService('DeleteRoom', { room: name })
+}
+
 /** JWT persis seperti LiveKitTokenIssuer::issue() (urutan klaim & JSON sama). */
 export function issue(
     identity: string,
