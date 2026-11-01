@@ -10,12 +10,12 @@ const CONFIG = {
     tokenTtlSeconds: 600,
 }
 
-function access(roles: string[]): Access {
+function access(permissions: string[]): Access {
     return {
         userId: 7,
         organizationId: 3,
-        roles,
-        permissions: ['live.watch', 'live.broadcast'],
+        roles: [],
+        permissions,
         grantedOrganizationIds: [],
     }
 }
@@ -25,11 +25,9 @@ function grantsOf(token: string) {
 }
 
 test.group('Live Kerja: staf hanya melihat dirinya sendiri', () => {
-    test('hanya staf biasa yang dibatasi', ({ assert }) => {
-        assert.isTrue(seesOnlySelf(access(['staff_viewer'])))
-        assert.isFalse(seesOnlySelf(access(['site_admin'])))
-        assert.isFalse(seesOnlySelf(access(['leader'])))
-        assert.isFalse(seesOnlySelf(access(['staff_viewer', 'admin'])))
+    test('hanya yang tak punya izin live.roster yang dibatasi', ({ assert }) => {
+        assert.isTrue(seesOnlySelf(access(['live.watch', 'live.broadcast'])))
+        assert.isFalse(seesOnlySelf(access(['live.watch', 'live.roster'])))
     })
 
     test('token siaran staf tidak bisa menonton rekan di room site', ({ assert }) => {

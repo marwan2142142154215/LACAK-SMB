@@ -175,7 +175,7 @@ const minutesUntil = (at) => Math.max(1, Math.ceil(dayjs(at).diff(now.value) / 6
 const announcementUnread = ref(0)
 const latestAnnouncement = ref(null)
 const leavePending = ref(0)
-const isManager = computed(() => ['super_admin', 'admin', 'leader', 'site_admin'].some((role) => auth.user?.roles?.includes(role)))
+const canReviewLeave = computed(() => auth.hasPermission('leave.review'))
 async function loadWorkCounters() {
     try {
         const { data } = await api.get('/announcements')
@@ -184,7 +184,7 @@ async function loadWorkCounters() {
     } catch {
         // Banner hanya bantuan.
     }
-    if (!isManager.value) return
+    if (!canReviewLeave.value) return
     try {
         const { data } = await api.get('/leave-requests')
         leavePending.value = data.data.pending_count

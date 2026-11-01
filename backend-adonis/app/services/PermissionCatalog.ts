@@ -84,6 +84,42 @@ const CATALOG: Record<string, Entry> = {
         label: 'Pantau Live Kerja',
         description: 'Menonton siaran staf, melihat aktivitas, log wajah, rekaman, dan chat site.',
     },
+    'live.roster': {
+        group: 'Live Kerja',
+        label: 'Lihat rekan se-site',
+        description:
+            'Melihat staf lain di Live Kerja, log kerja, dan rekaman. Tanpa ini, hanya melihat diri sendiri.',
+    },
+    'attendance.manage': {
+        group: 'Kerja & pengawasan',
+        label: 'Kelola absensi',
+        description: 'Melihat rekap absensi staf se-site dan peringatan/laporan kerja.',
+    },
+    'work-shifts.manage': {
+        group: 'Kerja & pengawasan',
+        label: 'Kelola shift',
+        description: 'Membuat dan mengubah jadwal shift kerja staf.',
+    },
+    'leave.review': {
+        group: 'Kerja & pengawasan',
+        label: 'Tinjau izin & cuti',
+        description: 'Menyetujui atau menolak pengajuan izin dan cuti staf.',
+    },
+    'announcements.manage': {
+        group: 'Kerja & pengawasan',
+        label: 'Kelola pengumuman',
+        description: 'Membuat, mengubah, dan menghapus pengumuman untuk staf.',
+    },
+    'warnings.send': {
+        group: 'Kerja & pengawasan',
+        label: 'Kirim peringatan staf',
+        description: 'Mengirim peringatan popup ke staf dan melihat riwayatnya.',
+    },
+    'briefing.host': {
+        group: 'Kerja & pengawasan',
+        label: 'Pimpin briefing',
+        description: 'Membuat, menjadwalkan, dan memimpin briefing video.',
+    },
     'security.manage': {
         group: 'Sistem',
         label: 'Pengaturan keamanan',
@@ -95,6 +131,7 @@ export const GROUP_ORDER = [
     'Site & staf',
     'Perangkat',
     'Aturan & aplikasi',
+    'Kerja & pengawasan',
     'Live Kerja',
     'Sistem',
     'Lainnya',

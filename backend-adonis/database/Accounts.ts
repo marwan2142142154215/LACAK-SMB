@@ -26,10 +26,31 @@ export const PERMISSIONS = [
     // watch = boleh menonton siaran site yang memang boleh diakses.
     'live.broadcast',
     'live.watch',
+    // Melihat rekan se-site di Live Kerja/log kerja/rekaman. Tanpa izin ini, user
+    // hanya melihat dirinya sendiri (pengganti aturan "hanya staff_viewer" yang lama).
+    'live.roster',
+    // Kerja & pengawasan: kelola absensi, shift, izin/cuti, pengumuman, kirim
+    // peringatan staf, dan memimpin briefing -- dulu dikunci ke nama peran (isManager).
+    'attendance.manage',
+    'work-shifts.manage',
+    'leave.review',
+    'announcements.manage',
+    'warnings.send',
+    'briefing.host',
     // Pengaturan keamanan sistem (mis. wajib/tidaknya 2FA) -- hanya super_admin.
     'security.manage',
     // Menu Peran: membuat peran & mengatur izin/cakupan site -- hanya super_admin.
     'roles.manage',
+]
+
+/** Izin kerja & pengawasan yang dulu dikunci ke isManager() (super_admin/admin/leader/site_admin). */
+const WORK_SUPERVISION = [
+    'attendance.manage',
+    'work-shifts.manage',
+    'leave.review',
+    'announcements.manage',
+    'warnings.send',
+    'live.roster',
 ]
 
 export const ROLE_PERMISSIONS: Record<string, string[]> = {
@@ -47,6 +68,8 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         'activity-logs.view',
         'live.broadcast',
         'live.watch',
+        // Mengelola site sendiri penuh (absensi, shift, izin, pengumuman, peringatan).
+        ...WORK_SUPERVISION,
     ],
     // admin & leader: lintas site lewat user_site_access; melihat, kunci &
     // buka kunci device, minta lokasi sekarang, kelola geofence, plus build & unduh APK -- semuanya
@@ -59,6 +82,9 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         'geofence-rules.manage',
         'live.watch',
         'apk-builds.manage',
+        // Memimpin briefing + kelola kerja/pengawasan untuk site yang dipegang.
+        'briefing.host',
+        ...WORK_SUPERVISION,
     ],
     leader: [
         'devices.view',
@@ -68,9 +94,12 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         'geofence-rules.manage',
         'live.watch',
         'apk-builds.manage',
+        'briefing.host',
+        ...WORK_SUPERVISION,
     ],
     staff_viewer: ['devices.view', 'live.broadcast', 'live.watch'],
     // Akun layanan bot Telegram: kendali device + build APK, tanpa pengaturan site.
+    // live.roster dipertahankan supaya perilaku "lihat rekan" tidak berubah.
     telegram_bot_service: [
         'devices.view',
         'devices.lock',
@@ -78,6 +107,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         'devices.locate',
         'devices.monitor',
         'apk-builds.manage',
+        'live.roster',
     ],
 }
 

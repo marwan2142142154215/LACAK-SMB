@@ -8,9 +8,6 @@ import { issue, liveKitConfig } from '#services/Livekit'
  * controller saat membuat, mendaftar, dan memberi token bergabung.
  */
 
-/** Peran yang boleh memulai & memimpin briefing. */
-export const BRIEFING_HOST_ROLES = ['super_admin', 'admin', 'leader'] as const
-
 /** Peran yang bisa diundang, dengan label untuk dashboard. */
 export const BRIEFING_AUDIENCE_ROLES = {
     staff_viewer: 'Staf',
@@ -38,8 +35,9 @@ export type BriefingRow = {
 
 export const roomForBriefing = (briefingId: number) => `briefing-${briefingId}`
 
+/** Boleh membuat & memimpin briefing (izin briefing.host; dulu dikunci ke peran). */
 export function canHostBriefing(access: Access): boolean {
-    return BRIEFING_HOST_ROLES.some((role) => access.roles.includes(role))
+    return access.permissions.includes('briefing.host')
 }
 
 /** Site yang "dimiliki" user untuk keperluan undangan briefing. */

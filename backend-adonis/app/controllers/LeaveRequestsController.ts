@@ -1,11 +1,11 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
-import { accessOf } from '#services/Access'
+import { accessOf, can } from '#services/Access'
 import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
 import { DATE_PATTERN, dateColumn, datesBetween, localDate } from '#services/LocalTime'
-import { isManager, managedSites, managesSite } from '#services/ManagedSites'
+import { managedSites, managesSite } from '#services/ManagedSites'
 import { raiseAlert } from '#services/WorkAlerts'
 
 export const LEAVE_TYPES = { izin: 'Izin', sakit: 'Sakit', cuti: 'Cuti' } as const
@@ -99,7 +99,7 @@ export default class LeaveRequestsController {
             .orderBy('leave_requests.start_date', 'desc')
             .limit(50)
 
-        const canReview = isManager(access)
+        const canReview = can(access, 'leave.review')
         let review: LeaveRow[] = []
         if (canReview) {
             const own = managedSites(access)

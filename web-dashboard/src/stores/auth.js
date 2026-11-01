@@ -12,15 +12,12 @@ export const useAuthStore = defineStore('auth', () => {
 
     const isAuthenticated = computed(() => !!token.value)
     const isSuperAdmin = computed(() => user.value?.roles?.includes('super_admin') ?? false)
-    // Staf biasa (peran staff_viewer saja): di Live Kerja, Aktivitas, dan
-    // Rekaman hanya melihat dirinya sendiri -- dibatasi juga di backend.
     // Peran dengan cakupan "site yang diberikan" (admin, leader, atau peran buatan sendiri): dasar
     // halaman Staf untuk menonaktifkan staf di site yang dipegang.
     const hasSiteGrants = computed(() => user.value?.site_scope === 'granted')
-    const seesOnlySelf = computed(() => {
-        const roles = user.value?.roles ?? []
-        return roles.includes('staff_viewer') && !['super_admin', 'admin', 'leader', 'site_admin'].some((role) => roles.includes(role))
-    })
+    // Tanpa izin live.roster, di Live Kerja/Aktivitas/Rekaman hanya melihat diri
+    // sendiri -- sama dengan aturan di backend (dibatasi juga di sana).
+    const seesOnlySelf = computed(() => !(user.value?.permissions?.includes('live.roster') ?? false))
 
     function setSession(accessToken, userData) {
         token.value = accessToken

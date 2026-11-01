@@ -28,10 +28,9 @@ function briefing(overrides: Partial<BriefingRow> = {}): BriefingRow {
 }
 
 test.group('Briefing: siapa yang boleh memimpin & bergabung', () => {
-    test('leader, admin & root boleh memulai; staf tidak', ({ assert }) => {
-        assert.isTrue(canHostBriefing(access(['leader'])))
-        assert.isTrue(canHostBriefing(access(['admin'])))
-        assert.isTrue(canHostBriefing(access(['super_admin'])))
+    test('pemegang izin briefing.host boleh memulai; tanpa izin tidak', ({ assert }) => {
+        assert.isTrue(canHostBriefing(access([], { permissions: ['briefing.host'] })))
+        assert.isFalse(canHostBriefing(access(['leader'])))
         assert.isFalse(canHostBriefing(access(['staff_viewer'])))
     })
 

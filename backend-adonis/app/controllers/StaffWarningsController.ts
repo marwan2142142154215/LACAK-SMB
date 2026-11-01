@@ -1,10 +1,10 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
-import { accessOf } from '#services/Access'
+import { accessOf, can } from '#services/Access'
 import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
-import { isManager, managedSites, managesSite } from '#services/ManagedSites'
+import { managedSites, managesSite } from '#services/ManagedSites'
 import { roleNamesOf } from '#services/Permissions'
 
 export const WARNING_LEVELS = { teguran: 'Teguran', keras: 'Peringatan keras' } as const
@@ -90,7 +90,7 @@ export default class StaffWarningsController {
     /** Riwayat peringatan (pengelola site); ?user_id= untuk satu staf. */
     async index(ctx: HttpContext) {
         const access = await accessOf(ctx)
-        if (!isManager(access)) {
+        if (!can(access, 'warnings.send')) {
             return ctx.response
                 .status(403)
                 .send(fail('Hanya leader ke atas yang bisa melihat peringatan'))
@@ -109,7 +109,7 @@ export default class StaffWarningsController {
 
     async store(ctx: HttpContext) {
         const access = await accessOf(ctx)
-        if (!isManager(access)) {
+        if (!can(access, 'warnings.send')) {
             return ctx.response
                 .status(403)
                 .send(fail('Hanya leader ke atas yang bisa memberi peringatan'))

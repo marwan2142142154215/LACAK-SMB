@@ -17,11 +17,6 @@ export function managedSites(access: Access): number[] | 'all' {
     return [...sites]
 }
 
-export function isManager(access: Access): boolean {
-    const sites = managedSites(access)
-    return sites === 'all' || sites.length > 0
-}
-
 export function managesSite(access: Access, organizationId: number | null): boolean {
     if (organizationId === null) return access.roles.includes('super_admin')
     const sites = managedSites(access)

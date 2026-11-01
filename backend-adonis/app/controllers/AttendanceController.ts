@@ -1,12 +1,12 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
-import { accessOf } from '#services/Access'
+import { accessOf, can } from '#services/Access'
 import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
 import { attendanceReport, staffOfSites } from '#services/Attendance'
 import { DATE_PATTERN, datesBetween, localDate, TIME_PATTERN } from '#services/LocalTime'
-import { isManager, managedSites, managesSite } from '#services/ManagedSites'
+import { managedSites, managesSite } from '#services/ManagedSites'
 import { telegramEnabled } from '#services/Telegram'
 import { ALERT_TYPE_LABELS, DEFAULT_SETTINGS, settingsFor } from '#services/WorkAlerts'
 import { sitesOf } from '#controllers/WorkShiftsController'
@@ -52,7 +52,7 @@ export default class AttendanceController {
             return ctx.response.status(422).send(fail(`Rentang rekap maksimal ${MAX_DAYS} hari`))
         }
 
-        const manager = isManager(access)
+        const manager = can(access, 'attendance.manage')
         const sites = manager ? await sitesOf(managedSites(access)) : []
         let staff
         let organizationId: number | null = null
@@ -82,7 +82,7 @@ export default class AttendanceController {
     /** Peringatan & laporan yang tercatat di site yang dikelola. */
     async alerts(ctx: HttpContext) {
         const access = await accessOf(ctx)
-        if (!isManager(access)) return forbidden(ctx)
+        if (!can(access, 'attendance.manage')) return forbidden(ctx)
 
         const requested = Number(ctx.request.input('organization_id')) || null
         if (requested && !managesSite(access, requested)) return forbidden(ctx)

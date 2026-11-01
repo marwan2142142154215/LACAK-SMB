@@ -65,9 +65,8 @@ const page = ref(0)
 const focusedIdentity = ref(null)
 const focused = computed(() => live.remoteParticipants.find((p) => p.identity === focusedIdentity.value) ?? null)
 
-// Leader ke atas bisa memberi peringatan ke staf yang sedang dibuka (popup di dashboard staf itu).
-const MANAGER_ROLES = ['super_admin', 'admin', 'leader', 'site_admin']
-const canWarn = computed(() => MANAGER_ROLES.some((role) => auth.user?.roles?.includes(role)))
+// Pemegang izin warnings.send bisa memberi peringatan ke staf yang sedang dibuka (popup di dashboard staf itu).
+const canWarn = computed(() => auth.hasPermission('warnings.send'))
 const focusedStaff = computed(() => {
     if (!focused.value) return null
     const staff = [...roster.value, ...leadersRoster.value].find((item) => item.participant_identity === focused.value.identity)

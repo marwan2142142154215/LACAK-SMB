@@ -1,12 +1,12 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
-import { accessOf } from '#services/Access'
+import { accessOf, can } from '#services/Access'
 import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
 import { shiftRow } from '#services/Attendance'
 import { TIME_PATTERN } from '#services/LocalTime'
-import { isManager, managedSites, managesSite } from '#services/ManagedSites'
+import { managedSites, managesSite } from '#services/ManagedSites'
 
 const shiftValidator = vine.compile(
     vine.object({
@@ -37,7 +37,7 @@ const assignValidator = vine.compile(
 export default class WorkShiftsController {
     async index(ctx: HttpContext) {
         const access = await accessOf(ctx)
-        if (!isManager(access)) return forbidden(ctx)
+        if (!can(access, 'work-shifts.manage')) return forbidden(ctx)
 
         const sites = await sitesOf(managedSites(access))
         const requested = Number(ctx.request.input('organization_id')) || null
@@ -174,7 +174,7 @@ export default class WorkShiftsController {
     /** Pasang (atau lepas) shift untuk beberapa staf sekaligus. */
     async assign(ctx: HttpContext) {
         const access = await accessOf(ctx)
-        if (!isManager(access)) return forbidden(ctx)
+        if (!can(access, 'work-shifts.manage')) return forbidden(ctx)
         const input = await ctx.request.validateUsing(assignValidator)
         const userIds = [...new Set(input.user_ids)]
 

@@ -1,11 +1,11 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
-import { accessOf, type Access } from '#services/Access'
+import { accessOf, can, type Access } from '#services/Access'
 import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
 import { BRIEFING_AUDIENCE_ROLES, sitesOf as userSitesOf } from '#services/Briefing'
-import { isManager, managedSites } from '#services/ManagedSites'
+import { managedSites } from '#services/ManagedSites'
 import { raiseAlert } from '#services/WorkAlerts'
 import { sitesOf } from '#controllers/WorkShiftsController'
 
@@ -103,7 +103,7 @@ export default class AnnouncementsController {
         const audienceSites = await sitesOf(siteIds)
         const siteNames = new Map(audienceSites.map((site) => [site.id, site.name]))
 
-        const canCreate = isManager(access)
+        const canCreate = can(access, 'announcements.manage')
         return success('Pengumuman', {
             can_create: canCreate,
             roles: AUDIENCE_KEYS.map((value) => ({ value, label: BRIEFING_AUDIENCE_ROLES[value] })),
@@ -139,7 +139,7 @@ export default class AnnouncementsController {
 
     async store(ctx: HttpContext) {
         const access = await accessOf(ctx)
-        if (!isManager(access)) {
+        if (!can(access, 'announcements.manage')) {
             return ctx.response
                 .status(403)
                 .send(fail('Hanya pengelola site yang bisa membuat pengumuman'))

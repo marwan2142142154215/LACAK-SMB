@@ -8,7 +8,10 @@ import {
     seesOnlySelf,
 } from '#services/LiveHub'
 
-function user(roles: string[], permissions: string[] = ['live.watch']): AuthenticatedUser {
+function user(
+    roles: string[],
+    permissions: string[] = ['live.watch', 'live.roster']
+): AuthenticatedUser {
     return {
         id: 1,
         username: 'u',
