@@ -49,6 +49,9 @@ const OVERVIEW_CACHE_SECONDS = 5
 
 /** Perangkat yang bisa membagikan layar + kamera saat Mulai kerja. */
 const LIVE_START_DEVICES = ['computer', 'android_app']
+/** iPhone/iPad (Safari & PWA): kamera saja, karena iOS tidak mengizinkan berbagi layar dari browser. */
+const CAMERA_ONLY_DEVICE = 'ios_camera'
+const IOS_USER_AGENT = /iPhone|iPad|iPod/i
 
 const heartbeatValidator = vine.compile(
     vine.object({
@@ -206,8 +209,22 @@ export default class WorkSessionsController {
         const user = ctx.authUser!
 
         // Layar & kamera wajib: dashboard di komputer, atau APK Live Kerja
-        // versi berbagi layar ('android_app'). Browser HP & APK lama ditolak.
-        if (!LIVE_START_DEVICES.includes(ctx.request.input('device'))) {
+        // versi berbagi layar ('android_app'). Pengecualian: iPhone/iPad (kamera saja) --
+        // hanya dari browser iOS, dan sesinya ditandai camera_only supaya terlihat atasan.
+        const device = ctx.request.input('device')
+        const cameraOnly =
+            device === CAMERA_ONLY_DEVICE &&
+            IOS_USER_AGENT.test(ctx.request.header('user-agent') ?? '')
+        if (device === CAMERA_ONLY_DEVICE && !cameraOnly) {
+            return ctx.response
+                .status(422)
+                .send(
+                    fail(
+                        'Siaran kamera saja hanya untuk iPhone/iPad. Di komputer, bagikan layar & kamera.'
+                    )
+                )
+        }
+        if (!cameraOnly && !LIVE_START_DEVICES.includes(device)) {
             return ctx.response
                 .status(422)
                 .send(
@@ -222,6 +239,14 @@ export default class WorkSessionsController {
         const session =
             (await openSessionOf(user.id)) ??
             (await createSession(ctx, user.id, user.organizationId, liveRole))
+        // Sesi dilanjutkan dari perangkat lain (mis. iPhone lalu komputer): tandai ulang sesuai perangkatnya.
+        if ((session.camera_only === true) !== cameraOnly) {
+            await db
+                .from('work_sessions')
+                .where('id', session.id)
+                .update({ camera_only: cameraOnly })
+            session.camera_only = cameraOnly
+        }
 
         // Sesi lama dilanjutkan memakai site & peran yang tercatat di sesi.
         const room = roomOfSession(session)

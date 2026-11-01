@@ -114,6 +114,17 @@ test.group('Live Kerja: statusOf (padanan WorkPresence::statusOf)', () => {
         assert.equal(statusOf(session({ idle: true }), NOW), 'idle')
         assert.equal(statusOf(session(), NOW), 'working')
     })
+
+    test('sesi kamera saja (iPhone): layar tidak wajib, kamera tetap wajib', ({ assert }) => {
+        const iphone = { camera_only: true, screen_active: false }
+        assert.equal(statusOf(session(iphone), NOW), 'working')
+        assert.equal(statusOf(session({ ...iphone, idle: true }), NOW), 'idle')
+        assert.equal(statusOf(session({ ...iphone, camera_active: false }), NOW), 'alert')
+        assert.equal(
+            statusOf(session({ ...iphone, camera_active: false, started_at: ago(59) }), NOW),
+            'camera_off'
+        )
+    })
 })
 
 test.group('Live Kerja: ringkasan jam kerja (padanan WorkPresence::summarize)', () => {

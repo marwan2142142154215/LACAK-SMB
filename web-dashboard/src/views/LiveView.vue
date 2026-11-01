@@ -57,7 +57,7 @@ import { backgroundSupported } from '@/lib/cameraBackground'
 import { buildWallMembers, pageCountOf, pageSlice, wantedRoomKeys } from '@/lib/liveWall'
 import { ATTENTION_STATUSES, WORK_STATUS, workStatus } from '@/lib/workStatus'
 import { useAuthStore } from '@/stores/auth'
-import { CAMERA_SOURCE, SCREEN_SOURCE, canShareScreen, micStateOf, parseRoomKey, roomKey, useLiveStore } from '@/stores/live'
+import { CAMERA_SOURCE, SCREEN_SOURCE, cameraOnlyDevice, canShareScreen, canStartWorkHere, micStateOf, parseRoomKey, roomKey, useLiveStore } from '@/stores/live'
 
 const ALL_SITES = 'all'
 
@@ -305,6 +305,8 @@ watch(
 
 // Cek wajah: kamera menyala tapi tidak ada wajah >= 30 detik (hanya catatan).
 const faceMissingOf = (identity) => !!sessionByIdentity.value[identity]?.face_missing
+// Siaran dari iPhone: kamera saja (iOS tidak bisa membagikan layar dari browser).
+const cameraOnlyOf = (identity) => !!sessionByIdentity.value[identity]?.camera_only
 
 function statusOf(participant) {
     return sessionByIdentity.value[participant.identity]?.status ?? null
@@ -980,7 +982,7 @@ onBeforeUnmount(() => {
                         Siaran Anda · {{ myStatusMeta?.label ?? 'Aktif' }}
                     </span>
                     <BaseButton
-                        v-if="canBroadcast && canShareScreen && !live.isBroadcasting"
+                        v-if="canBroadcast && canStartWorkHere && !live.isBroadcasting"
                         :loading="live.connecting"
                         @click="confirmStartOpen = true"
                     >
@@ -1044,15 +1046,29 @@ onBeforeUnmount(() => {
 
             <!-- Layar & kamera wajib: browser HP tidak bisa membagikan layar,
                  jadi kerja (siaran) hanya bisa dimulai dari komputer. -->
+            <!-- iPhone: kamera saja. Safari menghentikan kamera saat aplikasi ditutup / layar dikunci. -->
             <div
-                v-if="canBroadcast && !canShareScreen"
+                v-if="canBroadcast && cameraOnlyDevice"
+                class="flex items-start gap-3 rounded-lg border border-accent-500/30 bg-accent-500/10 px-4 py-3 text-sm text-pretty text-base-200"
+                role="note"
+            >
+                <Smartphone class="mt-0.5 size-4 shrink-0 text-accent-500" />
+                <span>
+                    Di iPhone, Live Kerja menyiarkan <strong>kamera saja</strong> (iPhone tidak bisa membagikan layar dari browser).
+                    Biarkan aplikasi ini <strong>tetap terbuka</strong> dan layar menyala: kalau ditutup atau layar dikunci, siaran
+                    terputus dan tercatat <strong>Disconnected</strong>.
+                </span>
+            </div>
+            <div
+                v-if="canBroadcast && !canStartWorkHere"
                 class="flex items-start gap-3 rounded-lg border border-warning-500/30 bg-warning-500/10 px-4 py-3 text-sm text-pretty text-warning-400"
                 role="note"
             >
                 <Smartphone class="mt-0.5 size-4 shrink-0" />
                 <span>
                     Live Kerja wajib membagikan <strong>seluruh layar dan kamera</strong>, dan itu hanya bisa dari
-                    <strong>komputer</strong> (Chrome atau Edge). Buka dashboard ini di komputer untuk Mulai kerja.
+                    <strong>komputer</strong> (Chrome atau Edge) atau APK Live Kerja di Android. Buka dashboard ini di komputer untuk
+                    Mulai kerja.
                 </span>
             </div>
 
@@ -1564,6 +1580,12 @@ onBeforeUnmount(() => {
                                 class="pointer-events-none !absolute top-1.5 left-1.5 rounded-full bg-danger-500 px-2 py-0.5 text-[11px] font-bold text-white shadow"
                                 >Wajah hilang</span
                             >
+                            <span
+                                v-else-if="cameraOnlyOf(participant.identity)"
+                                class="pointer-events-none !absolute top-1.5 left-1.5 rounded-full bg-base-950/80 px-2 py-0.5 text-[11px] font-bold text-white shadow"
+                                title="Siaran dari iPhone: kamera saja, tanpa layar"
+                                >Kamera saja · iPhone</span
+                            >
                         </div>
                     </TransitionGroup>
                     <TransitionGroup v-else tag="div" name="tile" class="grid gap-4" :class="wallGridClass">
@@ -1606,6 +1628,12 @@ onBeforeUnmount(() => {
                                 v-if="faceMissingOf(participant.identity)"
                                 class="pointer-events-none !absolute top-1.5 left-1.5 rounded-full bg-danger-500 px-2 py-0.5 text-[11px] font-bold text-white shadow"
                                 >Wajah hilang</span
+                            >
+                            <span
+                                v-else-if="cameraOnlyOf(participant.identity)"
+                                class="pointer-events-none !absolute top-1.5 left-1.5 rounded-full bg-base-950/80 px-2 py-0.5 text-[11px] font-bold text-white shadow"
+                                title="Siaran dari iPhone: kamera saja, tanpa layar"
+                                >Kamera saja · iPhone</span
                             >
                         </div>
                     </TransitionGroup>
@@ -1740,6 +1768,12 @@ onBeforeUnmount(() => {
                                                 class="rounded-full bg-danger-500/12 px-1.5 py-0.5 text-[11px] font-semibold text-danger-400"
                                                 title="Wajah tidak terlihat di kamera"
                                                 >Wajah</span
+                                            >
+                                            <span
+                                                v-if="staff.started_at && cameraOnlyOf(staff.participant_identity)"
+                                                class="rounded-full bg-st-screen/12 px-1.5 py-0.5 text-[11px] font-semibold text-st-screen"
+                                                title="Siaran dari iPhone: kamera saja, tanpa layar"
+                                                >iPhone</span
                                             >
                                             <span
                                                 class="min-w-[4.75rem] rounded-full border px-2 py-0.5 text-center text-[11px] font-semibold"

@@ -57,6 +57,8 @@ export type WorkSessionRow = {
     on_break: boolean
     idle: boolean
     face_missing: boolean
+    // Sesi iPhone (Safari tidak bisa membagikan layar): layar tidak wajib. Tidak ada = false.
+    camera_only?: boolean
     user_name?: string | null
 }
 
@@ -72,11 +74,14 @@ export function statusOf(session: WorkSessionRow | null, now: Date = new Date())
         return 'disconnected'
     }
     if (session.on_break) return 'break'
-    if (!session.camera_active && !session.screen_active) {
+    // Sesi kamera saja (iPhone): layar dianggap terpenuhi, yang wajib hanya kamera.
+    const screenOk = session.screen_active || session.camera_only === true
+    // Kamera saja + kamera mati = tidak ada yang tersiar sama sekali.
+    if (!session.camera_active && (session.camera_only === true || !session.screen_active)) {
         return secondsAgo(session.started_at) < ALERT_GRACE_SECONDS ? 'camera_off' : 'alert'
     }
     if (!session.camera_active) return 'camera_off'
-    if (!session.screen_active) return 'screen_off'
+    if (!screenOk) return 'screen_off'
     if (session.idle) return 'idle'
     return 'working'
 }
@@ -240,6 +245,7 @@ export function sessionResource(session: WorkSessionRow, now: Date = new Date())
         ended_at: session.ended_at,
         camera_active: session.camera_active,
         screen_active: session.screen_active,
+        camera_only: session.camera_only === true,
         on_break: session.on_break,
         idle: session.idle,
         face_missing: session.face_missing,

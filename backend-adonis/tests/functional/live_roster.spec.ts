@@ -181,6 +181,47 @@ test.group('Live Kerja: Ruang pusat & semua peran', (group) => {
         assert.equal(response.body().data.session.live_role, 'leader')
     })
 
+    test('iPhone Mulai kerja kamera saja: hanya dari browser iOS, sesi ditandai camera_only', async ({
+        client,
+        assert,
+    }) => {
+        const leader = await userWithRole('leader')
+        const IPHONE =
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+
+        // Klaim iPhone dari komputer ditolak (layar tetap wajib di komputer).
+        const spoofed = await client
+            .post('/api/v1/live/sessions/start')
+            .header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0')
+            .json({ device: 'ios_camera' })
+            .bearerToken(leader.bearer)
+        spoofed.assertStatus(422)
+
+        const started = await client
+            .post('/api/v1/live/sessions/start')
+            .header('User-Agent', IPHONE)
+            .json({ device: 'ios_camera' })
+            .bearerToken(leader.bearer)
+        started.assertStatus(201)
+        assert.isTrue(started.body().data.session.camera_only)
+
+        // Kamera menyala tanpa layar = Working (bukan Screen off).
+        const beat = await client
+            .post('/api/v1/live/sessions/heartbeat')
+            .json({ camera_active: true, screen_active: false })
+            .bearerToken(leader.bearer)
+        beat.assertStatus(200)
+        assert.equal(beat.body().data.status, 'working')
+
+        // Dilanjutkan dari komputer: kembali wajib layar.
+        const resumed = await client
+            .post('/api/v1/live/sessions/start')
+            .json({ device: 'computer' })
+            .bearerToken(leader.bearer)
+        resumed.assertStatus(201)
+        assert.isFalse(resumed.body().data.session.camera_only)
+    })
+
     test('peran buatan sendiri bisa Live lewat izin live.broadcast, di room site + perannya', async ({
         client,
         assert,

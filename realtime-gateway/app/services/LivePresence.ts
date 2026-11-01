@@ -39,6 +39,7 @@ const SESSION_COLUMNS = [
     'work_sessions.on_break',
     'work_sessions.idle',
     'work_sessions.face_missing',
+    'work_sessions.camera_only',
     'users.name as user_name',
 ]
 
