@@ -254,8 +254,11 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
 
 async function loadOrganizations() {
     if (!canManageAll.value) {
-        const response = await api.get('/live/sites')
-        organizations.value = response.data.data
+        try {
+            organizations.value = (await api.get('/organizations/mine')).data.data
+        } catch {
+            organizations.value = []
+        }
         return
     }
     const response = await api.get('/organizations', { params: { per_page: 200 } })

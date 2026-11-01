@@ -1,5 +1,5 @@
 import db from '@adonisjs/lucid/services/db'
-import { roleNamesOf } from '#services/Permissions'
+import { roleNamesOf, siteScopeOf } from '#services/Permissions'
 import { closeBriefingRoom, type BriefingRow } from '#services/Briefing'
 import { addDays, atLocal, dateColumn, isoWeekday, localDate, localTime } from '#services/LocalTime'
 import { raiseAlert } from '#services/WorkAlerts'
@@ -91,20 +91,21 @@ export function asBriefing(schedule: ScheduleRow): BriefingRow {
  * dicabut sesudah jadwal dibuat ikut berlaku untuk pengingatnya.
  */
 async function hostSites(hostUserId: number): Promise<number[] | 'all'> {
-    const [roles, user] = await Promise.all([
+    // Menurut cakupan site peran pemimpin (juga peran buatan sendiri), sama dengan managedSites.
+    const [roles, scope, user] = await Promise.all([
         roleNamesOf(hostUserId),
+        siteScopeOf(hostUserId),
         db.from('users').where('id', hostUserId).select('organization_id').first(),
     ])
-    if (roles.includes('super_admin')) return 'all'
-    const granted = await db
-        .from('user_site_access')
-        .where('user_id', hostUserId)
-        .select('organization_id')
-    const sites = new Set(granted.map((row) => Number(row.organization_id)))
-    if (roles.includes('site_admin') && user?.organization_id) {
-        sites.add(Number(user.organization_id))
+    if (roles.includes('super_admin') || scope === 'all') return 'all'
+    if (scope === 'granted') {
+        const granted = await db
+            .from('user_site_access')
+            .where('user_id', hostUserId)
+            .select('organization_id')
+        return [...new Set(granted.map((row) => Number(row.organization_id)))]
     }
-    return [...sites]
+    return user?.organization_id ? [Number(user.organization_id)] : []
 }
 
 /**

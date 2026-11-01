@@ -168,7 +168,7 @@ test.group('Peran: kelola peran (roles.manage)', (group) => {
             model_type: LARAVEL_USER_MORPH,
             model_id: auditor.id,
         })
-        const me = await client.get('/api/v1/me').bearerToken(auditor.bearer)
+        const me = await client.get('/api/v1/auth/me').bearerToken(auditor.bearer)
         me.assertStatus(200)
         assert.equal(me.body().data.site_scope, 'granted')
         assert.deepEqual(me.body().data.permissions.sort(), ['devices.view', 'live.watch'])

@@ -1,6 +1,6 @@
 <script setup>
 import { Plus, Send, Trash2, UserCheck } from '@lucide/vue'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
@@ -18,6 +18,8 @@ import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
+// Pemegang semua site / beberapa site memilih site binding; cakupan site sendiri memakai site-nya.
+const canPickSite = computed(() => auth.isSuperAdmin || ['all', 'granted'].includes(auth.user?.site_scope))
 const toast = useToast()
 
 const bindings = ref([])
@@ -105,9 +107,12 @@ async function loadBindings() {
 }
 
 async function loadOrganizations() {
-    if (!auth.isSuperAdmin) return
-    const response = await api.get('/organizations', { params: { per_page: 200 } })
-    organizations.value = response.data.data.items
+    if (!canPickSite.value) return
+    try {
+        organizations.value = (await api.get('/organizations/mine')).data.data
+    } catch {
+        organizations.value = []
+    }
     // Site tidak dipilihkan otomatis kalau ada lebih dari satu: binding berlaku untuk site-nya,
     // jadi pembuatnya harus sengaja memilih.
     if (!form.value.organization_id && organizations.value.length === 1) {
@@ -249,7 +254,7 @@ onMounted(async () => {
             @update:open="(v) => (dialogOpen = v)"
         >
             <form id="binding-form" class="space-y-4" @submit.prevent="submitForm">
-                <BaseSelect v-if="auth.isSuperAdmin" v-model="form.organization_id" label="Site" required>
+                <BaseSelect v-if="canPickSite" v-model="form.organization_id" label="Site" required>
                     <option :value="null" disabled>Pilih site</option>
                     <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
                 </BaseSelect>

@@ -15,7 +15,7 @@ import { QUEUE_HEARTBEAT_KEY, SCHEDULER_HEARTBEAT_KEY } from '#services/ServerSt
  * RolesAndPermissionsSeeder (peran & izin dibaca dari tabel spatie).
  */
 
-async function organization(name = 'Site Uji') {
+async function organization(name = `Site Uji ${randomBytes(3).toString('hex')}`) {
     const [row] = await db
         .table('organizations')
         .insert({
@@ -426,6 +426,7 @@ test.group('Status server', (group) => {
     test('scheduler & antrean dinilai dari detak terakhirnya', async ({ client, assert }) => {
         const admin = await userWithRole('super_admin')
         const services = async () => {
+            await redis.del('cache:server-status')
             const response = await client.get('/api/v1/system/status').bearerToken(admin.bearer)
             response.assertStatus(200)
             return Object.fromEntries(

@@ -4,7 +4,7 @@ import { accessOf, can, hasRole, type Access } from '#services/Access'
 import { fail, success } from '#services/ApiResponse'
 import { laravelDate } from '#services/ActivityLog'
 import { hasCrossOrganizationAccess } from '#services/OrganizationScope'
-import { permissionNamesOf, roleNamesOf } from '#services/Permissions'
+import { permissionNamesOf, roleNamesOf, siteScopeOf } from '#services/Permissions'
 import { storeTelegramUserLinkValidator } from '#validators/Rules'
 import { stringInput } from '#controllers/TelegramBindingsController'
 
@@ -217,9 +217,10 @@ export default class TelegramUserLinksController {
                 .send(fail('Akun staf yang ditautkan sedang dinonaktifkan'))
         }
 
-        const [roles, permissions, sites] = await Promise.all([
+        const [roles, permissions, siteScope, sites] = await Promise.all([
             roleNamesOf(user.id),
             permissionNamesOf(user.id),
+            siteScopeOf(user.id),
             // siteAccess(): site yang sudah di-soft-delete tidak ikut.
             db
                 .from('user_site_access')
@@ -237,6 +238,8 @@ export default class TelegramUserLinksController {
             roles,
             permissions,
             accessible_organization_ids: sites.map((site) => Number(site.id)),
+            // Cakupan site peran (juga peran buatan sendiri): bot memakai ini, bukan nama peran.
+            site_scope: siteScope,
         })
     }
 }

@@ -233,11 +233,13 @@ function exportCsv() {
 
 onMounted(async () => {
     try {
-        sites.value = (await api.get('/live/sites')).data.data
+        sites.value = (await api.get('/organizations/mine')).data.data
     } catch {
         sites.value = []
     }
-    if (!auth.isSuperAdmin && auth.user?.organization_id) siteId.value = auth.user.organization_id
+    // Pemegang satu site (cakupan site sendiri) langsung melihat site-nya; yang memegang banyak site memilih.
+    if (sites.value.length === 1) siteId.value = sites.value[0].id
+    else if (!auth.isSuperAdmin && auth.user?.site_scope === 'own' && auth.user?.organization_id) siteId.value = auth.user.organization_id
     load()
 })
 </script>

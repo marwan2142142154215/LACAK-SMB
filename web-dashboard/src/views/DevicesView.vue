@@ -37,7 +37,9 @@ const reEnrolling = ref(false)
 // Pindah device ke site lain (tanpa pasang ulang APK).
 const auth = useAuthStore()
 const sites = ref([])
-const canPickSite = computed(() => auth.isSuperAdmin || ['admin', 'leader'].some((role) => auth.user?.roles?.includes(role)))
+const canPickSite = computed(() => auth.isSuperAdmin || ['all', 'granted'].includes(auth.user?.site_scope))
+// Tombol & menu aksi hanya untuk yang memegang izinnya (server juga menolak tanpa izin).
+const allowed = (permission) => auth.hasPermission(permission)
 const moveTarget = ref(null)
 const moveSiteId = ref(null)
 const moving = ref(false)
@@ -80,19 +82,49 @@ function batteryColor(level) {
 function menuItems(device) {
     const busy = actingDeviceId.value === device.id
     return [
-        { label: 'Minta lokasi sekarang', icon: MapPin, onSelect: () => issueCommand(device, 'locate_now'), disabled: busy },
-        { label: 'Mulai pantau', icon: PlayCircle, onSelect: () => issueCommand(device, 'start_monitor'), disabled: busy },
-        { label: 'Hentikan pantau', icon: StopCircle, onSelect: () => issueCommand(device, 'stop_monitor'), disabled: busy },
-        { label: 'Buat OTP buka kunci', icon: KeyRound, onSelect: () => generateOtp(device), disabled: busy },
-        { label: 'Ubah nama', icon: Pencil, onSelect: () => openRename(device) },
+        {
+            label: 'Minta lokasi sekarang',
+            icon: MapPin,
+            onSelect: () => issueCommand(device, 'locate_now'),
+            disabled: busy,
+            hidden: !allowed('devices.locate'),
+        },
+        {
+            label: 'Mulai pantau',
+            icon: PlayCircle,
+            onSelect: () => issueCommand(device, 'start_monitor'),
+            disabled: busy,
+            hidden: !allowed('devices.monitor'),
+        },
+        {
+            label: 'Hentikan pantau',
+            icon: StopCircle,
+            onSelect: () => issueCommand(device, 'stop_monitor'),
+            disabled: busy,
+            hidden: !allowed('devices.monitor'),
+        },
+        { label: 'Buat OTP buka kunci', icon: KeyRound, onSelect: () => generateOtp(device), disabled: busy, hidden: !allowed('devices.unlock') },
+        { label: 'Ubah nama', icon: Pencil, onSelect: () => openRename(device), hidden: !allowed('devices.manage') },
         {
             label: 'Pindahkan ke site lain',
             icon: ArrowRightLeft,
             onSelect: () => openMove(device),
-            hidden: sites.value.length < 2,
+            hidden: sites.value.length < 2 || !allowed('devices.manage'),
         },
-        { label: 'Daftar ulang', icon: RefreshCw, onSelect: () => (reEnrollTarget.value = device), disabled: device.status === 'locked' },
-        { label: 'Hapus device', icon: Trash2, onSelect: () => (deleteTarget.value = device), danger: true },
+        {
+            label: 'Daftar ulang',
+            icon: RefreshCw,
+            onSelect: () => (reEnrollTarget.value = device),
+            disabled: device.status === 'locked',
+            hidden: !allowed('devices.manage'),
+        },
+        {
+            label: 'Hapus device',
+            icon: Trash2,
+            onSelect: () => (deleteTarget.value = device),
+            danger: true,
+            hidden: !allowed('devices.manage'),
+        },
     ]
 }
 
@@ -235,11 +267,9 @@ async function saveRename() {
 async function loadSites() {
     if (!canPickSite.value) return
     try {
-        // /organizations khusus root; admin & leader memakai site yang diberikan.
-        const response = await api.get(auth.isSuperAdmin ? '/organizations' : '/live/sites', {
-            params: { per_page: 200 },
-        })
-        sites.value = (auth.isSuperAdmin ? response.data.data.items : response.data.data).map((site) => ({
+        // Site yang boleh diakses sesuai cakupan peran (semua / yang diberikan / site sendiri).
+        const response = await api.get('/organizations/mine')
+        sites.value = response.data.data.map((site) => ({
             id: site.id,
             name: site.name,
         }))
@@ -399,7 +429,7 @@ onMounted(() => {
                                 <td>
                                     <div class="flex items-center justify-end gap-1">
                                         <BaseButton
-                                            v-if="d.status === 'locked'"
+                                            v-if="d.status === 'locked' && allowed('devices.unlock')"
                                             size="sm"
                                             variant="outline"
                                             :loading="actingDeviceId === d.id"
@@ -408,7 +438,7 @@ onMounted(() => {
                                             <Unlock class="size-3.5" /> <span class="max-sm:sr-only">Buka kunci</span>
                                         </BaseButton>
                                         <BaseButton
-                                            v-else
+                                            v-else-if="d.status !== 'locked' && allowed('devices.lock')"
                                             size="sm"
                                             variant="danger-outline"
                                             :loading="actingDeviceId === d.id"
@@ -417,7 +447,11 @@ onMounted(() => {
                                         >
                                             <Lock class="size-3.5" /> <span class="max-sm:sr-only">Kunci</span>
                                         </BaseButton>
-                                        <RowMenu :items="menuItems(d)" :label="`Aksi lain untuk ${d.device_name}`" />
+                                        <RowMenu
+                                            v-if="menuItems(d).some((item) => !item.hidden)"
+                                            :items="menuItems(d)"
+                                            :label="`Aksi lain untuk ${d.device_name}`"
+                                        />
                                     </div>
                                 </td>
                             </tr>

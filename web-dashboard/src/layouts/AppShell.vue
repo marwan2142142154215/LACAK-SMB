@@ -30,6 +30,8 @@ import dayjs from 'dayjs'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { canOpen } from '@/router'
+
 import ChatWidget from '@/components/chat/ChatWidget.vue'
 import CameraLock from '@/components/live/CameraLock.vue'
 import ScreenShareLock from '@/components/live/ScreenShareLock.vue'
@@ -46,7 +48,6 @@ import { useLiveStore } from '@/stores/live'
 
 const auth = useAuthStore()
 // Peran ber-cakupan "site yang diberikan" membuka halaman Staf hanya untuk menonaktifkan staf di site-nya.
-const canSeeStaff = computed(() => auth.isSuperAdmin || auth.hasSiteGrants)
 const live = useLiveStore()
 const chat = useChatStore()
 const toast = useToast()
@@ -75,16 +76,19 @@ watch(
 
 // Dikelompokkan menurut pekerjaan operator: memantau, mengurus perangkat,
 // dan mengatur siapa yang punya akses.
-const navGroups = computed(() => [
+// Menu = halaman yang boleh dibuka (aturan yang sama dengan penjaga rute, lihat router canEnter):
+// mencabut izin sebuah peran di menu Peran ikut menyembunyikan menunya.
+const navGroups = computed(() =>
+    [
     {
         label: 'Pantau',
         items: [
             { to: { name: 'radar' }, label: 'Radar', icon: Radar },
             { to: { name: 'live' }, label: 'Live Kerja', icon: Video, live: live.isBroadcasting },
             { to: { name: 'briefing' }, label: 'Briefing', icon: Presentation, live: briefings.value.length > 0 },
-            { to: { name: 'activity' }, label: 'Aktivitas user', icon: Activity, hidden: !auth.hasPermission('live.watch') },
-            { to: { name: 'face-log' }, label: 'Log wajah hilang', icon: ScanFace, hidden: !auth.hasPermission('live.watch') },
-            { to: { name: 'recordings' }, label: 'Rekaman', icon: Film, hidden: !auth.hasPermission('live.watch') },
+            { to: { name: 'activity' }, label: 'Aktivitas user', icon: Activity },
+            { to: { name: 'face-log' }, label: 'Log wajah hilang', icon: ScanFace },
+            { to: { name: 'recordings' }, label: 'Rekaman', icon: Film },
         ],
     },
     {
@@ -101,22 +105,26 @@ const navGroups = computed(() => [
         items: [
             { to: { name: 'devices' }, label: 'Device', icon: Smartphone },
             { to: { name: 'geofence-rules' }, label: 'Aturan geofence', icon: MapPinned },
-            { to: { name: 'apk-builds' }, label: 'Build APK', icon: PackageOpen, hidden: !auth.hasPermission('apk-builds.manage') },
+            { to: { name: 'apk-builds' }, label: 'Build APK', icon: PackageOpen },
         ],
     },
     {
         label: 'Akses',
         items: [
             { to: { name: 'telegram-bindings' }, label: 'Bot Telegram', icon: Send },
-            { to: { name: 'organizations' }, label: 'Site', icon: Building2, hidden: !auth.isSuperAdmin },
-            { to: { name: 'staff' }, label: 'Staf', icon: Users, hidden: !canSeeStaff.value },
-            { to: { name: 'roles' }, label: 'Peran', icon: ShieldCheck, hidden: !auth.hasPermission('roles.manage') },
-            { to: { name: 'activity-logs' }, label: 'Log aktivitas', icon: History, hidden: !auth.hasPermission('activity-logs.view') },
-            { to: { name: 'settings' }, label: 'Pengaturan', icon: Settings, hidden: !auth.isSuperAdmin },
-            { to: { name: 'server-status' }, label: 'Status server', icon: ServerCog, hidden: !auth.isSuperAdmin },
+            { to: { name: 'organizations' }, label: 'Site', icon: Building2 },
+            { to: { name: 'staff' }, label: 'Staf', icon: Users },
+            { to: { name: 'roles' }, label: 'Peran', icon: ShieldCheck },
+            { to: { name: 'activity-logs' }, label: 'Log aktivitas', icon: History },
+            { to: { name: 'settings' }, label: 'Pengaturan', icon: Settings },
+            { to: { name: 'server-status' }, label: 'Status server', icon: ServerCog },
         ],
     },
-])
+]
+        .map((group) => ({ ...group, items: group.items.filter((item) => canOpen(item.to.name, auth.user)) }))
+        // Kelompok tanpa menu yang boleh dibuka tidak ditampilkan (tanpa judul kosong).
+        .filter((group) => group.items.length > 0),
+)
 
 const ROLE_LABELS = {
     super_admin: 'Super Admin',

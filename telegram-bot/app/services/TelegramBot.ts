@@ -17,16 +17,20 @@ const APK_POLL_MAX_TRIES = 36
 type OrganizationHandler = (ctx: Context, chatId: number, organizationId: number) => Promise<void>
 
 /**
- * Replika ResolvesOrganizationScope di backend-api untuk akun staf pengirim:
- * super_admin lintas site, admin/leader hanya site yang diberikan lewat
- * user_site_access, role lain hanya site miliknya sendiri.
+ * Sama dengan OrganizationScope di backend, menurut CAKUPAN SITE peran staf pengirim (juga peran
+ * buatan sendiri, mis. auditor "Semua site"): semua site / site yang diberikan / site sendiri.
  */
 function staffCanActOnOrganization(staff: StaffLink, organizationId: number, permission: string) {
     if (!staff.permissions.includes(permission)) return false
-    if (staff.roles.includes('super_admin')) return true
-    if (staff.roles.includes('admin') || staff.roles.includes('leader')) {
-        return staff.accessible_organization_ids.includes(organizationId)
-    }
+    const scope =
+        staff.site_scope ??
+        (staff.roles.includes('super_admin')
+            ? 'all'
+            : staff.roles.includes('admin') || staff.roles.includes('leader')
+              ? 'granted'
+              : 'own')
+    if (staff.roles.includes('super_admin') || scope === 'all') return true
+    if (scope === 'granted') return staff.accessible_organization_ids.includes(organizationId)
     return staff.organization_id === organizationId
 }
 

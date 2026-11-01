@@ -190,6 +190,10 @@ let ownScreenTrack = null
 let republishing = false
 let lastRepublishAt = 0
 let rejoinTimer = null
+// Naik tiap disconnect(): koneksi room yang selesai SESUDAH itu dibuang, bukan disimpan.
+let connectGeneration = 0
+// DisconnectReason.DUPLICATE_IDENTITY di livekit-client: identitas yang sama masuk dari tab/perangkat lain.
+const DUPLICATE_IDENTITY = 2
 let rejoinAttempt = 0
 // Socket Live Kerja ke gateway (lihat ensureLiveSocket).
 let liveSocket = null
@@ -273,6 +277,8 @@ export const useLiveStore = defineStore('live', () => {
     const reconnecting = ref(false)
 
     const isBroadcasting = computed(() => mode.value === 'broadcasting')
+    // true = siaran ini diambil alih tab/perangkat lain dengan akun yang sama (tidak disambung ulang).
+    const broadcastElsewhere = ref(false)
 
     const watchedRoomKeys = ref([])
 
@@ -386,12 +392,20 @@ export const useLiveStore = defineStore('live', () => {
             .on(RoomEvent.Reconnecting, () => handleReconnecting(room))
             .on(RoomEvent.SignalReconnecting, () => handleReconnecting(room))
             .on(RoomEvent.Reconnected, () => handleReconnected(room))
-            .on(RoomEvent.Disconnected, () => handleRoomDisconnected(siteId, room))
+            .on(RoomEvent.Disconnected, (reason) => handleRoomDisconnected(siteId, room, reason))
 
         // autoSubscribe: false -- LiveView yang memilih peserta mana yang
         // di-subscribe (hanya yang tampil di halaman grid saat ini), bukan
         // langsung menerima video semua staf se-site sekaligus.
+        const generation = connectGeneration
         await room.connect(livekitUrl, token, { autoSubscribe: false })
+        // Sementara menyambung, semua koneksi diputus (Mulai kerja, logout) atau room yang sama sudah
+        // terbuka lewat jalur lain (mis. room siaran sendiri): jangan simpan -- kalau disimpan, room
+        // siaran bisa tertimpa room tonton atau room lama hidup lagi setelah login akun lain.
+        if (generation !== connectGeneration || rooms.has(siteId)) {
+            await room.removeAllListeners().disconnect()
+            throw new Error('Sambungan dibatalkan')
+        }
         rooms.set(siteId, room)
         startTransportCheck()
         bump()
@@ -493,6 +507,7 @@ export const useLiveStore = defineStore('live', () => {
     }
 
     async function disconnect() {
+        connectGeneration++
         watchSelection.value = null
         stopTransportCheck()
         stopHeartbeat()
@@ -516,12 +531,12 @@ export const useLiveStore = defineStore('live', () => {
 
     // Diputus dari sisi server (sesi ditutup timeout, staf dikeluarkan) atau
     // koneksi gagal total setelah LiveKit menyerah reconnect.
-    function handleRoomDisconnected(siteId, room) {
+    function handleRoomDisconnected(siteId, room, reason) {
         const wasBroadcasting = room === ownRoom && mode.value === 'broadcasting'
         if (rooms.get(siteId) === room) rooms.delete(siteId)
         watchedRoomKeys.value = watchedRoomKeys.value.filter((id) => rooms.has(id))
         if (rooms.size === 0) stopTransportCheck()
-        if (room === ownRoom || rooms.size === 0) {
+        if (room === ownRoom) {
             ownRoom = null
             stopHeartbeat()
             stopIdleWatch()
@@ -529,9 +544,21 @@ export const useLiveStore = defineStore('live', () => {
             cameraBackground.reset()
             releaseWakeLock()
             resetBroadcastState()
+            // Masih menonton site lain (penyiar yang tetap memantau): tetap mode menonton.
+            if (rooms.size > 0) mode.value = 'watching'
         }
+        // Room tonton yang putus tidak mengubah mode: room dibuka lagi pada sinkron berikutnya
+        // (dulu dinding penonton mati permanen setelah jaringan putus).
         bump()
-        if (wasBroadcasting) scheduleRejoin()
+        if (!wasBroadcasting) return
+        if (reason === DUPLICATE_IDENTITY) {
+            // Siaran dilanjutkan dari tab/perangkat lain: jangan rebut balik (dulu dua tab saling
+            // mengeluarkan tanpa henti).
+            broadcastElsewhere.value = true
+            cancelRejoin()
+            return
+        }
+        scheduleRejoin()
     }
 
     const ownRoomReady = () => ownRoom?.state === CONNECTED
@@ -601,7 +628,7 @@ export const useLiveStore = defineStore('live', () => {
         const delay = REJOIN_DELAYS_MS[rejoinAttempt++] + Math.random() * REJOIN_JITTER_MS
         rejoinTimer = setTimeout(async () => {
             rejoinTimer = null
-            if (mode.value !== 'idle') return
+            if (mode.value === 'broadcasting') return
             resumeTask = null
             const { resumed, error } = await resumeIfBroadcasting()
             if (resumed) rejoinAttempt = 0
@@ -778,6 +805,7 @@ export const useLiveStore = defineStore('live', () => {
             throw error
         }
         if (!resuming) cancelRejoin()
+        broadcastElsewhere.value = false
         connecting.value = true
         cameraProblem.value = null
         let screenTrack = null
@@ -871,7 +899,7 @@ export const useLiveStore = defineStore('live', () => {
         resumeUserId = auth.user?.id
         resumeTask ??= (async () => {
             // Semua peran dengan izin live.broadcast bisa siaran: ke site-nya, atau ke Ruang pusat kalau tanpa site.
-            if (mode.value !== 'idle' || !auth.hasPermission('live.broadcast')) {
+            if (mode.value === 'broadcasting' || !auth.hasPermission('live.broadcast')) {
                 return { resumed: false }
             }
             try {
@@ -1312,6 +1340,7 @@ export const useLiveStore = defineStore('live', () => {
         reconnecting,
         connecting,
         isBroadcasting,
+        broadcastElsewhere,
         remoteParticipants,
         participantRooms,
         watchedRoomKeys,

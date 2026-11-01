@@ -31,8 +31,8 @@ const deleting = ref(false)
 const editTarget = ref(null)
 
 // Admin & leader mengelola site yang diberikan ke akunnya, jadi perlu memilih site.
-const isGrantBased = computed(() => !auth.isSuperAdmin && ['admin', 'leader'].some((role) => auth.user?.roles?.includes(role)))
-const canPickSite = computed(() => auth.isSuperAdmin || isGrantBased.value)
+const isGrantBased = computed(() => !auth.isSuperAdmin && auth.user?.site_scope === 'granted')
+const canPickSite = computed(() => auth.isSuperAdmin || ['all', 'granted'].includes(auth.user?.site_scope))
 
 // Site TIDAK dipilihkan otomatis kalau ada lebih dari satu: aturan berlaku untuk site-nya, jadi pembuatnya
 // harus sengaja memilih. Hanya bila cuma ada satu site, itu yang dipakai.
@@ -163,17 +163,23 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
 
 async function loadOrganizations() {
     if (!canPickSite.value) return
-    // /organizations khusus root; admin & leader memakai daftar site yang diberikan.
-    const response = await api.get(auth.isSuperAdmin ? '/organizations' : '/live/sites', {
-        params: { per_page: 200 },
-    })
-    organizations.value = auth.isSuperAdmin ? response.data.data.items : response.data.data
+    // Site yang boleh diakses sesuai cakupan peran.
+    try {
+        organizations.value = (await api.get('/organizations/mine')).data.data
+    } catch {
+        organizations.value = []
+    }
     if (!form.value.organization_id) form.value.organization_id = onlySiteId()
 }
 
 async function loadDevices() {
-    const response = await api.get('/devices', { params: { per_page: 100 } })
-    devices.value = response.data.data.items
+    if (!auth.hasPermission('devices.view')) return
+    try {
+        const response = await api.get('/devices', { params: { per_page: 100 } })
+        devices.value = response.data.data.items
+    } catch {
+        devices.value = []
+    }
 }
 
 async function submitForm() {

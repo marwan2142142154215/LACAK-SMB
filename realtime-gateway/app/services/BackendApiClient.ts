@@ -88,17 +88,21 @@ function siteScopeOf(value: string | undefined, roles: string[]): AuthenticatedU
     return 'own'
 }
 
-export async function verifyBearerToken(token: string): Promise<AuthenticatedUser | null> {
+/**
+ * Data user dari token. `path` /auth/me memperpanjang sesi (saat connect), /auth/session tidak
+ * (dipakai cek ulang berkala untuk memuat ulang izin & hak tonton terbaru).
+ */
+export async function verifyBearerToken(
+    token: string,
+    path: '/api/v1/auth/me' | '/api/v1/auth/session' = '/api/v1/auth/me'
+): Promise<AuthenticatedUser | null> {
     try {
-        const response = await axios.get<AuthMeResponse>(
-            `${env.get('BACKEND_API_URL')}/api/v1/auth/me`,
-            {
-                headers: userHeaders(token),
-                // Status non-2xx (mis. 401 token kedaluwarsa) adalah jawaban
-                // normal "token tidak sah", bukan kegagalan yang perlu dicatat.
-                validateStatus: () => true,
-            }
-        )
+        const response = await axios.get<AuthMeResponse>(`${env.get('BACKEND_API_URL')}${path}`, {
+            headers: userHeaders(token),
+            // Status non-2xx (mis. 401 token kedaluwarsa) adalah jawaban
+            // normal "token tidak sah", bukan kegagalan yang perlu dicatat.
+            validateStatus: () => true,
+        })
 
         if (response.status < 200 || response.status >= 300) return null
 

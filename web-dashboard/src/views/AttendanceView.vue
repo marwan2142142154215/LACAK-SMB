@@ -19,8 +19,10 @@ import api from '@/lib/api'
 import { ATTENDANCE_STATUS, WEEKDAYS, clock, describeDays, minutesLabel, statusLabel } from '@/lib/attendance'
 import { formatDuration } from '@/lib/workStatus'
 import { buildXlsx, downloadBlob } from '@/lib/xlsx'
+import { useAuthStore } from '@/stores/auth'
 
 const toast = useToast()
+const auth = useAuthStore()
 
 const TABS = [
     { value: 'recap', label: 'Rekap absensi', icon: CalendarClock },
@@ -28,6 +30,8 @@ const TABS = [
     { value: 'alerts', label: 'Peringatan & laporan', icon: BellRing },
 ]
 const tab = ref('recap')
+const TAB_PERMISSION = { shifts: 'work-shifts.manage', alerts: 'attendance.manage' }
+const visibleTabs = computed(() => TABS.filter((item) => !TAB_PERMISSION[item.value] || auth.hasPermission(TAB_PERMISSION[item.value])))
 
 const sites = ref([])
 const siteId = ref(null)
@@ -72,7 +76,7 @@ async function loadRecap() {
             params: { from: from.value, to: to.value, ...(siteId.value ? { organization_id: siteId.value } : {}) },
         })
         canManage.value = data.data.can_manage
-        if (!sites.value.length) sites.value = data.data.sites
+        if (!sites.value.length) sites.value = data.data.sites ?? []
         if (!siteId.value && data.data.organization_id) siteId.value = data.data.organization_id
         days.value = data.data.items
     } catch (err) {
@@ -408,9 +412,9 @@ onMounted(async () => {
         </PageHeader>
 
         <div class="px-4 sm:px-8">
-            <div v-if="canManage" class="mt-4 flex gap-1 overflow-x-auto rounded-xl bg-base-900 p-1 shadow-(--shadow-card)" role="tablist">
+            <div v-if="canManage && visibleTabs.length > 1" class="mt-4 flex gap-1 overflow-x-auto rounded-xl bg-base-900 p-1 shadow-(--shadow-card)" role="tablist">
                 <button
-                    v-for="item in TABS"
+                    v-for="item in visibleTabs"
                     :key="item.value"
                     type="button"
                     role="tab"

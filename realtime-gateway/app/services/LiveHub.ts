@@ -253,6 +253,22 @@ export function registerLiveHandlers(
             ack(callback)({ ok: false, message: 'Status belum tersimpan, dicoba lagi otomatis' })
         }
     })
+
+    return {
+        /**
+         * Hak tonton user berubah (izin, cakupan site, atau peran yang boleh ditonton dicabut admin):
+         * keluar dari room status yang tidak lagi boleh diikuti, tanpa menunggu tab dimuat ulang.
+         */
+        recheckWatching() {
+            for (const room of [...watching]) {
+                const ref = parseLiveRoom(room)
+                if (!ref || !canWatchRoom(user, ref)) {
+                    socket.leave(room)
+                    watching.delete(room)
+                }
+            }
+        },
+    }
 }
 
 export function startLiveSweeper(opsNs: OpsNamespace): () => void {

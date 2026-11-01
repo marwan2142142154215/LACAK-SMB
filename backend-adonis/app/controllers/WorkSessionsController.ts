@@ -159,8 +159,24 @@ export default class WorkSessionsController {
             })
         }
 
-        const organizationId = authorizedOrganizationId(access, requestedOrganizationId(ctx))
+        const requested = requestedOrganizationId(ctx)
+        const organizationId = authorizedOrganizationId(access, requested)
         if (organizationId === null) {
+            // Penyiar yang site rumahnya di luar cakupan tontonnya (mis. peran "site yang diberikan"
+            // yang site rumahnya tidak termasuk): tetap dapat sesinya sendiri untuk melanjutkan siaran.
+            if (
+                requested !== null &&
+                requested === access.organizationId &&
+                can(access, 'live.broadcast')
+            ) {
+                const own = await openSessionOf(access.userId)
+                return success('Staf yang sedang live', {
+                    organization_id: null,
+                    items: [],
+                    roster: [],
+                    my_session: own ? sessionResource(withoutUserName(own)) : null,
+                })
+            }
             return ctx.response.status(403).send(fail('Pilih site yang boleh Anda tonton'))
         }
 
@@ -623,7 +639,9 @@ async function centralRoster(openSessionRows: WorkSessionRow[]) {
             user_id: member.id,
             name: member.name,
             organization_id: null,
-            live_role: session?.live_role ?? liveRoles.get(member.id) ?? UNKNOWN_LIVE_ROLE,
+            live_role: session
+                ? (session.live_role ?? UNKNOWN_LIVE_ROLE)
+                : (liveRoles.get(member.id) ?? UNKNOWN_LIVE_ROLE),
             participant_identity: `user-${member.id}`,
             status: status === 'offline' && logins.has(member.id) ? 'online' : status,
             started_at: session?.started_at ?? null,
@@ -746,7 +764,9 @@ async function rosterFor(organizationIds: number[], openSessionRows: WorkSession
             name: member.name,
             organization_id: member.organization_id,
             // Peran tempat siarannya dicatat (sesi berjalan), atau peran pertamanya.
-            live_role: session?.live_role ?? liveRoles.get(member.id) ?? UNKNOWN_LIVE_ROLE,
+            live_role: session
+                ? (session.live_role ?? UNKNOWN_LIVE_ROLE)
+                : (liveRoles.get(member.id) ?? UNKNOWN_LIVE_ROLE),
             participant_identity: `user-${member.id}`,
             // Login tapi belum Mulai kerja = 'online', bukan 'offline'. Hanya
             // tampilan roster -- log & jam kerja tetap memakai statusOf().

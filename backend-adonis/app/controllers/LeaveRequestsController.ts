@@ -212,6 +212,9 @@ export default class LeaveRequestsController {
 
     async review(ctx: HttpContext) {
         const access = await accessOf(ctx)
+        if (!can(access, 'leave.review')) {
+            return ctx.response.status(403).send(fail('Anda tidak berwenang meninjau izin & cuti'))
+        }
         const leave = await findLeave(ctx.params.id)
         if (!leave) return ctx.response.status(404).send(fail('Pengajuan tidak ditemukan'))
         // Site staf saat ini, bukan saat mengajukan: staf yang pindah site

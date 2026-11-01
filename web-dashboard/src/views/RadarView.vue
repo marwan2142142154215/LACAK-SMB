@@ -42,6 +42,16 @@ const mapEl = ref(null)
 let mapInstance = null
 let mapMarker = null
 
+// Ikon bawaan Leaflet (marker-icon.png) dicari lewat jalur CSS yang rusak setelah dibundel Vite --
+// yang tampil hanya gambar rusak bertuliskan "Marker". Pakai penanda HTML + CSS sendiri.
+const deviceIcon = L.divIcon({
+    className: 'device-pin',
+    html: '<span class="device-pin-dot"></span>',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+    popupAnchor: [0, -14],
+})
+
 function renderMap(device) {
     if (!mapEl.value || device?.latitude == null || device?.longitude == null) return
     const lat = Number(device.latitude)
@@ -53,7 +63,7 @@ function renderMap(device) {
             maxZoom: 19,
             attribution: '&copy; OpenStreetMap contributors',
         }).addTo(mapInstance)
-        mapMarker = L.marker([lat, lng]).addTo(mapInstance)
+        mapMarker = L.marker([lat, lng], { icon: deviceIcon, alt: device.device_name ?? 'Device' }).addTo(mapInstance)
     } else {
         mapInstance.setView([lat, lng], 16)
         mapMarker.setLatLng([lat, lng])
@@ -309,6 +319,24 @@ onMounted(async () => {
 .map :deep(.leaflet-container) {
     background-color: var(--color-base-950);
     font-family: var(--font-sans);
+}
+
+/* Penanda device: titik aksen bercincin putih (bukan gambar bawaan Leaflet yang rusak saat dibundel). */
+.map :deep(.device-pin) {
+    border: 0;
+    background: transparent;
+}
+
+.map :deep(.device-pin-dot) {
+    display: block;
+    width: 22px;
+    height: 22px;
+    border: 3px solid #fff;
+    border-radius: 9999px;
+    background: var(--color-accent-500);
+    box-shadow:
+        0 0 0 6px color-mix(in oklab, var(--color-accent-500) 28%, transparent),
+        0 2px 8px rgb(0 0 0 / 0.45);
 }
 
 .map :deep(.leaflet-popup-content-wrapper),

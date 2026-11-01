@@ -183,14 +183,15 @@ watch(siteFilter, (id) => {
 
 // Root memilih dari semua site; admin & leader dari site yang dipegangnya
 // (daftar Live Kerja); admin site selalu site-nya sendiri.
-const canPickSite = computed(() => auth.isSuperAdmin || ['admin', 'leader'].some((role) => auth.user?.roles?.includes(role)))
+const canPickSite = computed(() => auth.isSuperAdmin || ['all', 'granted'].includes(auth.user?.site_scope))
 
 async function loadOrganizations() {
     if (!canPickSite.value) return
-    const response = auth.isSuperAdmin
-        ? await api.get('/organizations', { params: { per_page: 200 } })
-        : await api.get('/live/sites')
-    organizations.value = auth.isSuperAdmin ? response.data.data.items : response.data.data
+    try {
+        organizations.value = (await api.get('/organizations/mine')).data.data
+    } catch {
+        organizations.value = []
+    }
     // Site TIDAK dipilihkan otomatis kalau ada lebih dari satu: APK terikat ke site-nya, jadi pemilihnya
     // harus sengaja memilih. Hanya bila cuma ada satu site, itu yang dipakai.
     const only = organizations.value.length === 1 ? organizations.value[0].id : null

@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import { accessOf, can } from '#services/Access'
+import { hasCrossOrganizationAccess, hasGrantBasedAccess } from '#services/OrganizationScope'
 import { fail, success } from '#services/ApiResponse'
 import { logModelEvent } from '#services/ActivityLog'
 import { escapeLike, searchTermOf } from '#services/SearchTerm'
@@ -45,6 +46,32 @@ const ORGANIZATION_COLUMNS = [
  * di-soft-delete dianggap tidak ada.
  */
 export default class OrganizationsController {
+    /**
+     * Site aktif yang boleh diakses user ini menurut cakupan site perannya (semua / yang diberikan /
+     * sendiri). Untuk pemilih site di halaman selain Live (Device, Aturan geofence, Build APK, Bot
+     * Telegram, Log aktivitas): tidak butuh izin Live maupun kelola site.
+     */
+    async mine(ctx: HttpContext) {
+        const access = await accessOf(ctx)
+        const query = db
+            .from('organizations')
+            .where('is_active', true)
+            .whereNull('deleted_at')
+            .orderBy('name')
+            .select('id', 'name')
+        if (!hasCrossOrganizationAccess(access)) {
+            query.whereIn(
+                'id',
+                hasGrantBasedAccess(access)
+                    ? access.grantedOrganizationIds
+                    : access.organizationId === null
+                      ? []
+                      : [access.organizationId]
+            )
+        }
+        return success('Site yang bisa diakses', await query)
+    }
+
     async index(ctx: HttpContext) {
         if (!(await canManage(ctx))) return forbidden(ctx)
 

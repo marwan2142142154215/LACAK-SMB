@@ -4,8 +4,11 @@ import vine from '@vinejs/vine'
 import { accessOf } from '#services/Access'
 import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
+import { hasCrossOrganizationAccess } from '#services/OrganizationScope'
 import {
-    BRIEFING_AUDIENCE_ROLES,
+    AUDIENCE_ROLE_PATTERN,
+    audienceRoles,
+    unknownAudienceRoles,
     briefingToken,
     canHostBriefing,
     canJoinBriefing,
@@ -27,14 +30,10 @@ import { liveKitConfig } from '#services/Livekit'
 import { colleaguesOf as inviteCandidates } from '#services/People'
 import { DATE_PATTERN, localDate, TIME_PATTERN } from '#services/LocalTime'
 
-const AUDIENCE_KEYS = Object.keys(BRIEFING_AUDIENCE_ROLES) as Array<
-    keyof typeof BRIEFING_AUDIENCE_ROLES
->
-
 const startValidator = vine.compile(
     vine.object({
         title: vine.string().trim().minLength(1).maxLength(120),
-        roles: vine.array(vine.enum(AUDIENCE_KEYS)).optional(),
+        roles: vine.array(vine.string().regex(AUDIENCE_ROLE_PATTERN)).optional(),
         organization_ids: vine.array(vine.number().withoutDecimals().positive()).optional(),
         // Peserta pilihan: kalau diisi, hanya user ini (plus pemimpin) yang bisa bergabung.
         user_ids: vine.array(vine.number().withoutDecimals().positive()).maxLength(100).optional(),
@@ -96,7 +95,9 @@ export default class BriefingsController {
                   .from('briefings')
                   .whereNotNull('ended_at')
                   .where('started_at', '>=', new Date(Date.now() - HISTORY_DAYS * 86_400_000))
-                  .if(!access.roles.includes('super_admin'), (query) =>
+                  // Riwayat semua pemimpin hanya untuk yang melihat semua site (root, atau peran
+                  // buatan ber-cakupan "Semua site" seperti auditor); lainnya: briefing miliknya.
+                  .if(!hasCrossOrganizationAccess(access), (query) =>
                       query.where('host_user_id', access.userId)
                   )
                   .orderBy('started_at', 'desc')
@@ -151,7 +152,7 @@ export default class BriefingsController {
                 ended_at: briefing.ended_at,
                 attendee_count: briefing.attendee_count,
             })),
-            roles: AUDIENCE_KEYS.map((value) => ({ value, label: BRIEFING_AUDIENCE_ROLES[value] })),
+            roles: await audienceRoles(),
             sites: hostSites,
             people,
             items: joinable.map((briefing) => ({
@@ -180,6 +181,14 @@ export default class BriefingsController {
                 .send(fail('Hanya leader, admin, atau root yang bisa memulai briefing'))
         }
         const input = await ctx.request.validateUsing(startValidator)
+        const unknownRoles = await unknownAudienceRoles(input.roles ?? [])
+        if (unknownRoles.length) {
+            return ctx.response.status(422).send(
+                fail('Data yang diberikan tidak valid.', {
+                    roles: [`Peran tidak dikenal: ${unknownRoles.join(', ')}`],
+                })
+            )
+        }
         const roles = [...new Set(input.roles ?? [])]
         const invitedIds = [...new Set(input.user_ids ?? [])].filter((id) => id !== access.userId)
 

@@ -73,6 +73,8 @@ export type StaffLink = {
     roles: string[]
     permissions: string[]
     accessible_organization_ids: number[]
+    /** Cakupan site peran; backend lama tanpa kolom ini = turunkan dari nama peran. */
+    site_scope?: 'all' | 'granted' | 'own'
 }
 
 /**

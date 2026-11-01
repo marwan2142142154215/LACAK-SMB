@@ -125,6 +125,7 @@ export default class AttendanceController {
 
     async showSettings(ctx: HttpContext) {
         const access = await accessOf(ctx)
+        if (!can(access, 'attendance.manage')) return forbidden(ctx)
         const organizationId = Number(ctx.params.organizationId)
         if (!managesSite(access, organizationId)) return forbidden(ctx)
 
@@ -143,6 +144,7 @@ export default class AttendanceController {
 
     async updateSettings(ctx: HttpContext) {
         const access = await accessOf(ctx)
+        if (!can(access, 'attendance.manage')) return forbidden(ctx)
         const organizationId = Number(ctx.params.organizationId)
         if (!managesSite(access, organizationId)) return forbidden(ctx)
         const input = await ctx.request.validateUsing(settingsValidator)

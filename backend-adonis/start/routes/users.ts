@@ -20,6 +20,8 @@ const RolesController = () => import('#controllers/RolesController')
 
 router
     .group(() => {
+        // Sebelum /organizations/:organization supaya "mine" tidak terbaca sebagai id.
+        router.get('/organizations/mine', [OrganizationsController, 'mine'])
         router.get('/organizations', [OrganizationsController, 'index'])
         router.post('/organizations', [OrganizationsController, 'store'])
         router.get('/organizations/:organization', [OrganizationsController, 'show'])

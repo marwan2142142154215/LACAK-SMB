@@ -4,21 +4,22 @@ import vine from '@vinejs/vine'
 import { accessOf, can, type Access } from '#services/Access'
 import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
-import { BRIEFING_AUDIENCE_ROLES, sitesOf as userSitesOf } from '#services/Briefing'
+import {
+    AUDIENCE_ROLE_PATTERN,
+    audienceRoles,
+    sitesOf as userSitesOf,
+    unknownAudienceRoles,
+} from '#services/Briefing'
 import { managedSites } from '#services/ManagedSites'
 import { raiseAlert } from '#services/WorkAlerts'
 import { sitesOf } from '#controllers/WorkShiftsController'
-
-const AUDIENCE_KEYS = Object.keys(BRIEFING_AUDIENCE_ROLES) as Array<
-    keyof typeof BRIEFING_AUDIENCE_ROLES
->
 
 const storeValidator = vine.compile(
     vine.object({
         title: vine.string().trim().minLength(1).maxLength(120),
         body: vine.string().trim().minLength(1).maxLength(5000),
         // Kosong = semua peran.
-        roles: vine.array(vine.enum(AUDIENCE_KEYS)).optional(),
+        roles: vine.array(vine.string().regex(AUDIENCE_ROLE_PATTERN)).optional(),
         // Kosong = semua site yang dikelola penulis.
         organization_ids: vine.array(vine.number().withoutDecimals().positive()).optional(),
         is_important: vine.boolean().optional(),
@@ -106,7 +107,7 @@ export default class AnnouncementsController {
         const canCreate = can(access, 'announcements.manage')
         return success('Pengumuman', {
             can_create: canCreate,
-            roles: AUDIENCE_KEYS.map((value) => ({ value, label: BRIEFING_AUDIENCE_ROLES[value] })),
+            roles: await audienceRoles(),
             sites: canCreate ? await sitesOf(managedSites(access)) : [],
             unread_count: visible.filter(
                 (row) => !readIds.has(row.id) && row.author_id !== access.userId
@@ -145,6 +146,14 @@ export default class AnnouncementsController {
                 .send(fail('Hanya pengelola site yang bisa membuat pengumuman'))
         }
         const input = await ctx.request.validateUsing(storeValidator)
+        const unknownRoles = await unknownAudienceRoles(input.roles ?? [])
+        if (unknownRoles.length) {
+            return ctx.response.status(422).send(
+                fail('Data yang diberikan tidak valid.', {
+                    roles: [`Peran tidak dikenal: ${unknownRoles.join(', ')}`],
+                })
+            )
+        }
 
         const own = managedSites(access)
         let siteIds = [...new Set(input.organization_ids ?? [])]
@@ -154,6 +163,12 @@ export default class AnnouncementsController {
             }
             // Kosong berarti semua site -- pengelola biasa dibatasi ke site miliknya.
             if (!siteIds.length) siteIds = own
+            // Tanpa site sama sekali, daftar kosong akan terbaca "semua site": tolak.
+            if (!siteIds.length) {
+                return ctx.response
+                    .status(422)
+                    .send(fail('Anda belum memegang site mana pun untuk diberi pengumuman'))
+            }
         }
 
         let expiresAt: Date | null = null

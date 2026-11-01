@@ -93,6 +93,7 @@ export default class WorkShiftsController {
 
     async store(ctx: HttpContext) {
         const access = await accessOf(ctx)
+        if (!can(access, 'work-shifts.manage')) return forbidden(ctx)
         const input = await ctx.request.validateUsing(shiftValidator)
         if (!managesSite(access, input.organization_id)) return forbidden(ctx)
 
@@ -121,6 +122,7 @@ export default class WorkShiftsController {
 
     async update(ctx: HttpContext) {
         const access = await accessOf(ctx)
+        if (!can(access, 'work-shifts.manage')) return forbidden(ctx)
         const shift = await findShift(ctx.params.id)
         if (!shift) return ctx.response.status(404).send(fail('Shift tidak ditemukan'))
         const input = await ctx.request.validateUsing(shiftValidator)
@@ -154,6 +156,7 @@ export default class WorkShiftsController {
 
     async destroy(ctx: HttpContext) {
         const access = await accessOf(ctx)
+        if (!can(access, 'work-shifts.manage')) return forbidden(ctx)
         const shift = await findShift(ctx.params.id)
         if (!shift) return ctx.response.status(404).send(fail('Shift tidak ditemukan'))
         if (!managesSite(access, shift.organization_id)) return forbidden(ctx)

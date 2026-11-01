@@ -44,10 +44,13 @@ export async function colleaguesOf(access: Access): Promise<Colleague[]> {
             'model_has_roles.model_id',
             rows.map((row) => row.id)
         )
-        .select('model_has_roles.model_id', 'roles.name')
+        .select('model_has_roles.model_id', 'roles.name', 'roles.label')
     const roleOf = new Map<number, string>()
     for (const row of roles) {
-        const label = BRIEFING_AUDIENCE_ROLES[row.name as keyof typeof BRIEFING_AUDIENCE_ROLES]
+        const label =
+            BRIEFING_AUDIENCE_ROLES[row.name as keyof typeof BRIEFING_AUDIENCE_ROLES] ??
+            row.label ??
+            row.name
         if (label && !roleOf.has(Number(row.model_id))) roleOf.set(Number(row.model_id), label)
     }
     return rows.map((row) => ({

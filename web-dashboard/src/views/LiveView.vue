@@ -79,10 +79,14 @@ const focused = computed(() => live.remoteParticipants.find((p) => p.identity ==
 
 // Pemegang izin warnings.send bisa memberi peringatan ke staf yang sedang dibuka (popup di dashboard staf itu).
 const canWarn = computed(() => auth.hasPermission('warnings.send'))
+const seesAllSites = computed(() => auth.isSuperAdmin || auth.user?.site_scope === 'all')
 const focusedStaff = computed(() => {
     if (!focused.value) return null
     const staff = [...roster.value, ...centralRoster.value].find((item) => item.participant_identity === focused.value.identity)
-    return staff && staff.user_id !== auth.user?.id ? staff : null
+    if (!staff || staff.user_id === auth.user?.id) return null
+    // Staf Ruang pusat tidak terikat site: server hanya menerima peringatan dari pemegang semua site.
+    if (staff.organization_id === null && !seesAllSites.value) return null
+    return staff
 })
 const warnOpen = ref(false)
 const confirmStartOpen = ref(false)
@@ -93,7 +97,12 @@ const endNote = ref('')
 // Semua peran bisa Live lewat izin live.broadcast. Yang tidak terikat site siaran di
 // Ruang pusat dan tetap bisa memantau site-site lain sambil siaran (dulu khusus leader).
 const canBroadcast = computed(() => auth.hasPermission('live.broadcast'))
-const broadcastsCentral = computed(() => canBroadcast.value && !auth.user?.organization_id)
+// Penyiar yang tetap memantau site lain sambil siaran: yang tidak terikat site (Ruang pusat) dan peran
+// ber-cakupan "Semua site" / "site yang diberikan" (mis. auditor yang siaran di site AUDITOR). Hanya
+// staf ber-cakupan site sendiri yang dikunci ke site-nya selama siaran.
+const monitorsWhileBroadcasting = computed(
+    () => canBroadcast.value && (!auth.user?.organization_id || ['all', 'granted'].includes(auth.user?.site_scope)),
+)
 // Ruang pusat (siaran tanpa site) hanya untuk pemegang live.watch-central.
 const canWatchCentral = computed(() => auth.hasPermission('live.watch-central'))
 const isAllSites = computed(() => selectedSiteId.value === ALL_SITES)
@@ -180,7 +189,15 @@ function applyLiveStatus(event) {
     sessionByIdentity.value = sessions
 
     const update = (member) =>
-        member.user_id === event.user_id ? { ...member, status: event.status, started_at: event.started_at } : member
+        member.user_id === event.user_id
+            ? {
+                  ...member,
+                  status: event.status,
+                  started_at: event.started_at,
+                  ...(event.organization_id === undefined ? {} : { organization_id: event.organization_id }),
+                  ...(event.live_role ? { live_role: event.live_role } : {}),
+              }
+            : member
     // Roster berubah -> daftar room yang diinginkan (wantedRooms) ikut dihitung ulang: penyiar yang BARU mulai
     // kerja dan kebetulan ada di halaman yang tampil, room-nya dibuka otomatis (lihat watcher di bawah).
     roster.value = roster.value.map(update)
@@ -221,8 +238,10 @@ async function syncLazyRooms() {
         do {
             syncRoomsAgain = false
             if (live.mode === 'idle' || live.connecting) return
+            await live.addWatchRooms(wantedRooms.value.filter((key) => !live.watchedRoomKeys.includes(key)))
+            if (live.connecting) continue
+            // Dihitung ulang: selama menunggu sambungan di atas, halaman/saringan bisa sudah berubah.
             const wanted = wantedRooms.value
-            await live.addWatchRooms(wanted.filter((key) => !live.watchedRoomKeys.includes(key)))
             await live.removeWatchRooms(live.watchedRoomKeys.filter((key) => !wanted.includes(key)))
         } while (syncRoomsAgain)
     } finally {
@@ -321,6 +340,14 @@ function matchesSearch(name) {
 
 const siteRoster = computed(() =>
     isAllSites.value ? roster.value : roster.value.filter((staff) => staff.organization_id === selectedSiteId.value),
+)
+// Dinding pantau: staf lain (siaran sendiri tampil di pratinjau, bukan di dinding).
+const othersOnSite = computed(() => siteRoster.value.filter((staff) => staff.user_id !== auth.user?.id))
+// Staf lain yang sedang live dan boleh tampil di dinding (site + Ruang pusat kalau boleh).
+const liveWallRoster = computed(() =>
+    [...othersOnSite.value, ...(canWatchCentral.value ? centralRoster.value.filter((m) => m.user_id !== auth.user?.id) : [])].filter(
+        (member) => member.started_at,
+    ),
 )
 
 const statusCounts = computed(() =>
@@ -436,8 +463,8 @@ function transportOf(participant) {
 
 const transportCounts = computed(() => {
     const counts = { udp: 0, tcp: 0 }
-    for (const participant of live.remoteParticipants) {
-        const transport = transportOf(participant)
+    for (const member of liveWallRoster.value) {
+        const transport = transportOfIdentity(member.participant_identity)
         if (transport) counts[transport]++
     }
     return counts
@@ -445,7 +472,15 @@ const transportCounts = computed(() => {
 
 // Siaran Ruang pusat (penyiar tanpa site) tampil di bagiannya sendiri, bukan di dinding site.
 const isCentralParticipant = (participant) => roomOf(participant)?.organizationId === null
-const centralParticipants = computed(() => live.remoteParticipants.filter(isCentralParticipant))
+const centralParticipants = computed(() =>
+    live.remoteParticipants.filter(
+        (participant) =>
+            isCentralParticipant(participant) &&
+            matchesSearch(participant.name || participant.identity) &&
+            (!statusFilter.value || statusOf(participant) === statusFilter.value) &&
+            (!transportFilter.value || transportOf(participant) === transportFilter.value),
+    ),
+)
 const centralLive = computed(() => centralRoster.value.filter((member) => member.started_at).length)
 
 /** Kunci & judul kelompok sebuah penyiar/anggota daftar menurut pilihan "Kelompokkan". */
@@ -461,7 +496,7 @@ const groupOfMember = (member) => groupOf(member.organization_id, member.live_ro
 // room video baru dibuka untuk staf di halaman yang tampil (lihat wantedRooms), jadi halaman lain tidak
 // mengunduh apa pun sebelum dibuka. Urutan tetap (kelompok lalu nama) supaya ubin tidak berpindah-pindah.
 const wallMembers = computed(() =>
-    buildWallMembers(siteRoster.value, {
+    buildWallMembers(othersOnSite.value, {
         statusFilter: statusFilter.value,
         transportFilter: transportFilter.value,
         matches: matchesSearch,
@@ -540,9 +575,13 @@ const wantedRooms = computed(() =>
         centralMembers: canWatchCentral.value ? centralRoster.value : [],
         focusedMember: [...roster.value, ...centralRoster.value].find((member) => member.participant_identity === focusedIdentity.value),
         allRoomKeys: transportFilter.value
-            ? liveRooms.value
-                  .filter((room) => room.live_count > 0 && inScope(room.organization_id))
-                  .map((room) => roomKey(room.organization_id, room.role))
+            ? [
+                  ...new Set(
+                      liveWallRoster.value
+                          .filter((member) => inScope(member.organization_id))
+                          .map((member) => roomKey(member.organization_id, member.live_role)),
+                  ),
+              ]
             : null,
     }),
 )
@@ -652,6 +691,18 @@ function focusSearchShortcut(event) {
     searchInput.value.focus()
 }
 
+const FOCUS_TIMEOUT_MS = 15_000
+let focusTimer = null
+watch(focusedIdentity, (identity) => {
+    clearTimeout(focusTimer)
+    if (!identity) return
+    focusTimer = setTimeout(() => {
+        if (focusedIdentity.value !== identity || focused.value) return
+        focusedIdentity.value = null
+        toast.info('Siaran belum tersambung', 'Staf ini mungkin baru saja berhenti kerja atau koneksinya putus.')
+    }, FOCUS_TIMEOUT_MS)
+})
+
 function focusStaff(staff) {
     // Room staf ini dibuka dulu kalau belum tersambung (wantedRooms), popup besarnya muncul setelah itu.
     if (staff.started_at) focusedIdentity.value = staff.participant_identity
@@ -704,7 +755,7 @@ const siteOptions = computed(() => [
 async function selectSite(siteId) {
     // Penyiar ber-site terkunci ke site sendiri; penyiar Ruang pusat (tanpa site) tetap bisa
     // memantau site-site yang dipegangnya. Yang hanya melihat diri sendiri tidak menonton siapa pun.
-    if (auth.seesOnlySelf || (live.isBroadcasting && !broadcastsCentral.value)) return
+    if (auth.seesOnlySelf || (live.isBroadcasting && !monitorsWhileBroadcasting.value)) return
     selectedSiteId.value = siteId
     page.value = 0
     try {
@@ -794,8 +845,8 @@ async function startWork() {
         await live.startWork()
         mySession.value = null
         loadStatus()
-        if (broadcastsCentral.value) {
-            // Siaran di Ruang pusat sudah tersambung; site yang dipegang ditonton lagi.
+        if (monitorsWhileBroadcasting.value) {
+            // Siarannya sendiri sudah tersambung; site-site yang dipantau ditonton lagi.
             await selectSite(selectedSiteId.value ?? ALL_SITES)
         } else {
             selectedSiteId.value = live.organizationId
@@ -862,9 +913,9 @@ onMounted(async () => {
         // Pilihan terakhir diingat di store; tanpa itu (mis. sedang siaran) turunkan dari room yang terbuka.
         const watchedSites = new Set(live.watchedRoomKeys.map((key) => parseRoomKey(key)?.organizationId).filter((id) => id != null))
         selectedSiteId.value = live.watchSelection ?? (watchedSites.size > 1 ? ALL_SITES : live.organizationId)
-        // Penyiar Ruang pusat yang siarannya baru dilanjutkan: hanya room siarannya yang
+        // Penyiar yang tetap memantau (lihat monitorsWhileBroadcasting) setelah siarannya dilanjutkan: hanya room siarannya yang
         // tersambung -- tonton lagi site-site yang dipegangnya.
-        if (broadcastsCentral.value && live.isBroadcasting && live.watchedRoomKeys.length === 1) await selectSite(ALL_SITES)
+        if (monitorsWhileBroadcasting.value && live.isBroadcasting && live.watchedRoomKeys.length === 1) await selectSite(ALL_SITES)
         // Pilihan tidak diketahui: jangan dibiarkan kosong, lanjut ke pilihan bawaan di bawah.
         if (selectedSiteId.value !== null) return
     }
@@ -884,6 +935,7 @@ onBeforeUnmount(() => {
     clearInterval(statusTimer)
     clearTimeout(earlyLoadTimer)
     clearTimeout(roomSyncTimer)
+    clearTimeout(focusTimer)
     stopLiveStatus?.()
     live.watchLiveStatus([])
 })
@@ -912,7 +964,7 @@ onBeforeUnmount(() => {
                         empty-text="Tidak ada site"
                         :model-value="selectedSiteId"
                         :options="siteOptions"
-                        :disabled="live.isBroadcasting || live.connecting"
+                        :disabled="(live.isBroadcasting && !monitorsWhileBroadcasting) || live.connecting"
                         @update:model-value="selectSite"
                     />
                     <span
@@ -949,6 +1001,18 @@ onBeforeUnmount(() => {
                 <BaseButton size="sm" variant="outline" :loading="restartingCamera" @click="restartCamera"
                     >Nyalakan ulang kamera</BaseButton
                 >
+            </div>
+
+            <div
+                v-if="live.broadcastElsewhere && !live.isBroadcasting"
+                class="flex items-start gap-3 rounded-lg border border-warning-500/30 bg-warning-500/10 px-4 py-3 text-sm text-pretty text-warning-400"
+                role="status"
+            >
+                <RefreshCw class="mt-0.5 size-4 shrink-0" />
+                <span>
+                    Siaran Anda dilanjutkan di tab atau perangkat lain dengan akun yang sama, jadi siaran di tab ini dihentikan. Tutup
+                    tab ini, atau tekan Mulai kerja lagi untuk menyiarkan dari sini.
+                </span>
             </div>
 
             <div

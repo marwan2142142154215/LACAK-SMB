@@ -1,6 +1,8 @@
 import log from '@adonisjs/core/services/logger'
+import db from '@adonisjs/lucid/services/db'
 import type { Access } from '#services/Access'
 import { issue, liveKitConfig } from '#services/Livekit'
+import { managedSites } from '#services/ManagedSites'
 
 /**
  * Briefing: rapat video Live dalam satu ruang (room LiveKit briefing-{id}).
@@ -8,7 +10,7 @@ import { issue, liveKitConfig } from '#services/Livekit'
  * controller saat membuat, mendaftar, dan memberi token bergabung.
  */
 
-/** Peran yang bisa diundang, dengan label untuk dashboard. */
+/** Label singkat peran bawaan untuk dashboard; peran lain memakai roles.label. */
 export const BRIEFING_AUDIENCE_ROLES = {
     staff_viewer: 'Staf',
     leader: 'Leader',
@@ -35,18 +37,46 @@ export type BriefingRow = {
 
 export const roomForBriefing = (briefingId: number) => `briefing-${briefingId}`
 
+/** Pola kode peran (sama dengan RoleRules.ROLE_NAME_PATTERN), untuk validasi isian undangan. */
+export const AUDIENCE_ROLE_PATTERN = /^[a-z][a-z0-9_]{1,39}$/
+
+const audienceLabel = (name: string, label: string | null) =>
+    BRIEFING_AUDIENCE_ROLES[name as keyof typeof BRIEFING_AUDIENCE_ROLES] ?? label ?? name
+
+/**
+ * Peran yang bisa diundang ke briefing / dituju pengumuman: SEMUA peran, termasuk buatan sendiri
+ * (mis. auditor), kecuali akun layanan bot. Dulu hanya 5 peran bawaan, jadi user ber-peran buatan
+ * sendiri diam-diam tidak pernah melihat briefing/pengumuman yang menyebut peran.
+ */
+export async function audienceRoles(): Promise<Array<{ value: string; label: string }>> {
+    const rows = await db
+        .from('roles')
+        .where('guard_name', 'web')
+        .whereNot('name', 'telegram_bot_service')
+        .orderBy('id')
+        .select('name', 'label')
+    return rows.map((row) => ({ value: row.name, label: audienceLabel(row.name, row.label) }))
+}
+
+/** Peran di daftar ini yang tidak ada (untuk menolak isian yang tidak sah). */
+export async function unknownAudienceRoles(roles: string[]): Promise<string[]> {
+    if (!roles.length) return []
+    const options = await audienceRoles()
+    const known = new Set(options.map((role) => role.value))
+    return roles.filter((role) => !known.has(role))
+}
+
 /** Boleh membuat & memimpin briefing (izin briefing.host; dulu dikunci ke peran). */
 export function canHostBriefing(access: Access): boolean {
     return access.permissions.includes('briefing.host')
 }
 
-/** Site yang "dimiliki" user untuk keperluan undangan briefing. */
+/**
+ * Site yang "dimiliki" user untuk keperluan undangan briefing: mengikuti cakupan site perannya
+ * (juga peran buatan sendiri, mis. auditor "Semua site"), sama dengan managedSites.
+ */
 export function sitesOf(access: Access): number[] | 'all' {
-    if (access.roles.includes('super_admin')) return 'all'
-    if (access.roles.includes('admin') || access.roles.includes('leader')) {
-        return access.grantedOrganizationIds
-    }
-    return access.organizationId === null ? [] : [access.organizationId]
+    return managedSites(access)
 }
 
 /**

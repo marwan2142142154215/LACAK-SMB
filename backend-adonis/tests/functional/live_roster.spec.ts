@@ -107,7 +107,7 @@ test.group('Ringkasan dashboard: staf online', (group) => {
             const [org] = await db
                 .table('organizations')
                 .insert({
-                    name: 'Site Ringkasan',
+                    name: `Site Ringkasan ${randomBytes(3).toString('hex')}`,
                     type: 'company_asset',
                     unique_site_code: `UJI-${randomBytes(4).toString('hex').toUpperCase()}`,
                     is_active: true,

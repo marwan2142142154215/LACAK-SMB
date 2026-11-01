@@ -1,24 +1,20 @@
-import type { Access } from '#services/Access'
+import { siteScopeOfAccess, type Access } from '#services/Access'
 
 /**
  * Site yang dikelola user untuk shift, absensi, izin/cuti, pengumuman, dan
- * peringatan kerja: root semua site; admin & leader site yang diberikan
- * (user_site_access); admin site hanya site-nya sendiri. Staf tidak mengelola.
+ * peringatan kerja, menurut CAKUPAN SITE perannya (juga peran buatan sendiri): "Semua site" =
+ * semua, "site yang diberikan" = user_site_access, "site sendiri" = site-nya. Boleh-tidaknya
+ * mengelola tetap ditentukan izin masing-masing (attendance.manage, work-shifts.manage, ...).
  */
 export function managedSites(access: Access): number[] | 'all' {
-    if (access.roles.includes('super_admin')) return 'all'
-    const sites = new Set<number>()
-    if (access.roles.includes('admin') || access.roles.includes('leader')) {
-        access.grantedOrganizationIds.forEach((id) => sites.add(id))
-    }
-    if (access.roles.includes('site_admin') && access.organizationId !== null) {
-        sites.add(access.organizationId)
-    }
-    return [...sites]
+    const scope = siteScopeOfAccess(access)
+    if (access.roles.includes('super_admin') || scope === 'all') return 'all'
+    if (scope === 'granted') return [...new Set(access.grantedOrganizationIds)]
+    return access.organizationId === null ? [] : [access.organizationId]
 }
 
 export function managesSite(access: Access, organizationId: number | null): boolean {
-    if (organizationId === null) return access.roles.includes('super_admin')
+    if (organizationId === null) return managedSites(access) === 'all'
     const sites = managedSites(access)
     return sites === 'all' || sites.includes(organizationId)
 }

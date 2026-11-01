@@ -25,11 +25,15 @@ const routes = [
                 path: '',
                 name: 'radar',
                 component: () => import('@/views/RadarView.vue'),
+                // Radar menampilkan device & pelanggaran: izin Lihat device.
+                meta: { permission: 'devices.view' },
             },
             {
                 path: 'live',
                 name: 'live',
                 component: () => import('@/views/LiveView.vue'),
+                // Menonton ATAU menyiarkan Live Kerja.
+                meta: { permission: ['live.watch', 'live.broadcast'] },
             },
             {
                 path: 'briefing',
@@ -40,6 +44,8 @@ const routes = [
                 path: 'chat',
                 name: 'chat',
                 component: () => import('@/views/ChatView.vue'),
+                // Chat site dilayani backend hanya untuk pemegang live.watch.
+                meta: { permission: 'live.watch' },
             },
             {
                 path: 'absensi',
@@ -60,11 +66,13 @@ const routes = [
                 path: 'rekaman',
                 name: 'recordings',
                 component: () => import('@/views/RecordingsView.vue'),
+                meta: { permission: 'live.watch' },
             },
             {
                 path: 'aktivitas',
                 name: 'activity',
                 component: () => import('@/views/ActivityView.vue'),
+                meta: { permission: 'live.watch' },
             },
             {
                 path: 'wajah',
@@ -78,6 +86,7 @@ const routes = [
                 path: 'devices',
                 name: 'devices',
                 component: () => import('@/views/DevicesView.vue'),
+                meta: { permission: 'devices.view' },
             },
             {
                 path: 'organizations',
@@ -89,6 +98,7 @@ const routes = [
                 path: 'geofence-rules',
                 name: 'geofence-rules',
                 component: () => import('@/views/GeofenceRulesView.vue'),
+                meta: { permission: 'geofence-rules.manage' },
             },
             {
                 path: 'apk-builds',
@@ -101,6 +111,7 @@ const routes = [
                 path: 'telegram-bindings',
                 name: 'telegram-bindings',
                 component: () => import('@/views/TelegramBindingsView.vue'),
+                meta: { permission: 'telegram.manage' },
             },
             {
                 path: 'staff',
@@ -161,21 +172,41 @@ const TOKEN_STORAGE_KEY = 'lacak_master_token'
 const USER_STORAGE_KEY = 'lacak_master_user'
 export const LOGIN_REDIRECT_KEY = 'lacak_master_login_redirect'
 
+const pageMeta = new Map(routes.find((route) => route.path === '/').children.map((route) => [route.name, route.meta ?? {}]))
+
+/**
+ * Boleh membuka halaman dengan meta ini? Satu-satunya aturan akses halaman: dipakai penjaga rute
+ * di bawah DAN menu sidebar (AppShell), jadi menu yang tampil selalu bisa dibuka dan sebaliknya.
+ * `permission` boleh satu izin atau daftar (cukup salah satu).
+ */
+export function canEnter(meta, user) {
+    const roles = user?.roles ?? []
+    const permissions = user?.permissions ?? []
+    const isSuperAdmin = roles.includes('super_admin')
+    if (meta?.requiresSuperAdmin && !isSuperAdmin) return false
+    if (meta?.roles && !meta.roles.some((role) => roles.includes(role))) return false
+    if (meta?.staffAccess && !isSuperAdmin && user?.site_scope !== 'granted') return false
+    if (meta?.permission && ![meta.permission].flat().some((permission) => permissions.includes(permission))) return false
+    return true
+}
+
+/** Boleh membuka halaman bernama ini? */
+export const canOpen = (name, user) => canEnter(pageMeta.get(name), user)
+
+/** Halaman awal: yang pertama diizinkan. Briefing tanpa syarat izin, jadi selalu ada tujuan. */
+function homeFor(user) {
+    const name = ['radar', 'live', 'briefing'].find((candidate) => canOpen(candidate, user)) ?? 'briefing'
+    return { name }
+}
+
 router.beforeEach(async (to) => {
     const token = localStorage.getItem(TOKEN_STORAGE_KEY)
     const isAuthenticated = !!token
-    let isSuperAdmin = false
-    let permissions = []
-    let roles = []
-    let siteScope = null
+    let user = null
     try {
-        const user = JSON.parse(localStorage.getItem(USER_STORAGE_KEY) || 'null')
-        isSuperAdmin = user?.roles?.includes('super_admin') ?? false
-        permissions = user?.permissions ?? []
-        roles = user?.roles ?? []
-        siteScope = user?.site_scope ?? null
+        user = JSON.parse(localStorage.getItem(USER_STORAGE_KEY) || 'null')
     } catch {
-        isSuperAdmin = false
+        user = null
     }
 
     if (to.meta.requiresAuth && !isAuthenticated) {
@@ -186,7 +217,7 @@ router.beforeEach(async (to) => {
     }
 
     if (to.meta.guestOnly && isAuthenticated) {
-        return { name: 'radar' }
+        return homeFor(user)
     }
 
     // Whitelist IP: dari IP yang tidak terdaftar, form login tidak ditampilkan.
@@ -198,20 +229,11 @@ router.beforeEach(async (to) => {
         if (to.name === 'ip-restricted' && access?.allowed !== false) return { name: 'login' }
     }
 
-    if (to.meta.requiresSuperAdmin && !isSuperAdmin) {
-        return { name: 'radar' }
-    }
-
-    if (to.meta.roles && !to.meta.roles.some((role) => roles.includes(role))) {
-        return { name: 'radar' }
-    }
-
-    if (to.meta.staffAccess && !isSuperAdmin && siteScope !== 'granted') {
-        return { name: 'radar' }
-    }
-
-    if (to.meta.permission && !permissions.includes(to.meta.permission)) {
-        return { name: 'radar' }
+    // Halaman yang tidak boleh dibuka -> halaman awal user ini (bukan selalu Radar: peran tanpa izin
+    // device akan terpental terus kalau tujuannya juga ditolak).
+    if (!canEnter(to.meta, user)) {
+        const home = homeFor(user)
+        return to.name === home.name ? true : home
     }
 
     return true

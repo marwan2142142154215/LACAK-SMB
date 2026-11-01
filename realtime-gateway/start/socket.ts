@@ -441,10 +441,18 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
         const user = socket.data.user as Awaited<ReturnType<typeof verifyBearerToken>>
         if (!user) return socket.disconnect(true)
 
-        const isSuperAdmin = user.roles.includes('super_admin')
+        // Site yang ikut dipantau socket ini menurut CAKUPAN SITE perannya (juga peran buatan sendiri,
+        // mis. auditor "Semua site"), sama dengan backend: semua site / site yang diberikan / site sendiri.
+        const seesAllSites = user.roles.includes('super_admin') || user.siteScope === 'all'
+        const ownSites =
+            user.siteScope === 'granted'
+                ? user.accessibleOrganizationIds
+                : user.organizationId
+                  ? [user.organizationId]
+                  : []
 
         socket.on('subscribe:organization', (organizationId: number) => {
-            if (!isSuperAdmin && organizationId !== user.organizationId) {
+            if (!seesAllSites && !ownSites.includes(organizationId)) {
                 socket.emit('subscribe:rejected', { organizationId, message: 'Bukan site Anda' })
                 return
             }
@@ -452,17 +460,17 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
             socket.emit('subscribe:confirmed', { organizationId })
         })
 
-        // Bukan super_admin otomatis berlangganan site miliknya sendiri.
-        if (!isSuperAdmin && user.organizationId) {
-            socket.join(`org:${user.organizationId}`)
+        // Otomatis berlangganan site-site miliknya (bukan hanya site rumah).
+        if (!seesAllSites) {
+            for (const organizationId of ownSites) socket.join(`org:${organizationId}`)
         }
 
-        // super_admin lintas site — tidak terikat satu organizationId, jadi
+        // Yang melihat semua site tidak terikat satu organizationId, jadi
         // di-join ke room khusus yang ikut menerima semua broadcast org
         // (lihat SocketManager.ts broadcastRadarUpdate/broadcastViolation/
-        // broadcastDeviceStatus). Tanpa ini radar super_admin cuma dapat
-        // snapshot awal lewat REST lalu tidak pernah live-update lagi.
-        if (isSuperAdmin) {
+        // broadcastDeviceStatus). Tanpa ini radarnya cuma dapat snapshot awal
+        // lewat REST lalu tidak pernah live-update lagi.
+        if (seesAllSites) {
             socket.join('superadmins')
         }
 
@@ -482,6 +490,14 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
                         message: 'Sesi berakhir, silakan login ulang',
                     })
                     socket.disconnect(true)
+                    return
+                }
+                // Izin, cakupan site & hak tonton bisa diubah admin selama tab terbuka: muat ulang
+                // (objek user dipakai bersama semua handler socket ini) lalu tegakkan ulang room Live.
+                const fresh = await verifyBearerToken(token, '/api/v1/auth/session')
+                if (fresh) {
+                    Object.assign(user, fresh)
+                    liveHandlers.recheckWatching()
                 }
             },
             5 * 60 * 1000
@@ -502,7 +518,7 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
 
         registerChatHandlers(opsNs, socket, user, token)
         registerGroupChatHandlers(opsNs, socket, user, token)
-        registerLiveHandlers(opsNs, socket, user)
+        const liveHandlers = registerLiveHandlers(opsNs, socket, user)
 
         // Peringatan staf: leader ke atas baru saja mengirim peringatan lewat
         // backend -- beri tahu dashboard staf tujuan supaya popup-nya muncul
