@@ -4,6 +4,7 @@ import {
     Building2,
     CalendarClock,
     CalendarOff,
+    Download,
     Film,
     History,
     LogOut,
@@ -11,6 +12,7 @@ import {
     Megaphone,
     Menu,
     MessagesSquare,
+    MoreHorizontal,
     Moon,
     PackageOpen,
     Presentation,
@@ -41,6 +43,8 @@ import { useTheme } from '@/composables/useTheme'
 import api from '@/lib/api'
 import { refreshWorkCounters, workCountersVersion } from '@/lib/workCounters'
 import { useBriefingCall } from '@/composables/useBriefingCall'
+import { usePwaInstall } from '@/composables/usePwaInstall'
+import { isEmbedded } from '@/lib/embedded'
 import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 import { useChatStore } from '@/stores/chat'
@@ -64,6 +68,7 @@ const route = useRoute()
 const loggingOut = ref(false)
 const telemetry = useTelemetry()
 const { theme, toggleTheme } = useTheme()
+const pwa = usePwaInstall()
 
 // Sidebar jadi drawer di layar sempit (standar 9.3: wajib bisa dipakai di
 // ponsel) — mobileNavOpen mengontrol tampil/sembunyi, ditutup otomatis
@@ -126,6 +131,15 @@ const navGroups = computed(() =>
         .filter((group) => group.items.length > 0),
 )
 
+// Navigasi bawah di HP (PWA): 4 menu harian pertama yang boleh dibuka, sisanya lewat "Lainnya".
+const BOTTOM_NAV_ORDER = ['live', 'chat', 'briefing', 'attendance', 'announcements', 'leave', 'radar']
+const bottomNav = computed(() => {
+    const items = navGroups.value.flatMap((group) => group.items)
+    return BOTTOM_NAV_ORDER.map((name) => items.find((item) => item.to.name === name))
+        .filter(Boolean)
+        .slice(0, 4)
+})
+
 const ROLE_LABELS = {
     super_admin: 'Super Admin',
     admin: 'Admin',
@@ -147,7 +161,9 @@ onMounted(() => {
     // Floating chat staf: tersambung selama dashboard terbuka, di semua halaman.
     chat.start()
     // Refresh saat sedang siaran: sambung lagi otomatis di halaman mana pun.
-    live.resumeIfBroadcasting().then(({ resumed, error }) => {
+    // APK Live Kerja berpindah tab dengan memanggil ini (tanpa memuat ulang halaman, lihat DashboardWeb.kt).
+    if (isEmbedded) window.__lacakGo = (path) => router.push(path)
+    if (!isEmbedded) live.resumeIfBroadcasting().then(({ resumed, error }) => {
         if (resumed) toast.success('Siaran dilanjutkan', 'Kamera Anda tersiar lagi setelah halaman dimuat ulang.')
         // Sesi berakhir (401) / IP ditolak: interceptor sudah menampilkan pesannya.
         else if (error && auth.isAuthenticated)
@@ -287,7 +303,7 @@ async function handleLogout() {
 <template>
     <div class="flex min-h-dvh bg-base-950">
         <!-- Overlay gelap di belakang drawer saat terbuka (mobile) -->
-        <div v-if="mobileNavOpen" class="fixed inset-0 z-40 bg-base-950/80 backdrop-blur-sm lg:hidden" @click="mobileNavOpen = false" />
+        <div v-if="mobileNavOpen && !isEmbedded" class="fixed inset-0 z-40 bg-base-950/80 backdrop-blur-sm lg:hidden" @click="mobileNavOpen = false" />
 
         <!--
             Transform mobile dipisah sebagai SATU class dinamis (bukan
@@ -298,6 +314,7 @@ async function handleLogout() {
             bersamaan membuat kondisi v-if/class diam-diam tidak berefek.
         -->
         <aside
+            v-if="!isEmbedded"
             class="fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-base-800 bg-base-900 transition-transform duration-200 lg:sticky lg:top-0 lg:h-dvh lg:!translate-x-0"
             :class="mobileNavOpen ? 'translate-x-0' : '-translate-x-full'"
         >
@@ -361,6 +378,20 @@ async function handleLogout() {
                 </nav>
 
                 <div class="border-t border-base-800 p-3">
+                    <!-- Pasang sebagai aplikasi (PWA) di HP / PC -->
+                    <button
+                        v-if="pwa.canPrompt.value"
+                        type="button"
+                        class="mb-2 flex w-full items-center gap-2.5 rounded-lg bg-accent-500/10 px-3 py-2 text-sm font-semibold text-accent-500 hover:bg-accent-500/15"
+                        @click="pwa.install()"
+                    >
+                        <Download class="size-4" />
+                        Pasang aplikasi
+                    </button>
+                    <p v-else-if="pwa.showIosHint.value" class="mb-2 rounded-lg bg-base-850 px-3 py-2 text-xs text-pretty text-base-400">
+                        Pasang di iPhone: ketuk <span class="font-semibold text-base-200">Bagikan</span> lalu
+                        <span class="font-semibold text-base-200">Tambah ke Layar Utama</span>.
+                    </p>
                     <div class="flex items-center gap-3 rounded-lg px-1 py-1">
                         <div
                             class="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-500/10 font-display text-sm font-semibold text-accent-400"
@@ -388,7 +419,7 @@ async function handleLogout() {
 
         <div class="flex min-w-0 flex-1 flex-col">
             <!-- Bar status: angka kunci yang berlaku di semua halaman -->
-            <div class="sticky top-0 z-30 border-b border-base-800 bg-base-950/80 backdrop-blur-md">
+            <div v-if="!isEmbedded" class="sticky top-0 z-30 pt-[env(safe-area-inset-top)] border-b border-base-800 bg-base-950/80 backdrop-blur-md">
                 <div class="flex h-16 items-center gap-3 px-4 sm:px-8">
                     <button
                         type="button"
@@ -450,7 +481,13 @@ async function handleLogout() {
             </router-link>
 
             <!-- pb-24: ruang untuk tombol chat mengambang supaya tidak menutup baris terakhir -->
-            <main class="min-w-0 flex-1" :class="route.name !== 'chat' && 'pb-24'">
+            <main
+                class="min-w-0 flex-1"
+                :class="[
+                    route.name !== 'chat' && !isEmbedded && 'lg:pb-24',
+                    !isEmbedded && 'max-lg:pb-[calc(4.5rem+env(safe-area-inset-bottom))]',
+                ]"
+            >
                 <div
                     v-if="briefingInvite"
                     class="mx-4 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-accent-500/30 bg-accent-500/10 px-4 py-3 sm:mx-8"
@@ -508,10 +545,45 @@ async function handleLogout() {
                 <router-view />
                 <ScreenShareLock />
                 <CameraLock />
-                <ChatWidget />
+                <!-- Di HP chat ada di navigasi bawah; di APK di tab Chat-nya sendiri. -->
+                <div v-if="!isEmbedded" class="max-lg:hidden"><ChatWidget /></div>
                 <WarningPopup />
             </main>
         </div>
+
+        <!-- Navigasi bawah HP (PWA): menu kerja harian satu ketukan, sisanya di Lainnya. -->
+        <nav
+            v-if="!isEmbedded && bottomNav.length"
+            class="fixed inset-x-0 bottom-0 z-40 border-t border-base-800 bg-base-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden"
+            aria-label="Menu cepat"
+        >
+            <div class="mx-auto flex max-w-lg">
+                <router-link
+                    v-for="item in bottomNav"
+                    :key="item.label"
+                    :to="item.to"
+                    class="bottom-link relative flex min-w-0 flex-1 flex-col items-center gap-1 pt-2 pb-2 text-[11px] font-medium text-base-500"
+                    exact-active-class="is-active"
+                >
+                    <component :is="item.icon" class="size-5" />
+                    <span class="max-w-full truncate px-1">{{ item.label }}</span>
+                    <span
+                        v-if="item.count"
+                        class="absolute top-1 left-1/2 ml-2 min-w-4 rounded-full bg-accent-500 px-1 text-center font-mono text-[10px] leading-4 text-white tabular-nums"
+                        >{{ item.count > 99 ? '99+' : item.count }}</span
+                    >
+                    <span v-else-if="item.live" class="beacon absolute top-1.5 left-1/2 ml-3" />
+                </router-link>
+                <button
+                    type="button"
+                    class="flex min-w-0 flex-1 flex-col items-center gap-1 pt-2 pb-2 text-[11px] font-medium text-base-500"
+                    @click="mobileNavOpen = true"
+                >
+                    <MoreHorizontal class="size-5" />
+                    Lainnya
+                </button>
+            </div>
+        </nav>
     </div>
 </template>
 
@@ -523,6 +595,10 @@ async function handleLogout() {
 }
 
 .nav-link.is-active .nav-icon {
+    color: var(--color-accent-500);
+}
+
+.bottom-link.is-active {
     color: var(--color-accent-500);
 }
 </style>

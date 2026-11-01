@@ -41,7 +41,7 @@ fun LiveApp(sessionStore: SessionStore, apiClient: ApiClient) {
             TwoFactorScreen(apiClient = apiClient, sessionStore = sessionStore, navController = navController)
         }
         composable(Routes.LIVE) {
-            LiveScreen(apiClient = apiClient, sessionStore = sessionStore, navController = navController)
+            HomeScreen(apiClient = apiClient, sessionStore = sessionStore, navController = navController)
         }
     }
 }

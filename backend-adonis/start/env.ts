@@ -83,6 +83,7 @@ export default await Env.create(new URL('../', import.meta.url), {
     // Lain-lain dari config/lacaksmb.php backend-api
     LACAKSMB_PUBLIC_GATEWAY_URL: Env.schema.string.optional(),
     LACAKSMB_PUBLIC_BACKEND_API_URL: Env.schema.string.optional(),
+    LACAKSMB_PUBLIC_DASHBOARD_URL: Env.schema.string.optional(),
     LACAKSMB_STATUS_GATEWAY_URL: Env.schema.string.optional(),
     LACAKSMB_STATUS_LIVEKIT_URL: Env.schema.string.optional(),
     LACAKSMB_STATUS_SYSTEMD_UNITS: Env.schema.string.optional(),

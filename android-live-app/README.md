@@ -53,6 +53,26 @@ Catatan: login dengan akun yang sama di dashboard web lalu menekan Mulai kerja
 di sana akan mengambil alih siaran (identitas LiveKit sama); APK akan berhenti
 dengan pesan yang jelas.
 
+## Menu kerja (tab bawah)
+
+- **Live** native (di atas). **Chat, Briefing, Absensi, Izin & cuti, Pengumuman** dibuka dari
+  dashboard web (`DASHBOARD_URL`, argumen ke-8 `build_only.sh`, env backend
+  `LACAKSMB_PUBLIC_DASHBOARD_URL`) di satu WebView (`ui/DashboardWeb.kt`): fiturnya selalu sama
+  dengan web/PWA tanpa menambah ukuran APK. Sesi login APK diteruskan ke localStorage dashboard,
+  dan user agent diberi `LacakLiveApp` sehingga dashboard menyembunyikan menu samping, bar
+  status, dan siaran web (`web-dashboard/src/lib/embedded.js`) -- siaran tetap lewat tab Live.
+- **Peringatan atasan**: dicek tiap 30 detik saat aplikasi terbuka (dialog *Saya mengerti*) dan
+  tiap detak siaran saat di latar belakang (notifikasi penting).
+
+## Ukuran APK
+
+`build_only.sh` membangun **rilis** (R8 + resource shrink), library native disimpan terkompresi
+(`useLegacyPackaging`), dan model cek wajah memakai versi Google Play services (diunduh Play
+services, tidak ikut APK). Kunci tanda tangan rilis: `-PliveKeystore=...` atau env
+`LIVE_KEYSTORE`, `LIVE_KEYSTORE_PASSWORD`, `LIVE_KEY_ALIAS`, `LIVE_KEY_PASSWORD`; tanpa itu
+ditandatangani kunci debug mesin build. Nama paket rilis `com.lacaksmb.live` (build debug lama
+`com.lacaksmb.live.debug`), jadi HP yang memasang APK lama perlu memasang yang baru sekali.
+
 ## Build
 
 Butuh JDK 17 dan Android SDK (platform 36). Isi `local.properties`:

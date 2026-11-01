@@ -3,10 +3,15 @@
     <head>
         <meta charset="UTF-8" />
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
         <!-- PWA: dashboard bisa di-install sebagai aplikasi (lihat public/sw.js) -->
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <!-- iPhone/iPad: dibuka dari Layar Utama tanpa bar Safari, seperti aplikasi -->
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Lacak SMB" />
         <meta name="theme-color" content="#f6f7f9" />
         <!-- Tema dipasang sebelum CSS dimuat supaya tidak berkedip (lihat src/composables/useTheme.js) -->
         <script>

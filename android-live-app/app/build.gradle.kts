@@ -28,6 +28,26 @@ android {
             "BACKEND_API_URL",
             "\"${project.findProperty("backendApiUrl") ?: "http://10.0.2.2:8000/api/v1"}\"",
         )
+        // Dashboard web: tab Chat, Briefing, Absensi, Izin & Pengumuman dibuka di WebView darinya.
+        buildConfigField(
+            "String",
+            "DASHBOARD_URL",
+            "\"${project.findProperty("dashboardUrl") ?: "https://lacaklive.smbservice.xyz"}\"",
+        )
+    }
+
+    // Kunci tanda tangan rilis dari luar (-PliveKeystore=... atau env LIVE_KEYSTORE*). Tanpa itu,
+    // build rilis ditandatangani kunci debug mesin build -- tetap rilis yang dipangkas R8.
+    val keystorePath = (project.findProperty("liveKeystore") as String?) ?: System.getenv("LIVE_KEYSTORE")
+    signingConfigs {
+        if (keystorePath != null) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = (project.findProperty("liveKeystorePassword") as String?) ?: System.getenv("LIVE_KEYSTORE_PASSWORD")
+                keyAlias = (project.findProperty("liveKeyAlias") as String?) ?: System.getenv("LIVE_KEY_ALIAS")
+                keyPassword = (project.findProperty("liveKeyPassword") as String?) ?: System.getenv("LIVE_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -35,6 +55,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName(if (keystorePath != null) "release" else "debug")
         }
         debug {
             isMinifyEnabled = false
@@ -59,6 +80,11 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        // Library native (WebRTC, ML Kit) disimpan terkompresi di APK: unduhan jauh lebih kecil,
+        // diekstrak sekali saat dipasang.
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 }

@@ -44,6 +44,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Model cek wajah diunduh Google Play services saat aplikasi dipasang (tidak ikut APK). -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="face" />
+
         <service
             android:name=".service.LiveBroadcastService"
             android:exported="false"

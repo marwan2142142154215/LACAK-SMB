@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import { isEmbedded } from '@/lib/embedded'
 import { checkIpAccess } from '@/lib/ipAccess'
 
 const routes = [
@@ -195,6 +196,7 @@ export const canOpen = (name, user) => canEnter(pageMeta.get(name), user)
 
 /** Halaman awal: yang pertama diizinkan. Briefing tanpa syarat izin, jadi selalu ada tujuan. */
 function homeFor(user) {
+    if (isEmbedded) return { name: canOpen('chat', user) ? 'chat' : 'briefing' }
     const name = ['radar', 'live', 'briefing'].find((candidate) => canOpen(candidate, user)) ?? 'briefing'
     return { name }
 }
@@ -207,6 +209,12 @@ router.beforeEach(async (to) => {
         user = JSON.parse(localStorage.getItem(USER_STORAGE_KEY) || 'null')
     } catch {
         user = null
+    }
+
+    // Di dalam APK Live Kerja, siaran memakai layar Live APK sendiri: Live & Radar web tidak dibuka
+    // (Mulai kerja dari web akan mengeluarkan siaran APK karena identitasnya sama).
+    if (isEmbedded && isAuthenticated && (to.name === 'live' || to.name === 'radar')) {
+        return { name: canOpen('chat', user) ? 'chat' : 'briefing' }
     }
 
     if (to.meta.requiresAuth && !isAuthenticated) {

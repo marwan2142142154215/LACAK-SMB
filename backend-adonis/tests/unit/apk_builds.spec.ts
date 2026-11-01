@@ -34,6 +34,7 @@ const CONFIG: ApkBuilderConfig = {
     wslDistro: 'Ubuntu',
     publicGatewayUrl: 'https://ws.example.test',
     publicBackendApiUrl: 'https://api.example.test/api/v1',
+    publicDashboardUrl: 'https://app.example.test',
 }
 
 test.group('APK builder: perintah build sama dengan ApkBuilder Laravel', () => {
@@ -85,6 +86,7 @@ test.group('APK builder: perintah build sama dengan ApkBuilder Laravel', () => {
                 'https://api.example.test/api/v1',
                 'uuid-1',
                 'rahasia',
+                'https://app.example.test',
             ]
         )
 
@@ -97,7 +99,7 @@ test.group('APK builder: perintah build sama dengan ApkBuilder Laravel', () => {
             deviceUuid: null,
             deviceSecret: null,
         })
-        assert.deepEqual(master.slice(-2), ['', ''])
+        assert.deepEqual(master.slice(-3), ['', '', 'https://app.example.test'])
     })
 
     test('server Linux: skrip dijalankan langsung dengan bash, tanpa WSL', ({ assert }) => {

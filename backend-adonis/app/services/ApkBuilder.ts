@@ -43,6 +43,8 @@ export type ApkBuilderConfig = {
     wslDistro: string
     publicGatewayUrl: string
     publicBackendApiUrl: string
+    /** Alamat dashboard web: APK Live membuka halaman chat, absensi, izin, dll. darinya. */
+    publicDashboardUrl: string
 }
 
 /**
@@ -76,6 +78,8 @@ export function apkBuilderConfig(): ApkBuilderConfig {
         publicGatewayUrl: env.get('LACAKSMB_PUBLIC_GATEWAY_URL') ?? 'https://ws.salahmu.fun',
         publicBackendApiUrl:
             env.get('LACAKSMB_PUBLIC_BACKEND_API_URL') ?? 'https://api.salahmu.fun/api/v1',
+        publicDashboardUrl:
+            env.get('LACAKSMB_PUBLIC_DASHBOARD_URL') ?? 'https://lacaklive.smbservice.xyz',
     }
 }
 
@@ -151,6 +155,8 @@ export function buildCommand(options: {
         // terisi untuk apk_type='tracker'.
         options.deviceUuid ?? '',
         options.deviceSecret ?? '',
+        // Dipakai APK Live saja (skrip APK lain mengabaikan argumen ke-8).
+        config.publicDashboardUrl,
     ]
 }
 

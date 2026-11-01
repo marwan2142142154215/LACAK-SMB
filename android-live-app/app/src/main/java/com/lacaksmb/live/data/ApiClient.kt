@@ -133,4 +133,33 @@ class ApiClient(private val sessionStore: SessionStore) {
 
     suspend fun endLiveSession(): ApiResult =
         execute(authedBuilder("/live/sessions/end").post(emptyBody()).build())
+
+    // ---- Peringatan dari atasan (sama dengan WarningPopup.vue di dashboard) ----
+
+    /** Peringatan yang belum dikonfirmasi staf; kosong kalau semua sudah dibaca. */
+    suspend fun pendingWarnings(): List<StaffWarning> {
+        val result = execute(authedBuilder("/staff-warnings/pending").get().build())
+        val items = (result as? ApiResult.Ok)?.data?.optJSONArray("items") ?: return emptyList()
+        return (0 until items.length()).mapNotNull { index ->
+            val item = items.optJSONObject(index) ?: return@mapNotNull null
+            StaffWarning(
+                id = item.optInt("id"),
+                levelLabel = item.optString("level_label").ifBlank { item.optString("level") },
+                level = item.optString("level"),
+                message = item.optString("message"),
+                issuerName = item.optString("issuer_name").takeIf { it.isNotBlank() && it != "null" },
+            )
+        }
+    }
+
+    suspend fun acknowledgeWarning(id: Int): ApiResult =
+        execute(authedBuilder("/staff-warnings/$id/acknowledge").post(emptyBody()).build())
 }
+
+data class StaffWarning(
+    val id: Int,
+    val level: String,
+    val levelLabel: String,
+    val message: String,
+    val issuerName: String?,
+)

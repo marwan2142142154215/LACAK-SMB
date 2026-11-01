@@ -388,6 +388,36 @@ class LiveBroadcastService : Service() {
                     // Gagal jaringan sesaat: abaikan, coba lagi di detak berikutnya.
                 }
             }
+            notifyNewWarnings()
+        }
+    }
+
+    // Peringatan atasan saat aplikasi di latar belakang: notifikasi penting (dialog konfirmasinya
+    // muncul begitu aplikasi dibuka, lihat HomeScreen). Tiap peringatan cukup sekali.
+    private val notifiedWarnings = mutableSetOf<Int>()
+
+    private suspend fun notifyNewWarnings() {
+        val fresh = apiClient.pendingWarnings().filter { notifiedWarnings.add(it.id) }
+        if (fresh.isEmpty()) return
+        val manager = getSystemService(NotificationManager::class.java)
+        val openApp = PendingIntent.getActivity(
+            this,
+            4,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        fresh.forEach { warning ->
+            val notification = NotificationCompat.Builder(this, WARNING_CHANNEL_ID)
+                .setContentTitle("Peringatan: ${warning.levelLabel}")
+                .setContentText(warning.message)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(warning.message))
+                .setSmallIcon(android.R.drawable.stat_sys_warning)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .setContentIntent(openApp)
+                .build()
+            manager.notify(WARNING_NOTIFICATION_BASE + warning.id, notification)
         }
     }
 
@@ -682,7 +712,10 @@ class LiveBroadcastService : Service() {
             description = "Tampil selama layar & kamera sedang disiarkan ke atasan"
             setShowBadge(false)
         }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        val warnings = NotificationChannel(WARNING_CHANNEL_ID, "Peringatan atasan", NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "Peringatan yang dikirim leader saat Anda sedang kerja"
+        }
+        getSystemService(NotificationManager::class.java).createNotificationChannels(listOf(channel, warnings))
     }
 
     private fun buildNotification(status: String): Notification {
@@ -745,6 +778,8 @@ class LiveBroadcastService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "live_broadcast"
+        private const val WARNING_CHANNEL_ID = "staff_warnings"
+        private const val WARNING_NOTIFICATION_BASE = 40_000
         private const val NOTIFICATION_ID = 3001
         private const val ACTION_START = "com.lacaksmb.live.action.START"
         private const val ACTION_STOP = "com.lacaksmb.live.action.STOP"

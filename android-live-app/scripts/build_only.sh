@@ -11,6 +11,8 @@ GATEWAY_URL="${2:?GATEWAY_URL wajib diisi}"
 SITE_NAME="${3:?SITE_NAME wajib diisi}"
 VERSION="${4:-1.0.0}"
 BACKEND_API_URL="${5:?BACKEND_API_URL wajib diisi}"
+# $6/$7 = identitas zero-touch APK Lacak (tidak dipakai di sini). $8 = alamat dashboard web.
+DASHBOARD_URL="${8:-https://lacaklive.smbservice.xyz}"
 
 # Server: bisa diatur dari luar (mis. unit systemd); bawaan ~/android-sdk.
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"
@@ -32,11 +34,13 @@ fi
 cd "$(dirname "$0")/.."
 
 # bash: gradlew di repo tidak selalu punya bit executable (checkout di Linux).
-bash ./gradlew assembleDebug --no-daemon \
+# Rilis (R8 + resource shrink): jauh lebih kecil & ringan dari build debug.
+bash ./gradlew assembleRelease --no-daemon \
     -PappVersionName="$VERSION" \
-    -PbackendApiUrl="$BACKEND_API_URL"
+    -PbackendApiUrl="$BACKEND_API_URL" \
+    -PdashboardUrl="$DASHBOARD_URL"
 
-APK_PATH="$(pwd)/app/build/outputs/apk/debug/app-debug.apk"
+APK_PATH="$(pwd)/app/build/outputs/apk/release/app-release.apk"
 
 if [ ! -f "$APK_PATH" ]; then
     echo "APK tidak ditemukan di $APK_PATH" >&2

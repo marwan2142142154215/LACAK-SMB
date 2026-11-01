@@ -205,6 +205,7 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
                         onClick = {
                             scope.launch { apiClient.logout() }
                             sessionStore.clear()
+                            DashboardWeb.clearSession()
                             navController.navigate(Routes.LOGIN) { popUpTo(0) }
                         },
                     ) { Icon(Icons.AutoMirrored.Filled.Logout, stringResource(R.string.live_logout), tint = Base300) }

@@ -10,7 +10,8 @@ okhttp = "4.12.0"
 coroutines = "1.10.2"
 securityCrypto = "1.1.0"
 livekit = "2.28.2"
-mlkitFaceDetection = "16.1.7"
+# Versi Google Play services: model diunduh Play services sekali, tidak ikut APK (~14 MB lebih kecil).
+mlkitFaceDetection = "17.1.0"
 # Sama dengan yang dipakai livekit-android-track-processors.
 mlkitSegmentationSelfie = "16.0.0-beta6"
 
@@ -31,7 +32,7 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 livekit-android = { group = "io.livekit", name = "livekit-android", version.ref = "livekit" }
 # Cek wajah di HP (model ikut di APK, berjalan tanpa internet).
-mlkit-face-detection = { group = "com.google.mlkit", name = "face-detection", version.ref = "mlkitFaceDetection" }
+mlkit-face-detection = { group = "com.google.android.gms", name = "play-services-mlkit-face-detection", version.ref = "mlkitFaceDetection" }
 # Background kamera (blur / gambar): shader LiveKit + ML Kit Selfie Segmentation.
 mlkit-segmentation-selfie = { group = "com.google.mlkit", name = "segmentation-selfie", version.ref = "mlkitSegmentationSelfie" }
 livekit-track-processors = { group = "io.livekit", name = "livekit-android-track-processors", version.ref = "livekit" }
