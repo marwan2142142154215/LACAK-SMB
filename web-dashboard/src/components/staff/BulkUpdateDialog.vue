@@ -69,9 +69,10 @@ watch(
 )
 
 const selectedIds = computed(() => selected.value.map((user) => user.id))
-// Peran terikat satu site (mis. Staff Viewer): staf ditempatkan di TEPAT satu site.
+// Peran terikat satu site (mis. Staff Viewer): staf ditempatkan di TEPAT satu site. Peran
+// "Semua site" (mis. auditor) juga satu site: site rumah tempat siaran Live Kerja-nya.
 const roleScope = computed(() => props.roles.find((item) => item.name === role.value)?.site_scope ?? null)
-const singleSite = computed(() => roleScope.value === 'own')
+const singleSite = computed(() => roleScope.value === 'own' || roleScope.value === 'all')
 const siteReady = computed(() => {
     if (siteMode.value === '') return true
     if (singleSite.value) return siteMode.value !== 'remove' && !allSites.value && sites.value.length === 1
@@ -82,10 +83,12 @@ watch(singleSite, (single) => {
     if (single) allSites.value = false
 })
 const siteHint = computed(() => {
+    if (roleScope.value === 'all') {
+        return 'Peran ini sudah melihat semua site. Pilih tepat satu site sebagai tempat siaran Live Kerja-nya (Tempatkan / Ganti).'
+    }
     if (singleSite.value) {
         return 'Peran ini terikat satu site: pilih tepat satu site, staf akan ditempatkan di sana (Tempatkan / Ganti).'
     }
-    if (roleScope.value === 'all') return 'Peran ini sudah melihat semua site, jadi tidak perlu diatur.'
     if (roleScope.value === 'granted') return 'Peran ini melihat site yang diberikan: pilih site yang boleh dilihat.'
     return "Admin/Leader (site yang diberikan): daftar site yang boleh dilihat. Staff Viewer/Site Admin: satu site tempat ditempatkan. Yang tidak cocok dilewati dan dilaporkan."
 })

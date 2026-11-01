@@ -216,7 +216,13 @@ async function onUpdateDone() {
 
 /** Ringkasan kolom "Akses site": banyak site (mis. auditor) tidak membanjiri baris tabel. */
 function siteSummary(user) {
-    if (scopeOfRole(user.role) === 'all') return { text: 'Semua site', title: null }
+    if (scopeOfRole(user.role) === 'all') {
+        // Site rumah peran "Semua site" hanya menentukan tempat siaran Live-nya.
+        const home = organizations.value.find((org) => org.id === user.organization_id)?.name
+        return home
+            ? { text: `Semua site · Live di ${home}`, title: `Siaran Live Kerja-nya dikelompokkan di site ${home}` }
+            : { text: 'Semua site', title: null }
+    }
     const sites = user.site_access ?? []
     if (sites.length > 0) {
         const names = sites.map((site) => site.name)
@@ -566,9 +572,17 @@ onMounted(async () => {
                     <option v-for="role in roleOptions" :key="role.name" :value="role.name">{{ roleDescriptions[role.name] }}</option>
                 </BaseSelect>
 
-                <p v-if="scopeOfRole(form.role) === 'all'" class="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-base-300">
-                    Peran ini melihat semua site, jadi tidak perlu memilih site.
-                </p>
+                <!-- Peran "Semua site" (mis. auditor) sudah melihat semua site; site di sini hanya
+                     menentukan tempat siaran Live Kerja-nya dikelompokkan. -->
+                <BaseSelect
+                    v-if="scopeOfRole(form.role) === 'all'"
+                    v-model="form.organization_id"
+                    label="Site untuk siaran Live (opsional)"
+                    hint="Peran ini melihat semua site. Pilihan ini hanya menentukan di site mana siaran Live Kerja-nya tampil; tanpa site, siarannya masuk Ruang pusat."
+                >
+                    <option :value="null">Tanpa site (siaran di Ruang pusat)</option>
+                    <option v-for="org in organizations" :key="org.id" :value="org.id">{{ org.name }}</option>
+                </BaseSelect>
 
                 <BaseSelect v-else-if="!needsSiteAccess" v-model="form.organization_id" label="Site" required>
                     <option :value="null" disabled>Pilih site</option>

@@ -249,6 +249,20 @@ export default class UsersController {
                         .delete()
                     await assignRole(trx, user.id, data.role)
                 }
+                // Peran "Semua site": site rumah opsional -- hanya menentukan tempat siaran Live
+                // Kerja (mis. auditor siaran di site AUDITOR). Boleh dikosongkan (null) supaya
+                // siarannya kembali ke Ruang pusat; peran lain tetap tidak bisa mengosongkannya.
+                if (data.organization_id === null && user.organization_id !== null) {
+                    const scopes = await scopesOfUsers(trx, [user.id])
+                    if (scopes.get(user.id) === 'all') {
+                        await trx
+                            .from('users')
+                            .where('id', user.id)
+                            .update({ organization_id: null, updated_at: new Date() })
+                        changes.organization_id = null
+                        dirty.push(['organization_id', null])
+                    }
+                }
             })
         } catch (error) {
             const conflict = uniqueConflict(ctx, error)
@@ -601,8 +615,29 @@ export default class UsersController {
                 }
                 const grantedIds = eligible.filter((id) => scopes.get(id) === 'granted')
                 const ownIds = eligible.filter((id) => scopes.get(id) === 'own')
-                for (const id of eligible.filter((item) => scopes.get(item) === 'all')) {
-                    skipSite(id, 'Peran ini sudah melihat semua site')
+                // Peran "Semua site" sudah melihat semua site; satu site yang dipilih dipakai
+                // sebagai site rumahnya -- tempat siaran Live Kerja-nya (mis. site AUDITOR).
+                const allIds = eligible.filter((item) => scopes.get(item) === 'all')
+                let homeSiteIds: number[] = []
+                if (allIds.length > 0) {
+                    if (
+                        input.sites.mode === 'remove' ||
+                        input.sites.organizationIds === 'all' ||
+                        siteIds.length !== 1
+                    ) {
+                        for (const id of allIds) {
+                            skipSite(
+                                id,
+                                'Peran ini sudah melihat semua site: pilih tepat satu site untuk tempat siaran Live-nya'
+                            )
+                        }
+                    } else {
+                        await trx
+                            .from('users')
+                            .whereIn('id', allIds)
+                            .update({ organization_id: siteIds[0], updated_at: new Date() })
+                        homeSiteIds = allIds
+                    }
                 }
 
                 await applyBulkSiteAccess(trx, {
@@ -613,7 +648,7 @@ export default class UsersController {
                     removeEverything:
                         input.sites.mode === 'remove' && input.sites.organizationIds === 'all',
                 })
-                siteUserIds = [...grantedIds]
+                siteUserIds = [...grantedIds, ...homeSiteIds]
 
                 // Peran terikat satu site (mis. Staff Viewer): staf ditempatkan di site yang dipilih.
                 if (ownIds.length > 0) {

@@ -508,3 +508,51 @@ test.group('Staf: admin & leader menonaktifkan staf di site-nya', (group) => {
         assert.notInclude(ids, leader.id)
     })
 })
+
+test.group('Staf: site rumah peran "Semua site" (tempat siaran Live)', (group) => {
+    group.each.setup(() => testUtils.db().withGlobalTransaction())
+
+    const homeSiteOf = async (userId: number) => {
+        const row = await db.from('users').where('id', userId).firstOrFail()
+        return row.organization_id as number | null
+    }
+
+    test('site rumah bisa diisi & dikosongkan; peran terikat site tidak bisa dikosongkan', async ({
+        client,
+        assert,
+    }) => {
+        const root = await userWithRole('super_admin')
+        const auditSite = await organization(`Site AUDITOR ${randomBytes(3).toString('hex')}`)
+        await db
+            .table('roles')
+            .insert({ name: 'auditor', guard_name: 'web', label: 'Auditor', site_scope: 'all' })
+            .onConflict(['name', 'guard_name'])
+            .ignore()
+        const auditor = await userWithRole('auditor')
+
+        const set = await client
+            .put(`/api/v1/users/${auditor.id}`)
+            .json({ organization_id: auditSite })
+            .bearerToken(root.bearer)
+        set.assertStatus(200)
+        assert.equal(await homeSiteOf(auditor.id), auditSite)
+
+        // Dikosongkan: siarannya kembali ke Ruang pusat.
+        const cleared = await client
+            .put(`/api/v1/users/${auditor.id}`)
+            .json({ organization_id: null })
+            .bearerToken(root.bearer)
+        cleared.assertStatus(200)
+        assert.isNull(await homeSiteOf(auditor.id))
+
+        // Peran terikat satu site: null tetap diabaikan, site tidak hilang.
+        const staffSite = await organization(`Site Staf ${randomBytes(3).toString('hex')}`)
+        const staff = await userWithRole('staff_viewer', { organization_id: staffSite })
+        const ignored = await client
+            .put(`/api/v1/users/${staff.id}`)
+            .json({ organization_id: null })
+            .bearerToken(root.bearer)
+        ignored.assertStatus(200)
+        assert.equal(await homeSiteOf(staff.id), staffSite)
+    })
+})
