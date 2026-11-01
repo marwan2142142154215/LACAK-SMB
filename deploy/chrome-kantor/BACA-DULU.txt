@@ -1,0 +1,29 @@
+LIVE KERJA - PENGATURAN CHROME & EDGE LAPTOP KANTOR
+Alamat: https://lacaklive.smbservice.xyz
+
+Hanya untuk laptop milik kantor yang dipakai Live Kerja.
+
+MEMASANG
+1. Salin seluruh folder ini ke laptop.
+2. Klik dua kali  Pasang-Live-Kerja.bat
+3. Pilih "Yes" saat Windows meminta izin Administrator.
+4. Tutup semua jendela Chrome/Edge lalu buka lagi
+   (installer bisa menutupkannya kalau Anda jawab "y").
+
+MENGECEK
+Buka chrome://policy (di Edge: edge://policy), tekan "Reload policies".
+Alamat di atas harus tampil di ScreenCaptureWithoutGestureAllowedForOrigins,
+VideoCaptureAllowedUrls, AudioCaptureAllowedUrls, NotificationsAllowedForUrls
+dengan status OK.
+
+MENGHAPUS
+Klik dua kali  Hapus-Live-Kerja.bat  -> hanya pengaturan Live Kerja yang
+dihapus; aturan lain dari IT tetap.
+
+YANG DIATUR
+- Dialog bagikan layar dibuka ulang otomatis kalau staf menekan "Stop sharing".
+- Kamera, mikrofon & notifikasi Live Kerja diizinkan otomatis.
+- Mode Incognito/InPrivate & DevTools dimatikan.
+Berlaku untuk Chrome 116+ dan Edge 123+.
+
+Banyak laptop sekaligus (domain): lihat docs/chrome-kantor.md (Group Policy).

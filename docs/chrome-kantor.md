@@ -15,9 +15,9 @@ klik, jadi staf harus menekan **Bagikan lagi** sendiri.
 
 | Kebijakan | Nilai | Gunanya |
 |---|---|---|
-| `ScreenCaptureWithoutGestureAllowedForOrigins` | `https://app.salahmu.fun` | Dialog bagikan layar dibuka ulang otomatis tanpa klik |
-| `VideoCaptureAllowedUrls`, `AudioCaptureAllowedUrls` | `https://app.salahmu.fun` | Kamera & mikrofon tidak bisa diblokir staf |
-| `NotificationsAllowedForUrls` | `https://app.salahmu.fun` | Notifikasi "layar tidak dibagikan" selalu muncul |
+| `ScreenCaptureWithoutGestureAllowedForOrigins` | `https://lacaklive.smbservice.xyz` | Dialog bagikan layar dibuka ulang otomatis tanpa klik |
+| `VideoCaptureAllowedUrls`, `AudioCaptureAllowedUrls` | `https://lacaklive.smbservice.xyz` | Kamera & mikrofon tidak bisa diblokir staf |
+| `NotificationsAllowedForUrls` | `https://lacaklive.smbservice.xyz` | Notifikasi "layar tidak dibagikan" selalu muncul |
 | `IncognitoModeAvailability` (Edge: `InPrivateModeAvailability`) | `1` | Mode penyamaran dimatikan |
 | `DeveloperToolsAvailability` | `2` | DevTools dimatikan |
 
@@ -25,8 +25,21 @@ Kebijakan didukung Chrome 116+ dan Edge 123+ di Windows.
 
 ## Cara memasang
 
-**Satu laptop:** klik kanan `deploy/chrome-kantor/lacak-chrome-edge.reg` →
-*Merge* (sebagai Administrator), tutup semua jendela Chrome/Edge, buka lagi.
+**Satu laptop (disarankan):** salin folder `deploy/chrome-kantor` (atau isi
+`Live-Kerja-Chrome-Edge.zip`) ke laptop, klik dua kali
+**`Pasang-Live-Kerja.bat`**, pilih *Yes* saat diminta izin Administrator,
+lalu tutup & buka lagi Chrome/Edge (installer menawarkan menutupkannya).
+Installer menambah alamat Live Kerja ke tiap daftar kebijakan **tanpa
+menimpa** entri lain dari IT, dan aman dijalankan berulang.
+Menghapus: klik dua kali **`Hapus-Live-Kerja.bat`** -- hanya entri Live
+Kerja yang dibuang.
+
+Alamat lain (mis. server uji): `powershell -ExecutionPolicy Bypass -File
+live-kerja-browser.ps1 -Url https://alamat-lain` sebagai Administrator.
+
+**Cara lama:** klik kanan `lacak-chrome-edge.reg` → *Merge* (sebagai
+Administrator). File ini menimpa entri `"1"` di tiap daftar, jadi aturan IT
+lain di posisi itu bisa hilang -- pakai installer bila memungkinkan.
 
 **Banyak laptop (domain):** Group Policy → *Computer Configuration →
 Administrative Templates → Google → Google Chrome* (template ADMX Chrome) /
@@ -45,7 +58,7 @@ yang memilih sumber layar otomatis tanpa menampilkan dialog. Buat shortcut
 khusus Live Kerja dengan target:
 
 ```
-"C:\Program Files\Google\Chrome\Application\chrome.exe" --auto-select-desktop-capture-source="Entire screen" https://app.salahmu.fun/live
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --auto-select-desktop-capture-source="Entire screen" https://lacaklive.smbservice.xyz/live
 ```
 
 Nilainya harus sama dengan nama sumber di dialog Chrome, yang mengikuti
