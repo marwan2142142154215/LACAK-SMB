@@ -4,7 +4,6 @@ import {
     ChevronLeft,
     ChevronRight,
     Coffee,
-    LayoutGrid,
     Maximize,
     Mic,
     MicOff,
@@ -15,6 +14,7 @@ import {
     Play,
     RefreshCw,
     Search,
+    SlidersHorizontal,
     Smartphone,
     Square,
     TriangleAlert,
@@ -23,7 +23,18 @@ import {
     Wallpaper,
     X,
 } from '@lucide/vue'
-import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
+import {
+    DialogContent,
+    DialogDescription,
+    DialogOverlay,
+    DialogPortal,
+    DialogRoot,
+    DialogTitle,
+    PopoverContent,
+    PopoverPortal,
+    PopoverRoot,
+    PopoverTrigger,
+} from 'reka-ui'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import BackgroundPicker from '@/components/live/BackgroundPicker.vue'
@@ -353,6 +364,67 @@ const rosterGroups = computed(() => {
     return [...groups.values()].sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''))
 })
 
+// ---- Panel Status staf: "Aktif" menyembunyikan yang offline (ratusan baris tak perlu
+// digulir), "Semua" menampilkan semuanya. Diingat per browser.
+const savedRosterScope = readPref('lacak_live_roster_scope', 'active')
+const rosterScope = ref(savedRosterScope === 'all' ? 'all' : 'active')
+watch(rosterScope, (value) => writePref('lacak_live_roster_scope', value))
+const inRosterScope = (member) => rosterScope.value === 'all' || member.status !== 'offline'
+
+// Ruang pusat ikut saringan status & pencarian yang sama dengan daftar site.
+const centralMatches = computed(() =>
+    canWatchCentral.value
+        ? centralRoster.value
+              .filter((member) => (!statusFilter.value || member.status === statusFilter.value) && matchesSearch(member.name))
+              .sort((a, b) => rosterRank(a.status) - rosterRank(b.status) || a.name.localeCompare(b.name))
+        : [],
+)
+
+/** Kelompok di panel: Ruang pusat dulu, lalu site/peran mengikuti pilihan "Kelompokkan". */
+const panelGroups = computed(() => {
+    const groups = []
+    const central = centralMatches.value.filter(inRosterScope)
+    if (central.length) groups.push({ key: 'central', label: CENTRAL_LABEL, items: central })
+    for (const group of rosterGroups.value) {
+        const items = group.items.filter(inRosterScope)
+        if (!items.length) continue
+        // Tanpa pengelompokan, daftar site tetap diberi judul kalau ada Ruang pusat di atasnya.
+        const label = group.label ?? (groups.length ? (isAllSites.value ? 'Staf site' : siteNames.value[selectedSiteId.value]) : null)
+        groups.push({ ...group, label, items })
+    }
+    return groups.map((group) => ({ ...group, live: group.items.filter((member) => member.started_at).length }))
+})
+
+const panelTotal = computed(() => siteRoster.value.length + (canWatchCentral.value ? centralRoster.value.length : 0))
+const offlineHidden = computed(() =>
+    rosterScope.value === 'active'
+        ? [...filteredRoster.value, ...centralMatches.value].filter((member) => member.status === 'offline').length
+        : 0,
+)
+const panelEmptyText = computed(() => {
+    if (!panelTotal.value) return 'Belum ada staf yang terdaftar untuk Live Kerja.'
+    if (offlineHidden.value) return 'Belum ada staf yang aktif.'
+    return 'Tidak ada staf yang cocok dengan saringan.'
+})
+
+/** Baris kedua di panel (kiri): peran & site, kecuali yang sudah jadi judul kelompoknya. */
+function rosterMeta(member) {
+    const parts = []
+    // Kelompok Ruang pusat bukan kelompok peran: perannya tetap ditulis.
+    if (grouping.value !== 'role' || member.organization_id === null) parts.push(roleLabel(member.live_role))
+    if (grouping.value !== 'site' && isAllSites.value && member.organization_id !== null) parts.push(siteNames.value[member.organization_id])
+    const text = parts.filter(Boolean).join(' · ')
+    if (text) return text
+    return member.started_at ? 'Sedang siaran' : 'Belum mulai kerja'
+}
+
+/** Baris kedua di panel (kanan): lama siaran, izin hari ini, atau tanda kosong. */
+function rosterTime(member) {
+    if (member.started_at) return formatElapsed(member.started_at, now.value)
+    if (member.leave) return LEAVE_LABELS[member.leave] ?? 'Izin'
+    return '—'
+}
+
 // ---- Jalur video staf (UDP normal / TCP lewat VPN yang memblokir UDP).
 const transportFilter = ref(null)
 
@@ -410,6 +482,9 @@ const groupTotals = computed(() => {
     }
     return totals
 })
+
+// Jumlah siaran yang tampil di dinding (site + Ruang pusat kalau boleh dilihat).
+const wallLiveCount = computed(() => wallMembers.value.length + (canWatchCentral.value ? centralParticipants.value.length : 0))
 
 // Urutan pindah staf di tampilan besar: Ruang pusat dulu, lalu halaman dinding yang tampil (ikut saringan).
 const focusList = computed(() => [...centralParticipants.value, ...visibleParticipants.value])
@@ -764,6 +839,9 @@ onMounted(async () => {
     document.addEventListener('keydown', focusSearchShortcut)
     stopLiveStatus = live.onLiveStatus(applyLiveStatus)
     statusTimer = setInterval(loadStatus, STATUS_RESYNC_MS)
+    // Boleh menonton / hanya diri sendiri ditentukan izin -- pakai izin terbaru dari server,
+    // bukan salinan saat login (admin bisa saja baru mengubah peran user ini).
+    await auth.ensureFreshProfile()
 
     try {
         await loadStatus()
@@ -825,6 +903,23 @@ onBeforeUnmount(() => {
                 @select="statusFilter = $event"
             >
                 <template #actions>
+                    <!-- Pemilih site: cakupan seluruh halaman, jadi diletakkan di atas, bukan di toolbar. -->
+                    <SearchSelect
+                        v-if="sites.length > 1 && !auth.seesOnlySelf"
+                        class="w-full sm:w-64"
+                        aria-label="Site yang ditonton"
+                        search-placeholder="Cari site…"
+                        empty-text="Tidak ada site"
+                        :model-value="selectedSiteId"
+                        :options="siteOptions"
+                        :disabled="live.isBroadcasting || live.connecting"
+                        @update:model-value="selectSite"
+                    />
+                    <span
+                        v-else-if="ownSiteName ?? sites[0]?.name"
+                        class="rounded-lg border border-base-800 bg-base-850 px-3 py-2 text-sm font-medium text-base-100"
+                        >{{ ownSiteName ?? sites[0]?.name }}</span
+                    >
                     <span
                         v-if="live.isBroadcasting"
                         class="inline-flex items-center gap-2 rounded-full bg-accent-500/12 px-3 py-1.5 text-xs font-bold text-accent-400"
@@ -1017,23 +1112,12 @@ onBeforeUnmount(() => {
                 </aside>
             </section>
 
-            <!-- Bilah kendali: pilih site, cari staf, atur tampilan -->
-            <div class="flex flex-wrap items-center gap-3 rounded-xl border border-base-800 bg-base-900 p-2 shadow-(--shadow-card)">
-                <!-- Pemilih site: dropdown ke bawah yang bisa dicari, di pojok kanan bilah kendali -->
-                <SearchSelect
-                    v-if="sites.length > 1"
-                    class="order-last w-full sm:ml-auto sm:w-72"
-                    aria-label="Site yang ditonton"
-                    search-placeholder="Cari site…"
-                    empty-text="Tidak ada site"
-                    :model-value="selectedSiteId"
-                    :options="siteOptions"
-                    :disabled="live.isBroadcasting || live.connecting"
-                    @update:model-value="selectSite"
-                />
-                <p v-else class="flex-1 px-2 text-sm font-medium text-base-100">{{ ownSiteName ?? sites[0]?.name }}</p>
-
-                <div v-if="!auth.seesOnlySelf" class="relative w-full sm:w-72">
+            <!-- Bilah kendali (satu baris): cari staf, kelompokkan, pengaturan tampilan, layar penuh -->
+            <div
+                v-if="!auth.seesOnlySelf"
+                class="flex flex-wrap items-center gap-2 rounded-xl border border-base-800 bg-base-900 p-2 shadow-(--shadow-card)"
+            >
+                <div class="relative min-w-0 flex-1 basis-64 sm:max-w-sm">
                     <label for="live-search" class="sr-only">Cari staf yang sedang siaran</label>
                     <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-base-500" />
                     <input
@@ -1113,80 +1197,132 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <div class="flex flex-wrap items-center gap-2">
-                    <BaseButton v-if="listeningCount" variant="outline" size="sm" @click="live.muteAll()">
-                        <VolumeX class="size-4" />
-                        Bisukan semua ({{ listeningCount }})
-                    </BaseButton>
-                    <p
-                        v-if="compact"
-                        class="rounded-lg border border-base-800 bg-base-850 px-3 py-1.5 text-xs text-base-400"
-                        title="Lebih dari 4 staf live: semua tampil kecil, klik untuk memperbesar"
-                    >
-                        Tampilan ringkas · klik staf untuk memperbesar
-                    </p>
-                    <div
-                        v-else
-                        class="flex rounded-lg border border-base-800 bg-base-850 p-0.5"
-                        role="radiogroup"
-                        aria-label="Jumlah staf per tampilan"
-                    >
+
+                <!-- Kelompokkan dinding & daftar status per site atau per peran penyiar. -->
+                <div class="flex items-center gap-2">
+                    <span class="hidden pl-1 text-xs font-medium text-base-500 md:inline">Kelompok</span>
+                    <div class="segmented" role="radiogroup" aria-label="Kelompokkan siaran">
                         <button
-                            v-for="count in LAYOUTS"
-                            :key="count"
-                            type="button"
-                            role="radio"
-                            :aria-checked="layout === count"
-                            class="rounded-md px-2.5 py-1.5 font-mono text-xs transition-colors focus-visible:outline-2 focus-visible:outline-accent-400"
-                            :class="
-                                layout === count ? 'bg-base-900 text-base-50 shadow-(--shadow-card)' : 'text-base-400 hover:text-base-100'
-                            "
-                            @click="layout = count"
-                        >
-                            {{ count }} layar
-                        </button>
-                    </div>
-                    <div
-                        class="flex items-center gap-1 rounded-lg border border-base-800 bg-base-850 p-0.5"
-                        role="radiogroup"
-                        aria-label="Ukuran kamera"
-                    >
-                        <span class="px-1.5 text-[11px] text-base-500 font-semibold">Kamera</span>
-                        <button
-                            v-for="option in CAMERA_SIZES"
+                            v-for="option in GROUPINGS"
                             :key="option.value"
                             type="button"
                             role="radio"
-                            :aria-checked="cameraSize === option.value"
-                            class="rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent-400"
-                            :class="
-                                cameraSize === option.value
-                                    ? 'bg-base-900 text-base-50 shadow-(--shadow-card)'
-                                    : 'text-base-400 hover:text-base-100'
-                            "
-                            @click="cameraSize = option.value"
+                            class="segmented-item"
+                            :aria-checked="grouping === option.value"
+                            @click="grouping = option.value"
                         >
                             {{ option.label }}
                         </button>
                     </div>
-                    <BaseButton
-                        variant="outline"
-                        size="sm"
-                        :aria-pressed="swapped"
-                        :title="swapped ? 'Kamera di kiri' : 'Layar di kiri, kamera di kanan'"
-                        @click="swapped = !swapped"
+                </div>
+
+                <div class="ml-auto flex items-center gap-2">
+                    <!-- Video lewat TCP berat untuk server: hanya muncul kalau memang ada, klik untuk menyaring. -->
+                    <button
+                        v-if="transportCounts.tcp"
+                        type="button"
+                        class="inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold tabular-nums transition-colors"
+                        :class="
+                            transportFilter === 'tcp'
+                                ? 'border-warning-500/50 bg-warning-500/15 text-warning-400'
+                                : 'border-warning-500/30 text-warning-400 hover:bg-warning-500/10'
+                        "
+                        :aria-pressed="transportFilter === 'tcp'"
+                        title="Video lewat TCP: UDP diblokir (biasanya VPN/firewall). Berat untuk server. Klik untuk menyaring."
+                        @click="transportFilter = transportFilter === 'tcp' ? null : 'tcp'"
                     >
-                        <ArrowLeftRight class="size-4" />
-                        {{ swapped ? 'Kamera | Layar' : 'Layar | Kamera' }}
+                        <Network class="size-3.5" />
+                        TCP {{ transportCounts.tcp }}
+                    </button>
+                    <BaseButton v-if="listeningCount" variant="outline" size="sm" @click="live.muteAll()">
+                        <VolumeX class="size-4" />
+                        Bisukan semua ({{ listeningCount }})
                     </BaseButton>
-                    <BaseButton variant="outline" size="sm" @click="toggleFullscreen">
+
+                    <!-- Semua pengaturan tampilan dinding dalam satu tempat. -->
+                    <PopoverRoot>
+                        <PopoverTrigger as-child>
+                            <BaseButton variant="outline" size="sm">
+                                <SlidersHorizontal class="size-4" />
+                                Tampilan
+                            </BaseButton>
+                        </PopoverTrigger>
+                        <PopoverPortal>
+                            <PopoverContent
+                                align="end"
+                                :side-offset="6"
+                                class="z-50 w-72 space-y-4 rounded-xl border border-base-700 bg-base-900 p-4 shadow-(--shadow-raised) focus:outline-none"
+                            >
+                                <div>
+                                    <p class="mb-2 text-xs font-semibold text-base-300">Staf per tampilan</p>
+                                    <div class="segmented w-full" role="radiogroup" aria-label="Jumlah staf per tampilan">
+                                        <button
+                                            v-for="count in LAYOUTS"
+                                            :key="count"
+                                            type="button"
+                                            role="radio"
+                                            class="segmented-item flex-1"
+                                            :aria-checked="layout === count"
+                                            :disabled="compact"
+                                            @click="layout = count"
+                                        >
+                                            {{ count }} layar
+                                        </button>
+                                    </div>
+                                    <p v-if="compact" class="mt-1.5 text-xs text-pretty text-base-500">
+                                        Lebih dari 4 staf live: semua tampil kecil. Klik staf untuk memperbesar.
+                                    </p>
+                                </div>
+                                <div>
+                                    <p class="mb-2 text-xs font-semibold text-base-300">Ukuran kamera</p>
+                                    <div class="segmented w-full" role="radiogroup" aria-label="Ukuran kamera">
+                                        <button
+                                            v-for="option in CAMERA_SIZES"
+                                            :key="option.value"
+                                            type="button"
+                                            role="radio"
+                                            class="segmented-item flex-1"
+                                            :aria-checked="cameraSize === option.value"
+                                            @click="cameraSize = option.value"
+                                        >
+                                            {{ option.label }}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <p class="mb-2 text-xs font-semibold text-base-300">Posisi</p>
+                                    <div class="segmented w-full" role="radiogroup" aria-label="Posisi layar dan kamera">
+                                        <button
+                                            type="button"
+                                            role="radio"
+                                            class="segmented-item flex-1"
+                                            :aria-checked="!swapped"
+                                            @click="swapped = false"
+                                        >
+                                            Layar | Kamera
+                                        </button>
+                                        <button
+                                            type="button"
+                                            role="radio"
+                                            class="segmented-item flex-1"
+                                            :aria-checked="swapped"
+                                            @click="swapped = true"
+                                        >
+                                            Kamera | Layar
+                                        </button>
+                                    </div>
+                                </div>
+                            </PopoverContent>
+                        </PopoverPortal>
+                    </PopoverRoot>
+
+                    <BaseButton variant="outline" size="sm" title="Layar penuh" aria-label="Layar penuh" @click="toggleFullscreen">
                         <Maximize class="size-4" />
-                        Layar penuh
                     </BaseButton>
                 </div>
             </div>
 
-            <div class="grid items-start gap-5" :class="!auth.seesOnlySelf && 'xl:grid-cols-[minmax(0,1fr)_20rem]'">
+            <div class="grid items-start gap-5" :class="!auth.seesOnlySelf && 'xl:grid-cols-[minmax(0,1fr)_22rem]'">
                 <!-- Dinding video (tidak ada untuk staf biasa: hanya melihat dirinya sendiri) -->
                 <section
                     v-if="!auth.seesOnlySelf"
@@ -1194,21 +1330,59 @@ onBeforeUnmount(() => {
                     aria-labelledby="live-wall-title"
                     :class="isFullscreen && 'overflow-auto bg-base-950 p-4'"
                 >
-                    <!-- Ruang pusat: siaran user yang tidak terikat site (mis. leader), terpisah dari dinding site. -->
-                    <div
+                    <!-- Judul dinding: jumlah siaran & saringan yang sedang aktif -->
+                    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+                        <h2
+                            id="live-wall-title"
+                            class="flex items-baseline gap-2 font-display text-lg font-bold text-base-50 tracking-[-0.015em]"
+                        >
+                            Sedang live
+                            <span class="font-mono text-sm font-medium text-base-500 tabular-nums">{{ wallLiveCount }}</span>
+                            <span v-if="isFullscreen && !isAllSites" class="text-sm font-normal text-base-500"
+                                >· {{ siteNames[selectedSiteId] }}</span
+                            >
+                        </h2>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button
+                                v-if="transportFilter"
+                                type="button"
+                                class="inline-flex items-center gap-1.5 rounded-full border border-warning-500/40 bg-warning-500/10 px-2.5 py-1 text-[12px] font-semibold text-warning-400"
+                                @click="transportFilter = null"
+                            >
+                                Hanya video TCP
+                                <X class="size-3" aria-hidden="true" />
+                                <span class="sr-only">Hapus saringan jalur video</span>
+                            </button>
+                            <button
+                                v-if="statusFilter"
+                                type="button"
+                                class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-semibold"
+                                :class="workStatus(statusFilter).chip"
+                                @click="statusFilter = null"
+                            >
+                                {{ workStatus(statusFilter).label }}
+                                <X class="size-3" aria-hidden="true" />
+                                <span class="sr-only">Hapus saringan status</span>
+                            </button>
+                            <BaseButton v-if="isFullscreen" variant="outline" size="sm" @click="toggleFullscreen">
+                                <Minimize class="size-4" />
+                                Keluar layar penuh
+                            </BaseButton>
+                        </div>
+                    </div>
+
+                    <!-- Ruang pusat (siaran tanpa site, mis. leader): kelompok pertama, judul & grid sama dengan kelompok lain. -->
+                    <section
                         v-if="canWatchCentral && centralParticipants.length"
                         class="mb-6"
                         aria-labelledby="live-central-title"
-                        role="region"
                     >
-                        <h2
-                            id="live-central-title"
-                            class="mb-3 flex items-center gap-2 font-display text-lg font-bold text-base-50 tracking-[-0.015em]"
-                        >
+                        <h3 id="live-central-title" class="mb-2.5 flex items-center gap-2 text-[13px] font-semibold text-base-200">
                             Ruang pusat
-                            <span class="font-mono text-sm font-medium text-base-500 tabular-nums">{{ centralParticipants.length }}</span>
-                            <span class="text-xs font-normal text-base-500">· siaran tanpa site</span>
-                        </h2>
+                            <span class="rounded-md bg-base-850 px-1.5 py-0.5 font-mono text-[11px] font-medium text-base-400 tabular-nums">{{ centralParticipants.length }}</span>
+                            <span class="text-xs font-normal text-base-500">siaran tanpa site</span>
+                            <span class="h-px flex-1 bg-base-800" aria-hidden="true" />
+                        </h3>
                         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
                             <div v-for="participant in centralParticipants" :key="participant.identity" class="relative">
                                 <button
@@ -1238,89 +1412,10 @@ onBeforeUnmount(() => {
                                 />
                             </div>
                         </div>
-                    </div>
-
-                    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                        <h2
-                            id="live-wall-title"
-                            class="flex items-center gap-2 font-display text-lg font-bold text-base-50 tracking-[-0.015em]"
-                        >
-                            Sedang live
-                            <span class="font-mono text-sm font-medium text-base-500 tabular-nums">{{ wallMembers.length }}</span>
-                            <span v-if="isFullscreen && !isAllSites" class="text-sm font-normal text-base-500"
-                                >· {{ siteNames[selectedSiteId] }}</span
-                            >
-                        </h2>
-                        <div class="flex flex-wrap items-center gap-2">
-                            <!-- Kelompokkan dinding & daftar status per site atau per peran penyiar. -->
-                            <div
-                                class="inline-flex overflow-hidden rounded-full border border-base-700 text-[12px] font-semibold"
-                                role="radiogroup"
-                                aria-label="Kelompokkan siaran"
-                            >
-                                <button
-                                    v-for="option in GROUPINGS"
-                                    :key="option.value"
-                                    type="button"
-                                    role="radio"
-                                    class="px-2.5 py-1 transition-colors"
-                                    :class="grouping === option.value ? 'bg-accent-500/15 text-accent-400' : 'text-base-400 hover:text-base-200'"
-                                    :aria-checked="grouping === option.value"
-                                    @click="grouping = option.value"
-                                >
-                                    {{ option.label }}
-                                </button>
-                            </div>
-                            <!-- Jalur video: klik untuk menyaring (mis. hanya yang lewat TCP). -->
-                            <div
-                                v-if="transportCounts.udp || transportCounts.tcp"
-                                class="inline-flex overflow-hidden rounded-full border border-base-700 text-[12px] tabular-nums font-semibold"
-                                role="group"
-                                aria-label="Saring menurut jalur video"
-                            >
-                                <button
-                                    v-for="entry in [
-                                        { key: 'udp', label: 'UDP', on: 'bg-st-online/15 text-st-online' },
-                                        { key: 'tcp', label: 'TCP', on: 'bg-warning-500/15 text-warning-400' },
-                                    ]"
-                                    :key="entry.key"
-                                    type="button"
-                                    class="px-2.5 py-1 transition-colors"
-                                    :class="[
-                                        transportFilter === entry.key ? entry.on : 'text-base-400 hover:text-base-200',
-                                        entry.key === 'tcp' && transportCounts.tcp && transportFilter !== 'tcp' && 'text-warning-400',
-                                    ]"
-                                    :aria-pressed="transportFilter === entry.key"
-                                    :title="
-                                        entry.key === 'tcp'
-                                            ? 'Video lewat TCP: UDP diblokir (biasanya VPN/firewall). Berat untuk server.'
-                                            : 'Video lewat UDP (normal)'
-                                    "
-                                    @click="transportFilter = transportFilter === entry.key ? null : entry.key"
-                                >
-                                    {{ entry.label }} {{ transportCounts[entry.key] }}
-                                </button>
-                            </div>
-                            <button
-                                v-if="statusFilter"
-                                type="button"
-                                class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-semibold"
-                                :class="workStatus(statusFilter).chip"
-                                @click="statusFilter = null"
-                            >
-                                {{ workStatus(statusFilter).label }}
-                                <X class="size-3" aria-hidden="true" />
-                                <span class="sr-only">Hapus saringan status</span>
-                            </button>
-                            <BaseButton v-if="isFullscreen" variant="outline" size="sm" @click="toggleFullscreen">
-                                <Minimize class="size-4" />
-                                Keluar layar penuh
-                            </BaseButton>
-                        </div>
-                    </div>
+                    </section>
 
                     <div
-                        v-if="live.mode === 'idle' || !wallMembers.length"
+                        v-if="live.mode === 'idle' || !wallLiveCount"
                         class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-base-700 bg-base-900/60 px-6 py-14 text-center"
                     >
                         <span class="flex size-12 items-center justify-center rounded-xl bg-base-850 text-base-400">
@@ -1362,13 +1457,11 @@ onBeforeUnmount(() => {
                         Menyambungkan siaran halaman ini… ({{ visibleParticipants.length }}/{{ visibleMembers.length }})
                     </p>
                     <!-- Satu kelompok per site/peran (atau satu kelompok tanpa judul kalau tidak dikelompokkan). -->
-                    <div v-for="group in visibleGroups" :key="group.key" :class="group.label && 'mb-5 last:mb-0'">
-                    <h3
-                        v-if="group.label"
-                        class="mb-2 flex items-center gap-2 border-b border-base-800 pb-1.5 text-sm font-semibold text-base-200"
-                    >
+                    <div v-for="group in visibleGroups" :key="group.key" :class="group.label && 'mb-6 last:mb-0'">
+                    <h3 v-if="group.label" class="mb-2.5 flex items-center gap-2 text-[13px] font-semibold text-base-200">
                         {{ group.label }}
-                        <span class="font-mono text-xs font-medium text-base-500 tabular-nums">{{ group.total }}</span>
+                        <span class="rounded-md bg-base-850 px-1.5 py-0.5 font-mono text-[11px] font-medium text-base-400 tabular-nums">{{ group.total }}</span>
+                        <span class="h-px flex-1 bg-base-800" aria-hidden="true" />
                     </h3>
                     <TransitionGroup v-if="compact" tag="div" name="tile" class="grid gap-3" :class="wallGridClass">
                         <div
@@ -1502,133 +1595,114 @@ onBeforeUnmount(() => {
                     </div>
                 </section>
 
-                <!-- Panel status: semua staf, termasuk yang belum mulai kerja -->
+                <!-- Panel status: satu daftar bergulir, judul kelompok menempel di atas saat digulir.
+                     Ruang bawah ekstra supaya baris terakhir tidak tertutup tombol chat. -->
                 <aside
                     aria-labelledby="live-status-title"
-                    class="overflow-hidden rounded-xl border border-base-800 bg-base-900 shadow-(--shadow-card) xl:sticky xl:top-16"
+                    class="flex flex-col overflow-hidden rounded-xl border border-base-800 bg-base-900 shadow-(--shadow-card) xl:sticky xl:top-20 xl:max-h-[calc(100dvh-6.5rem)]"
                 >
-                    <div class="border-b border-base-800 px-4 py-3">
+                    <div class="flex items-center justify-between gap-3 border-b border-base-800 px-4 py-3">
                         <h2
                             id="live-status-title"
-                            class="flex items-center justify-between font-display text-base font-bold text-base-50 tracking-[-0.015em]"
+                            class="flex items-baseline gap-2 font-display text-base font-bold text-base-50 tracking-[-0.015em]"
                         >
                             Status staf
-                            <span class="font-mono text-xs font-medium text-base-500 tabular-nums">{{ siteRoster.length }} staf</span>
+                            <span class="font-mono text-xs font-medium text-base-500 tabular-nums">{{ panelTotal }}</span>
                         </h2>
-                        <div v-if="statusCounts.length" class="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Saring menurut status">
+                        <div class="segmented" role="radiogroup" aria-label="Staf yang ditampilkan">
                             <button
-                                v-for="entry in statusCounts"
-                                :key="entry.key"
                                 type="button"
-                                :aria-pressed="statusFilter === entry.key"
-                                class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-accent-400 font-semibold"
-                                :class="
-                                    statusFilter === entry.key
-                                        ? entry.chip
-                                        : 'border-base-800 text-base-400 hover:border-base-600 hover:text-base-100'
-                                "
-                                @click="statusFilter = statusFilter === entry.key ? null : entry.key"
+                                role="radio"
+                                class="segmented-item"
+                                :aria-checked="rosterScope === 'active'"
+                                title="Sembunyikan staf yang offline"
+                                @click="rosterScope = 'active'"
                             >
-                                <span class="led" :class="entry.led" />
-                                {{ entry.label }} {{ entry.count }}
+                                Aktif
+                            </button>
+                            <button
+                                type="button"
+                                role="radio"
+                                class="segmented-item"
+                                :aria-checked="rosterScope === 'all'"
+                                @click="rosterScope = 'all'"
+                            >
+                                Semua
                             </button>
                         </div>
                     </div>
 
-                    <!-- Status Ruang pusat: penyiar tanpa site, hanya untuk pemegang live.watch-central. -->
-                    <div v-if="canWatchCentral && centralRoster.length" class="border-b border-base-800">
-                        <p class="eyebrow flex items-center justify-between px-4 pt-3 pb-1">
-                            Ruang pusat
-                            <span class="font-mono text-[10.5px] text-base-500 tabular-nums">{{ centralLive }} live</span>
-                        </p>
-                        <ul class="max-h-48 divide-y divide-base-800 overflow-y-auto">
-                            <li v-for="leader in centralRoster" :key="leader.user_id">
-                                <button
-                                    type="button"
-                                    class="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-base-850 focus-visible:bg-base-850 focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent"
-                                    :disabled="!sessionByIdentity[leader.participant_identity]"
-                                    @click="focusStaff(leader)"
-                                >
-                                    <span class="led" :class="workStatus(leader.status).led" />
-                                    <span class="min-w-0 flex-1">
-                                        <span class="flex items-center gap-1.5">
-                                            <span class="truncate text-sm font-medium text-base-100">{{ leader.name }}</span>
-                                            <LoginDeviceIcon :device="leader.login_device" />
-                                        </span>
-                                        <span class="block truncate text-xs text-base-500">
-                                            {{ roleLabel(leader.live_role) }} ·
-                                            <template v-if="leader.started_at">live {{ formatElapsed(leader.started_at, now) }}</template>
-                                            <template v-else>belum mulai kerja</template>
-                                        </span>
-                                    </span>
-                                    <span
-                                        class="shrink-0 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold"
-                                        :class="workStatus(leader.status).chip"
-                                    >
-                                        {{ workStatus(leader.status).label }}
-                                    </span>
-                                </button>
-                            </li>
-                        </ul>
+                    <div v-if="!panelGroups.length" class="px-4 py-10 text-center">
+                        <p class="text-sm text-base-400">{{ panelEmptyText }}</p>
+                        <button
+                            v-if="offlineHidden"
+                            type="button"
+                            class="mt-2 text-xs font-semibold text-accent-400 hover:underline"
+                            @click="rosterScope = 'all'"
+                        >
+                            Tampilkan {{ offlineHidden }} staf offline
+                        </button>
                     </div>
-
-                    <p v-if="!filteredRoster.length" class="px-4 py-8 text-center text-sm text-base-500">
-                        {{ siteRoster.length ? 'Tidak ada staf yang cocok.' : 'Belum ada staf yang terdaftar untuk Live Kerja.' }}
-                    </p>
-                    <div v-else class="max-h-[32rem] overflow-y-auto xl:max-h-[calc(100dvh-14rem)]">
-                    <template v-for="group in rosterGroups" :key="group.key">
-                    <p v-if="group.label" class="eyebrow flex items-center justify-between border-b border-base-800 px-4 pt-3 pb-1">
-                        {{ group.label }}
-                        <span class="font-mono text-[10.5px] text-base-500 tabular-nums">{{ group.items.length }}</span>
-                    </p>
-                    <ul class="divide-y divide-base-800">
-                        <li v-for="staff in group.items" :key="staff.user_id">
-                            <button
-                                type="button"
-                                class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-base-850 focus-visible:bg-base-850 focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent"
-                                :disabled="!sessionByIdentity[staff.participant_identity]"
-                                @click="focusStaff(staff)"
+                    <div v-else class="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-20">
+                        <section v-for="group in panelGroups" :key="group.key" :aria-label="group.label ?? 'Staf'">
+                            <h3
+                                v-if="group.label"
+                                class="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-base-800 bg-base-900/95 px-4 py-2 text-xs font-semibold text-base-300 backdrop-blur-sm"
                             >
-                                <span
-                                    class="led"
-                                    :class="[workStatus(staff.status).led, staff.status === 'alert' && 'motion-safe:animate-pulse']"
-                                />
-                                <span class="min-w-0 flex-1">
-                                    <span class="flex items-center gap-1.5">
-                                        <span class="truncate text-sm font-medium text-base-100">{{ staff.name }}</span>
-                                        <LoginDeviceIcon :device="staff.login_device" />
-                                    </span>
-                                    <span class="block truncate text-xs text-base-500">
-                                        <template v-if="grouping !== 'role'">{{ roleLabel(staff.live_role) }} · </template>
-                                        <template v-if="isAllSites && grouping !== 'site'"
-                                            >{{ siteNames[staff.organization_id]
-                                            }}<template v-if="staff.started_at"> · </template></template
+                                <span class="truncate">{{ group.label }}</span>
+                                <span class="shrink-0 font-mono text-[11px] font-medium text-base-500 tabular-nums"
+                                    >{{ group.live }} live · {{ group.items.length }}</span
+                                >
+                            </h3>
+                            <ul class="divide-y divide-base-800/70">
+                                <li v-for="staff in group.items" :key="staff.user_id">
+                                    <button
+                                        type="button"
+                                        class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 px-4 py-2 text-left transition-colors hover:bg-base-850 focus-visible:bg-base-850 focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent"
+                                        :disabled="!sessionByIdentity[staff.participant_identity]"
+                                        @click="focusStaff(staff)"
+                                    >
+                                        <span
+                                            class="led row-span-2"
+                                            :class="[workStatus(staff.status).led, staff.status === 'alert' && 'motion-safe:animate-pulse']"
+                                        />
+                                        <span class="flex min-w-0 items-center gap-1.5">
+                                            <span class="truncate text-sm font-medium text-base-100">{{ staff.name }}</span>
+                                            <LoginDeviceIcon :device="staff.login_device" />
+                                        </span>
+                                        <span class="flex items-center justify-end gap-1.5">
+                                            <span
+                                                v-if="faceMissingOf(staff.participant_identity)"
+                                                class="rounded-full bg-danger-500/12 px-1.5 py-0.5 text-[11px] font-semibold text-danger-400"
+                                                title="Wajah tidak terlihat di kamera"
+                                                >Wajah</span
+                                            >
+                                            <span
+                                                class="min-w-[4.75rem] rounded-full border px-2 py-0.5 text-center text-[11px] font-semibold"
+                                                :class="workStatus(staff.status).chip"
+                                            >
+                                                {{ workStatus(staff.status).label }}
+                                            </span>
+                                        </span>
+                                        <span class="col-start-2 truncate text-xs text-base-500">{{ rosterMeta(staff) }}</span>
+                                        <span
+                                            class="col-start-3 justify-self-end font-mono text-[11px] tabular-nums"
+                                            :class="staff.started_at ? 'text-base-300' : 'text-base-600'"
+                                            >{{ rosterTime(staff) }}</span
                                         >
-                                        <template v-if="staff.started_at">live {{ formatElapsed(staff.started_at, now) }}</template>
-                                        <template v-else-if="staff.leave">{{ LEAVE_LABELS[staff.leave] ?? 'Izin' }} hari ini</template>
-                                        <template v-else-if="!isAllSites">belum mulai kerja</template>
-                                    </span>
-                                </span>
-                                <span
-                                    v-if="staff.leave && !staff.started_at"
-                                    class="shrink-0 rounded-full bg-copper-500/12 px-1.5 py-0.5 text-[11px] font-semibold text-copper-400"
-                                    >{{ LEAVE_LABELS[staff.leave] ?? 'Izin' }}</span
-                                >
-                                <span
-                                    v-if="faceMissingOf(staff.participant_identity)"
-                                    class="shrink-0 rounded-full bg-danger-500/12 px-1.5 py-0.5 text-[11px] font-semibold text-danger-400"
-                                    >Wajah hilang</span
-                                >
-                                <span
-                                    class="shrink-0 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold"
-                                    :class="workStatus(staff.status).chip"
-                                >
-                                    {{ workStatus(staff.status).label }}
-                                </span>
-                            </button>
-                        </li>
-                    </ul>
-                    </template>
+                                    </button>
+                                </li>
+                            </ul>
+                        </section>
+                        <button
+                            v-if="offlineHidden"
+                            type="button"
+                            class="block w-full border-t border-base-800 px-4 py-2.5 text-left text-xs text-base-500 transition-colors hover:bg-base-850 hover:text-base-200"
+                            @click="rosterScope = 'all'"
+                        >
+                            {{ offlineHidden }} staf offline disembunyikan ·
+                            <span class="font-semibold text-accent-400">Tampilkan</span>
+                        </button>
                     </div>
                 </aside>
             </div>

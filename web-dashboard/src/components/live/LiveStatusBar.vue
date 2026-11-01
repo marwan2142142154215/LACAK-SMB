@@ -27,16 +27,20 @@ function toggle(key) {
 </script>
 
 <template>
-    <section class="rounded-2xl border border-base-800 bg-base-900 p-4 shadow-(--shadow-card) sm:p-5" aria-label="Status staf saat ini">
-        <div class="flex flex-wrap items-end justify-between gap-4">
-            <div class="min-w-0">
-                <p class="eyebrow flex items-center gap-2">
+    <section class="rounded-2xl border border-base-800 bg-base-900 shadow-(--shadow-card)" aria-label="Status staf saat ini">
+        <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 pt-4 sm:px-5">
+            <div class="flex min-w-0 items-center gap-3">
+                <span
+                    class="flex size-10 shrink-0 items-center justify-center rounded-xl"
+                    :class="live ? 'bg-accent-500/12' : 'bg-base-850'"
+                    aria-hidden="true"
+                >
                     <span v-if="live" class="beacon" />
-                    Sedang live
-                </p>
-                <p class="mt-1 flex items-baseline gap-2 font-display tabular-nums">
-                    <span class="text-5xl leading-none font-extrabold tracking-[-0.045em] text-base-50">{{ live }}</span>
-                    <span class="text-base font-semibold text-base-500">dari {{ total }} staf</span>
+                    <span v-else class="size-2 rounded-full bg-base-600" />
+                </span>
+                <p class="min-w-0 font-display tabular-nums">
+                    <span class="text-[2rem] leading-none font-extrabold tracking-[-0.04em] text-base-50">{{ live }}</span>
+                    <span class="ml-2 text-sm font-medium text-base-500">dari {{ total }} staf sedang live</span>
                 </p>
             </div>
             <div v-if="$slots.actions" class="flex flex-wrap items-center gap-2">
@@ -46,7 +50,7 @@ function toggle(key) {
 
         <div
             v-if="totalCount"
-            class="mt-5 flex h-3 w-full gap-1"
+            class="mx-4 mt-4 flex h-2.5 gap-1 sm:mx-5"
             role="group"
             aria-label="Saring menurut status (lebar = jumlah staf)"
         >
@@ -63,14 +67,20 @@ function toggle(key) {
                 @click="toggle(segment.key)"
             />
         </div>
-        <div v-else class="mt-5 h-3 w-full rounded-full bg-base-850" />
+        <div v-else class="mx-4 mt-4 h-2.5 rounded-full bg-base-850 sm:mx-5" />
 
-        <div v-if="totalCount" class="mt-3 flex flex-wrap gap-1.5">
+        <!-- Satu baris, bergulir ke samping di layar sempit -- tidak pernah pecah jadi dua baris. -->
+        <div
+            v-if="totalCount"
+            class="legend-row flex gap-1 overflow-x-auto px-3 pt-2.5 pb-3 sm:px-4"
+            role="group"
+            aria-label="Saring menurut status"
+        >
             <button
                 v-for="segment in ordered"
                 :key="segment.key"
                 type="button"
-                class="inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-accent-500"
+                class="inline-flex shrink-0 items-center gap-2 rounded-full px-2.5 py-1 text-xs whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-accent-500"
                 :class="active === segment.key ? 'bg-base-50 text-base-950' : 'text-base-400 hover:bg-base-850 hover:text-base-100'"
                 :aria-pressed="active === segment.key"
                 @click="toggle(segment.key)"
@@ -80,10 +90,19 @@ function toggle(key) {
                 <span class="font-mono font-medium tabular-nums">{{ segment.count }}</span>
             </button>
         </div>
+        <div v-else class="pb-4" />
     </section>
 </template>
 
 <style scoped>
+.legend-row {
+    scrollbar-width: none;
+}
+
+.legend-row::-webkit-scrollbar {
+    display: none;
+}
+
 .status-segment {
     transition:
         flex-grow 600ms cubic-bezier(0.22, 1, 0.36, 1),
