@@ -95,7 +95,7 @@ func TestIsLoopback(t *testing.T) {
 
 func TestStartRequestValidate(t *testing.T) {
 	good := startRequest{
-		Room:     "site-12",
+		Room:     "site-12-staff_viewer",
 		TrackSID: "TR_AMabc123",
 		Key:      "lacaklive/recordings/12/5/2026-10-31/screen_share-123000-TR_AMabc123.webm",
 		Target:   S3Target{AccessKey: "a", Secret: "b", Endpoint: "https://x", Bucket: "c"},
@@ -106,7 +106,9 @@ func TestStartRequestValidate(t *testing.T) {
 
 	mutations := map[string]func(*startRequest){
 		"room bukan site":   func(r *startRequest) { r.Room = "leaders" },
-		"room berisi path":  func(r *startRequest) { r.Room = "site-1/../x" },
+		"room tanpa peran":  func(r *startRequest) { r.Room = "site-12" },
+		"room pusat":        func(r *startRequest) { r.Room = "pusat-leader" },
+		"room berisi path":  func(r *startRequest) { r.Room = "site-1-leader/../x" },
 		"track bukan TR_":   func(r *startRequest) { r.TrackSID = "abc" },
 		"key kosong":        func(r *startRequest) { r.Key = "" },
 		"key naik folder":   func(r *startRequest) { r.Key = "a/../../etc/passwd" },

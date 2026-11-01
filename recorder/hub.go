@@ -19,7 +19,8 @@ import (
 )
 
 var (
-	roomPattern = regexp.MustCompile(`^site-\d+$`)
+	// Room Live Kerja = satu site + satu peran penyiar: site-{id}-{peran} (sama dengan roomName() di backend).
+	roomPattern = regexp.MustCompile(`^site-\d+-[a-z][a-z0-9_]*$`)
 	sidPattern  = regexp.MustCompile(`^TR_[A-Za-z0-9]+$`)
 )
 

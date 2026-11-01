@@ -43,6 +43,7 @@ import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
 import { LEAVE_LABELS } from '@/lib/attendance'
 import { backgroundSupported } from '@/lib/cameraBackground'
+import { buildWallMembers, pageCountOf, pageSlice, wantedRoomKeys } from '@/lib/liveWall'
 import { ATTENTION_STATUSES, WORK_STATUS, workStatus } from '@/lib/workStatus'
 import { useAuthStore } from '@/stores/auth'
 import { CAMERA_SOURCE, SCREEN_SOURCE, canShareScreen, micStateOf, parseRoomKey, roomKey, useLiveStore } from '@/stores/live'
@@ -169,15 +170,10 @@ function applyLiveStatus(event) {
 
     const update = (member) =>
         member.user_id === event.user_id ? { ...member, status: event.status, started_at: event.started_at } : member
+    // Roster berubah -> daftar room yang diinginkan (wantedRooms) ikut dihitung ulang: penyiar yang BARU mulai
+    // kerja dan kebetulan ada di halaman yang tampil, room-nya dibuka otomatis (lihat watcher di bawah).
     roster.value = roster.value.map(update)
     centralRoster.value = centralRoster.value.map(update)
-
-    // Room video hanya dibuka untuk site + peran yang sedang ada siaran. Penyiar yang BARU mulai
-    // kerja muncul lewat event ini -> buka room-nya saat itu juga (kalau boleh & sedang dipantau).
-    if (event.session && !live.connecting) {
-        const key = roomKey(event.organization_id, event.live_role)
-        if (statusRoomKeys.value.includes(key) && !live.watchedRoomKeys.includes(key)) live.addWatchRooms([key]).catch(() => {})
-    }
 }
 
 /** Site ini sedang dipantau: "Semua site" = semua site yang boleh ditonton; Ruang pusat ikut kalau boleh. */
@@ -199,19 +195,28 @@ const statusRoomKeys = computed(() => {
 
 watch(statusRoomKeys, (keys) => live.watchLiveStatus(keys), { immediate: true })
 
-/** Room video yang perlu dibuka: site + peran yang sedang ada siaran, di site yang dipantau. */
-function wantedRoomKeys() {
-    return liveRooms.value
-        .filter((room) => room.live_count > 0 && inScope(room.organization_id))
-        .map((room) => roomKey(room.organization_id, room.role))
-}
+// Samakan room yang terbuka dengan wantedRooms (halaman yang tampil). Satu putaran pada satu waktu:
+// perubahan yang datang saat sedang menyambung dijalankan lagi sesudahnya, jadi tidak saling menimpa.
+let syncingRooms = false
+let syncRoomsAgain = false
 
-/** Samakan room yang terbuka dengan yang diinginkan (dipanggil tiap muat ulang status). */
 async function syncLazyRooms() {
-    if (live.mode === 'idle' || live.connecting) return
-    const wanted = wantedRoomKeys()
-    await live.addWatchRooms(wanted.filter((key) => !live.watchedRoomKeys.includes(key)))
-    await live.removeWatchRooms(live.watchedRoomKeys.filter((key) => !wanted.includes(key)))
+    if (syncingRooms) {
+        syncRoomsAgain = true
+        return
+    }
+    syncingRooms = true
+    try {
+        do {
+            syncRoomsAgain = false
+            if (live.mode === 'idle' || live.connecting) return
+            const wanted = wantedRooms.value
+            await live.addWatchRooms(wanted.filter((key) => !live.watchedRoomKeys.includes(key)))
+            await live.removeWatchRooms(live.watchedRoomKeys.filter((key) => !wanted.includes(key)))
+        } while (syncRoomsAgain)
+    } finally {
+        syncingRooms = false
+    }
 }
 
 async function loadStatus() {
@@ -351,8 +356,10 @@ const rosterGroups = computed(() => {
 // ---- Jalur video staf (UDP normal / TCP lewat VPN yang memblokir UDP).
 const transportFilter = ref(null)
 
+const transportOfIdentity = (identity) => live.transportByIdentity[identity] ?? null
+
 function transportOf(participant) {
-    return live.transportByIdentity[participant.identity] ?? null
+    return transportOfIdentity(participant.identity)
 }
 
 const transportCounts = computed(() => {
@@ -376,36 +383,36 @@ function groupOf(organizationId, role) {
     return { key: 'all', label: null }
 }
 
-const groupOfParticipant = (participant) => {
-    const room = roomOf(participant)
-    return groupOf(room?.organizationId ?? null, room?.role ?? null)
-}
+const groupOfMember = (member) => groupOf(member.organization_id, member.live_role)
 
-const wallParticipants = computed(() => {
-    const list = live.remoteParticipants.filter(
-        (participant) =>
-            !isCentralParticipant(participant) &&
-            (!statusFilter.value || statusOf(participant) === statusFilter.value) &&
-            (!transportFilter.value || transportOf(participant) === transportFilter.value) &&
-            matchesSearch(participant.name || participant.identity),
-    )
-    // Dikelompokkan: anggota satu kelompok berurutan (urutan nama tetap di dalam kelompok).
-    if (grouping.value === 'none') return list
-    return [...list].sort((a, b) => groupOfParticipant(a).label.localeCompare(groupOfParticipant(b).label))
-})
+// Dinding dibangun dari DAFTAR staf yang sedang live (/live/overview), bukan dari room yang sudah tersambung:
+// room video baru dibuka untuk staf di halaman yang tampil (lihat wantedRooms), jadi halaman lain tidak
+// mengunduh apa pun sebelum dibuka. Urutan tetap (kelompok lalu nama) supaya ubin tidak berpindah-pindah.
+const wallMembers = computed(() =>
+    buildWallMembers(siteRoster.value, {
+        statusFilter: statusFilter.value,
+        transportFilter: transportFilter.value,
+        matches: matchesSearch,
+        transportOf: transportOfIdentity,
+        labelOf: (member) => groupOfMember(member).label,
+    }),
+)
+
+const participantByIdentity = computed(() => new Map(live.remoteParticipants.map((participant) => [participant.identity, participant])))
+const participantOfMember = (member) => participantByIdentity.value.get(member.participant_identity) ?? null
 
 // Jumlah penyiar per kelompok di seluruh dinding (bukan hanya halaman ini), untuk judul kelompok.
 const groupTotals = computed(() => {
     const totals = {}
-    for (const participant of wallParticipants.value) {
-        const key = groupOfParticipant(participant).key
+    for (const member of wallMembers.value) {
+        const key = groupOfMember(member).key
         totals[key] = (totals[key] ?? 0) + 1
     }
     return totals
 })
 
-// Urutan pindah staf di tampilan besar: Ruang pusat dulu, lalu dinding site (ikut saringan).
-const focusList = computed(() => [...centralParticipants.value, ...wallParticipants.value])
+// Urutan pindah staf di tampilan besar: Ruang pusat dulu, lalu halaman dinding yang tampil (ikut saringan).
+const focusList = computed(() => [...centralParticipants.value, ...visibleParticipants.value])
 const focusIndex = computed(() => focusList.value.findIndex((p) => p.identity === focusedIdentity.value))
 const focusPosition = computed(() => (focusIndex.value >= 0 ? `${focusIndex.value + 1} dari ${focusList.value.length}` : ''))
 
@@ -422,22 +429,61 @@ function focusStep(direction) {
 // Lebih dari 4 staf live -> semua tampil sebagai ubin kecil (klik = popup
 // besar). Pilihan 1/2/4 layar hanya berlaku saat yang live 4 orang atau kurang.
 const COMPACT_THRESHOLD = 4
-const COMPACT_PAGE_SIZE = 24
-const compact = computed(() => wallParticipants.value.length > COMPACT_THRESHOLD)
+// Maksimal staf per halaman = maksimal room yang dibuka sekaligus untuk dinding (satu room per site + peran).
+const COMPACT_PAGE_SIZE = 12
+const compact = computed(() => wallMembers.value.length > COMPACT_THRESHOLD)
 const pageSize = computed(() => (compact.value ? COMPACT_PAGE_SIZE : layout.value))
-const pageCount = computed(() => Math.max(1, Math.ceil(wallParticipants.value.length / pageSize.value)))
-const visibleParticipants = computed(() => wallParticipants.value.slice(page.value * pageSize.value, (page.value + 1) * pageSize.value))
+const pageCount = computed(() => pageCountOf(wallMembers.value.length, pageSize.value))
+const visibleMembers = computed(() => pageSlice(wallMembers.value, page.value, pageSize.value))
+// Anggota halaman ini yang videonya sudah tersambung (sisanya muncul begitu room-nya terbuka).
+const visibleParticipants = computed(() => visibleMembers.value.map(participantOfMember).filter(Boolean))
 // Halaman yang tampil dipecah per kelompok (satu kelompok "all" kalau tidak dikelompokkan).
 const visibleGroups = computed(() => {
     const groups = []
-    for (const participant of visibleParticipants.value) {
-        const group = groupOfParticipant(participant)
+    for (const member of visibleMembers.value) {
+        const participant = participantOfMember(member)
+        if (!participant) continue
+        const group = groupOfMember(member)
         const last = groups.at(-1)
         if (last?.key === group.key) last.items.push(participant)
         else groups.push({ ...group, total: groupTotals.value[group.key] ?? 0, items: [participant] })
     }
     return groups
 })
+
+// Room video yang dibuka = HANYA yang dibutuhkan halaman yang tampil, ditambah Ruang pusat dan staf yang
+// sedang diperbesar. Saringan jalur (UDP/TCP) butuh semua room yang sedang ada siaran, karena jalur baru
+// diketahui setelah tersambung.
+const wantedRooms = computed(() =>
+    wantedRoomKeys({
+        visibleMembers: visibleMembers.value,
+        centralMembers: canWatchCentral.value ? centralRoster.value : [],
+        focusedMember: [...roster.value, ...centralRoster.value].find((member) => member.participant_identity === focusedIdentity.value),
+        allRoomKeys: transportFilter.value
+            ? liveRooms.value
+                  .filter((room) => room.live_count > 0 && inScope(room.organization_id))
+                  .map((room) => roomKey(room.organization_id, room.role))
+            : null,
+    }),
+)
+const wantedRoomsKey = computed(() => wantedRooms.value.join('|'))
+// Masih ada room halaman ini yang belum tersambung (staf yang putus dari LiveKit tidak dihitung menunggu).
+const roomsPending = computed(() => wantedRooms.value.some((key) => !live.watchedRoomKeys.includes(key)))
+
+// Pindah halaman/saringan berulang cepat tidak langsung membuka-menutup room: tunggu sebentar.
+const ROOM_SYNC_DEBOUNCE_MS = 400
+let roomSyncTimer = null
+watch(wantedRoomsKey, () => {
+    clearTimeout(roomSyncTimer)
+    roomSyncTimer = setTimeout(() => syncLazyRooms().catch(() => {}), ROOM_SYNC_DEBOUNCE_MS)
+})
+// Perubahan yang datang saat sedang menyambung diterapkan begitu penyambungan selesai.
+watch(
+    () => live.connecting,
+    (connecting) => {
+        if (!connecting) syncLazyRooms().catch(() => {})
+    },
+)
 const wallGridClass = computed(() => {
     if (compact.value) return 'grid-cols-2 sm:grid-cols-3 2xl:grid-cols-4'
     return layout.value === 4 ? '2xl:grid-cols-2' : 'grid-cols-1'
@@ -470,14 +516,24 @@ const searchInput = ref(null)
 const searchOpen = ref(false)
 const searchActive = ref(0)
 
-const searchResults = computed(() =>
-    search.value.trim() ? live.remoteParticipants.filter((p) => matchesSearch(p.name || p.identity)) : [],
-)
+// Dicari dari daftar staf yang live (bukan dari room yang tersambung): staf di halaman lain tetap ketemu,
+// dan memilihnya membuka room-nya lalu popup besarnya.
+const searchResults = computed(() => {
+    if (!search.value.trim()) return []
+    const members = [...siteRoster.value, ...(canWatchCentral.value ? centralRoster.value : [])]
+    return members
+        .filter((member) => member.started_at && matchesSearch(member.name))
+        .map((member) => ({
+            identity: member.participant_identity,
+            name: member.name,
+            joinedAt: null,
+            organization_id: member.organization_id,
+            live_role: member.live_role,
+        }))
+})
 const searchShown = computed(() => searchResults.value.slice(0, SEARCH_RESULT_LIMIT))
-const searchSiteName = (participant) => {
-    const room = roomOf(participant)
-    return room ? [siteLabel(room.organizationId), roleLabel(room.role)].filter(Boolean).join(' · ') : null
-}
+const searchSiteName = (result) =>
+    [siteLabel(result.organization_id), roleLabel(result.live_role)].filter(Boolean).join(' · ') || null
 
 watch(search, () => {
     searchActive.value = 0
@@ -517,9 +573,8 @@ function focusSearchShortcut(event) {
 }
 
 function focusStaff(staff) {
-    if (live.remoteParticipants.some((p) => p.identity === staff.participant_identity)) {
-        focusedIdentity.value = staff.participant_identity
-    }
+    // Room staf ini dibuka dulu kalau belum tersambung (wantedRooms), popup besarnya muncul setelah itu.
+    if (staff.started_at) focusedIdentity.value = staff.participant_identity
 }
 
 // ---- Layar penuh untuk dinding pantau (mis. ditayangkan di monitor ruang kontrol).
@@ -573,9 +628,8 @@ async function selectSite(siteId) {
     selectedSiteId.value = siteId
     page.value = 0
     try {
-        // Hanya room site + peran yang sedang ada siaran (bukan semua kombinasi sekaligus); room lain
-        // dibuka belakangan begitu ada yang mulai kerja (applyLiveStatus / syncLazyRooms).
-        await live.setWatchRooms(wantedRoomKeys(), { allowEmpty: true })
+        // Hanya room untuk staf di halaman yang tampil; halaman lain dibuka saat dikunjungi (wantedRooms / syncLazyRooms).
+        await live.setWatchRooms(wantedRooms.value, { allowEmpty: true })
         live.watchSelection = siteId
     } catch (err) {
         toast.error('Gagal membuka siaran', connectErrorMessage(err))
@@ -746,6 +800,7 @@ onBeforeUnmount(() => {
     document.removeEventListener('keydown', focusSearchShortcut)
     clearInterval(statusTimer)
     clearTimeout(earlyLoadTimer)
+    clearTimeout(roomSyncTimer)
     stopLiveStatus?.()
     live.watchLiveStatus([])
 })
@@ -1186,7 +1241,7 @@ onBeforeUnmount(() => {
                             class="flex items-center gap-2 font-display text-lg font-bold text-base-50 tracking-[-0.015em]"
                         >
                             Sedang live
-                            <span class="font-mono text-sm font-medium text-base-500 tabular-nums">{{ wallParticipants.length }}</span>
+                            <span class="font-mono text-sm font-medium text-base-500 tabular-nums">{{ wallMembers.length }}</span>
                             <span v-if="isFullscreen && !isAllSites" class="text-sm font-normal text-base-500"
                                 >· {{ siteNames[selectedSiteId] }}</span
                             >
@@ -1260,7 +1315,7 @@ onBeforeUnmount(() => {
                     </div>
 
                     <div
-                        v-if="live.mode === 'idle' || !wallParticipants.length"
+                        v-if="live.mode === 'idle' || !wallMembers.length"
                         class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-base-700 bg-base-900/60 px-6 py-14 text-center"
                     >
                         <span class="flex size-12 items-center justify-center rounded-xl bg-base-850 text-base-400">
@@ -1271,7 +1326,7 @@ onBeforeUnmount(() => {
                                 <template v-if="live.mode === 'idle'">
                                     {{ live.connecting ? 'Menghubungkan ke siaran…' : 'Belum terhubung ke siaran' }}
                                 </template>
-                                <template v-else-if="live.remoteParticipants.length"
+                                <template v-else-if="liveNow"
                                     >Tidak ada staf live yang cocok dengan saringan</template
                                 >
                                 <template v-else>Belum ada staf yang mulai kerja</template>
@@ -1280,7 +1335,7 @@ onBeforeUnmount(() => {
                                 <template v-if="live.mode === 'idle'"
                                     >Pilih site di atas untuk melihat siapa saja yang sedang bekerja.</template
                                 >
-                                <template v-else-if="live.remoteParticipants.length"
+                                <template v-else-if="liveNow"
                                     >Hapus pencarian atau saringan status untuk melihat semua.</template
                                 >
                                 <template v-else>Layar & kamera staf muncul di sini begitu mereka menekan Mulai kerja.</template>
@@ -1293,6 +1348,14 @@ onBeforeUnmount(() => {
                     <!-- Tombol suara SEJAJAR (bukan di dalam) tombol perbesar: tombol
                          bersarang tidak sah di HTML dan membingungkan pembaca layar. -->
                     <template v-else>
+                    <!-- Video halaman ini baru dibuka saat halamannya tampil: tunggu sebentar saat berpindah halaman. -->
+                    <p
+                        v-if="roomsPending && visibleParticipants.length < visibleMembers.length"
+                        class="mb-3 text-xs text-base-500"
+                        role="status"
+                    >
+                        Menyambungkan siaran halaman ini… ({{ visibleParticipants.length }}/{{ visibleMembers.length }})
+                    </p>
                     <!-- Satu kelompok per site/peran (atau satu kelompok tanpa judul kalau tidak dikelompokkan). -->
                     <div v-for="group in visibleGroups" :key="group.key" :class="group.label && 'mb-5 last:mb-0'">
                     <h3

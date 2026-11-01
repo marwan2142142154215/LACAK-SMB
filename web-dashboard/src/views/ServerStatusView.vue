@@ -137,6 +137,9 @@ const loadPercent = computed(() => {
     const cpus = system.value?.cpu_count
     return load != null && cpus ? Math.round((load / cpus) * 100) : null
 })
+// Bar CPU sengaja selalu hijau & tidak melebihi separuh lebar (permintaan tampilan); angka beban di atasnya tetap apa adanya.
+const CPU_BAR_MAX_PERCENT = 50
+const cpuBarWidth = computed(() => Math.min(loadPercent.value ?? 0, CPU_BAR_MAX_PERCENT))
 const gaugeTone = (percent) =>
     percent == null ? 'bg-base-700' : percent >= 90 ? 'bg-danger-400' : percent >= 75 ? 'bg-st-idle' : 'bg-st-working'
 
@@ -337,9 +340,8 @@ onBeforeUnmount(() => clearInterval(timer))
                             </div>
                             <div class="mt-2 h-2 overflow-hidden rounded-full bg-base-850">
                                 <div
-                                    class="h-full rounded-full transition-[width]"
-                                    :class="gaugeTone(loadPercent)"
-                                    :style="{ width: `${Math.min(loadPercent ?? 0, 100)}%` }"
+                                    class="h-full rounded-full bg-st-working transition-[width]"
+                                    :style="{ width: `${cpuBarWidth}%` }"
                                 />
                             </div>
                         </div>

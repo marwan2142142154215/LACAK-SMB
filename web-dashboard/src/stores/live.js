@@ -6,6 +6,7 @@ import api from '@/lib/api'
 import { goToLogin } from '@/lib/routerRef'
 import { createCameraBackground, rawCameraTrack } from '@/lib/cameraBackground'
 import { createFaceWatch } from '@/lib/faceWatch'
+import { CENTRAL_SITE, UNKNOWN_LIVE_ROLE, parseRoomKey, roomKey } from '@/lib/roomKey'
 import { useAuthStore } from '@/stores/auth'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
@@ -65,22 +66,8 @@ const REJOIN_JITTER_MS = 10_000
 // ditulis langsung supaya store ini (dipakai AppShell di SEMUA halaman)
 // tidak ikut memuat livekit-client (~500 kB). Library-nya baru di-import
 // dinamis di connect(), saat staf benar-benar membuka siaran.
-// Kunci room tonton = site + peran penyiar: "3:staff_viewer", atau "pusat:leader"
-// untuk Ruang pusat (penyiar yang tidak terikat site). Satu room LiveKit per
-// site + peran, supaya hak tonton per peran ditegakkan server (token per room).
-export const CENTRAL_SITE = 'pusat'
-// Sama dengan UNKNOWN_LIVE_ROLE di backend (sesi lama tanpa peran).
-export const UNKNOWN_LIVE_ROLE = 'lainnya'
-
-/** Kunci room dari site (null = Ruang pusat) + peran. */
-export const roomKey = (organizationId, role) => `${organizationId ?? CENTRAL_SITE}:${role ?? UNKNOWN_LIVE_ROLE}`
-
-/** "3:staff_viewer" -> { organizationId: 3, role }; "pusat:leader" -> { organizationId: null, role }; selain itu null. */
-export function parseRoomKey(key) {
-    const match = /^(pusat|\d+):([a-z][a-z0-9_]*)$/.exec(String(key ?? ''))
-    if (!match) return null
-    return { organizationId: match[1] === CENTRAL_SITE ? null : Number(match[1]), role: match[2] }
-}
+// Kunci room tonton (site + peran): lihat lib/roomKey.js. Diekspor ulang supaya import lama tetap jalan.
+export { CENTRAL_SITE, UNKNOWN_LIVE_ROLE, parseRoomKey, roomKey }
 
 export const CAMERA_SOURCE = 'camera'
 export const SCREEN_SOURCE = 'screen_share'
