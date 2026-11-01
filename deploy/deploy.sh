@@ -32,8 +32,8 @@ cp .env build/.env
 pm2 restart lacak-gateway --update-env
 
 # Rekorder Live Kerja (opsional): dibangun hanya kalau Go terpasang, folder recorder/ ada, dan rekorder berjalan di
-# server INI (RECORDER_URL kosong atau lokal). Kalau RECORDER_URL menunjuk server lain (docs/pindah-livekit.md),
-# rekorder dibangun & disalin ke sana secara manual.
+# server INI (RECORDER_URL kosong atau lokal). Kalau RECORDER_URL menunjuk server lain, rekorder dibangun &
+# disalin ke sana secara manual.
 RECORDER_URL_VALUE="$(grep -E '^RECORDER_URL=' "$ROOT/backend-adonis/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
 if command -v go >/dev/null 2>&1 && [ -d "$ROOT/recorder" ] && { [ -z "$RECORDER_URL_VALUE" ] || [[ "$RECORDER_URL_VALUE" =~ ^http://(127\.0\.0\.1|localhost)[:/] ]]; }; then
     echo "==> Rekorder: build"

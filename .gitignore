@@ -29,7 +29,3 @@ lacak-server.exe
 /recorder/lacak-recorder
 /recorder/lacak-recorder.exe
 server-gui/cloudflare_debug.log
-
-# Konfigurasi server LiveKit terpisah (alamat internal + secret) -- jangan di-commit
-deploy/livekit-node/node.env
-a-env-snippet.txt
