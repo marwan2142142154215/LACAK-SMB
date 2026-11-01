@@ -22,6 +22,15 @@ cp .env build/.env
 echo "==> Restart semua proses backend"
 pm2 restart lacak-api lacak-api-queue lacak-api-scheduler --update-env
 
+# Gateway realtime (status Live Kerja per room site + peran) harus ikut sama versi dengan backend.
+echo "==> Gateway: build & restart"
+cd "$ROOT/realtime-gateway"
+npm ci
+node ace build
+cp .env build/.env
+(cd build && npm ci --omit=dev)
+pm2 restart lacak-gateway --update-env
+
 # Rekorder Live Kerja (opsional): dibangun hanya kalau Go terpasang dan folder recorder/ ada.
 if command -v go >/dev/null 2>&1 && [ -d "$ROOT/recorder" ]; then
     echo "==> Rekorder: build"
