@@ -87,10 +87,10 @@ export function seesOnlySelf(user: AuthenticatedUser): boolean {
 /** Sama dengan aturan watchableSites() di WorkSessionsController backend-adonis. */
 export function canWatchSite(user: AuthenticatedUser, organizationId: number): boolean {
     if (!user.permissions.includes('live.watch') || seesOnlySelf(user)) return false
-    if (user.roles.includes('super_admin')) return true
-    if (user.roles.includes('admin') || user.roles.includes('leader')) {
-        return user.accessibleOrganizationIds.includes(organizationId)
-    }
+    // Cakupan site peran (bukan nama peran) -- peran buatan sendiri, mis. auditor
+    // "Semua site", harus diperlakukan sama dengan backend.
+    if (user.roles.includes('super_admin') || user.siteScope === 'all') return true
+    if (user.siteScope === 'granted') return user.accessibleOrganizationIds.includes(organizationId)
     return user.organizationId === organizationId
 }
 

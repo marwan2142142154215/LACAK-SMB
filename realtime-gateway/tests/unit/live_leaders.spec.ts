@@ -25,6 +25,11 @@ function user(
         permissions,
         accessibleOrganizationIds: [3],
         watchRoles,
+        siteScope: roles.includes('super_admin')
+            ? 'all'
+            : roles.some((role) => ['admin', 'leader'].includes(role))
+              ? 'granted'
+              : 'own',
     }
 }
 
@@ -69,6 +74,19 @@ test.group('Live Kerja: hak tonton per peran', () => {
         assert.isFalse(canWatchRole(pengawas, 'staff_viewer'))
         assert.isTrue(canWatchRoom(pengawas, { organizationId: 3, role: 'operator' }))
         assert.isFalse(canWatchRoom(pengawas, { organizationId: 3, role: 'staff_viewer' }))
+    })
+})
+
+test.group('Live Kerja: cakupan site peran buatan sendiri', () => {
+    test('peran buatan ber-cakupan "Semua site" (mis. auditor) menonton semua site', ({
+        assert,
+    }) => {
+        const auditor = { ...user(['auditor']), organizationId: null, siteScope: 'all' as const }
+        assert.isTrue(canWatchSite(auditor, 3))
+        assert.isTrue(canWatchSite(auditor, 99))
+        const granted = { ...user(['pengawas']), siteScope: 'granted' as const }
+        assert.isTrue(canWatchSite(granted, 3))
+        assert.isFalse(canWatchSite(granted, 4))
     })
 })
 

@@ -13,6 +13,11 @@ export type AuthenticatedUser = {
     permissions: string[]
     /** Site yang diberikan ke admin/leader (user_site_access); kosong untuk peran lain. */
     accessibleOrganizationIds: number[]
+    /**
+     * Cakupan site terluas dari semua perannya (sama dengan backend): all = semua site,
+     * granted = accessibleOrganizationIds, own = site sendiri. Peran buatan sendiri ikut aturan ini.
+     */
+    siteScope: 'all' | 'granted' | 'own'
     /** Peran penyiar yang boleh ditonton di Live Kerja; null = semua peran. */
     watchRoles: string[] | null
 }
@@ -27,6 +32,7 @@ type AuthMeResponse = {
         roles: string[]
         permissions: string[]
         accessible_organization_ids?: number[]
+        site_scope?: string
         watch_roles?: string[] | null
     }
 }
@@ -71,6 +77,17 @@ async function checkSession(token: string, path: string): Promise<boolean | null
     }
 }
 
+/**
+ * site_scope dari /auth/me. Backend lama tanpa kolom ini: turunkan dari nama peran
+ * bawaan seperti dulu (super_admin = all, admin/leader = granted, lainnya = own).
+ */
+function siteScopeOf(value: string | undefined, roles: string[]): AuthenticatedUser['siteScope'] {
+    if (value === 'all' || value === 'granted' || value === 'own') return value
+    if (roles.includes('super_admin')) return 'all'
+    if (roles.includes('admin') || roles.includes('leader')) return 'granted'
+    return 'own'
+}
+
 export async function verifyBearerToken(token: string): Promise<AuthenticatedUser | null> {
     try {
         const response = await axios.get<AuthMeResponse>(
@@ -96,6 +113,7 @@ export async function verifyBearerToken(token: string): Promise<AuthenticatedUse
             roles: body.data.roles,
             permissions: body.data.permissions,
             accessibleOrganizationIds: (body.data.accessible_organization_ids ?? []).map(Number),
+            siteScope: siteScopeOf(body.data.site_scope, body.data.roles),
             // Backend lama tanpa kolom ini = semua peran (perilaku sebelum hak tonton per peran).
             watchRoles: Array.isArray(body.data.watch_roles) ? body.data.watch_roles : null,
         }

@@ -29,6 +29,7 @@ export const useAuthStore = defineStore('auth', () => {
     function clearSession() {
         token.value = null
         user.value = null
+        profileTask = null
         localStorage.removeItem(TOKEN_STORAGE_KEY)
         localStorage.removeItem(USER_STORAGE_KEY)
     }
@@ -84,6 +85,30 @@ export const useAuthStore = defineStore('auth', () => {
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(response.data.data))
     }
 
+    // Peran, izin, cakupan site & hak tonton bisa diubah admin kapan saja (menu Peran) --
+    // salinan yang disimpan saat login jadi basi dan menyembunyikan menu/fitur yang
+    // sebenarnya sudah diizinkan server. Dimuat ulang sekali per pemuatan halaman, lalu
+    // paling sering tiap PROFILE_REFRESH_MS. /auth/session: data sama dengan /auth/me
+    // tapi tidak memperpanjang batas idle login.
+    const PROFILE_REFRESH_MS = 5 * 60_000
+    let profileTask = null
+    let profileLoadedAt = 0
+
+    function ensureFreshProfile() {
+        if (!token.value) return Promise.resolve()
+        if (profileTask && Date.now() - profileLoadedAt < PROFILE_REFRESH_MS) return profileTask
+        profileLoadedAt = Date.now()
+        profileTask = api
+            .get('/auth/session')
+            .then((response) => {
+                user.value = response.data.data
+                localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(response.data.data))
+            })
+            // Gagal (jaringan, sesi habis -> interceptor yang menangani): tetap pakai salinan lama.
+            .catch(() => {})
+        return profileTask
+    }
+
     return {
         token,
         user,
@@ -98,5 +123,6 @@ export const useAuthStore = defineStore('auth', () => {
         logout,
         clearSession,
         refreshProfile,
+        ensureFreshProfile,
     }
 })

@@ -22,14 +22,12 @@ type MasterBeacon = {
     userId: number
     username: string
     organizationId: number | null
+    /** Cakupan semua site (super_admin, atau peran ber-cakupan "Semua site"). */
     isSuperAdmin: boolean
-    /** Site yang diberikan ke admin/leader (user_site_access). */
+    /** Site yang diberikan ke peran ber-cakupan "granted" (user_site_access). */
     grantedOrganizationIds: number[]
     socketId: string
 }
-
-/** Peran yang aksesnya lewat site yang diberikan, bukan site miliknya sendiri. */
-const GRANT_BASED_ROLES = ['admin', 'leader']
 
 const activeBeacons = new Map<string, MasterBeacon>()
 
@@ -42,6 +40,8 @@ export function registerMasterBeacon(
         roles: string[]
         permissions: string[]
         accessibleOrganizationIds?: number[]
+        /** Cakupan site peran (lihat AuthenticatedUser.siteScope). */
+        siteScope?: 'all' | 'granted' | 'own'
     },
     socketId: string
 ) {
@@ -50,14 +50,17 @@ export function registerMasterBeacon(
     // membuka kunci device, sama seperti backend menolak perintah Unlock-nya.
     if (!user.permissions.includes('devices.unlock')) return
 
-    // Admin & leader hanya untuk site yang diberikan -- sama dengan
-    // authorizedOrganizationId di backend, site "milik" akunnya tidak dihitung.
-    const grantBased = user.roles.some((role) => GRANT_BASED_ROLES.includes(role))
+    // Cakupan site peran, sama dengan authorizedOrganizationId di backend: "granted" hanya untuk
+    // site yang diberikan (site "milik" akunnya tidak dihitung). Peran buatan sendiri ikut aturan ini.
+    const scope =
+        user.siteScope ??
+        (user.roles.some((role) => ['admin', 'leader'].includes(role)) ? 'granted' : 'own')
+    const grantBased = scope === 'granted'
     activeBeacons.set(beaconUuid, {
         userId: user.id,
         username: user.username,
         organizationId: grantBased ? null : user.organizationId,
-        isSuperAdmin: user.roles.includes('super_admin'),
+        isSuperAdmin: user.roles.includes('super_admin') || scope === 'all',
         grantedOrganizationIds: grantBased ? (user.accessibleOrganizationIds ?? []) : [],
         socketId,
     })

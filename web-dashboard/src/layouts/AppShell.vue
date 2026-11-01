@@ -129,8 +129,13 @@ const roleLabel = computed(() => (auth.user?.roles ?? []).map((role) => ROLE_LAB
 
 const now = ref(dayjs())
 let clockTimer = null
+// Izin & peran terbaru dari server (bisa diubah admin setelah user login): saat dashboard
+// dibuka dan saat tab kembali aktif (dibatasi di store, paling sering tiap 5 menit).
+const refreshProfileOnReturn = () => document.visibilityState === 'visible' && auth.ensureFreshProfile()
+auth.ensureFreshProfile()
 onMounted(() => {
     clockTimer = setInterval(() => (now.value = dayjs()), 1000)
+    document.addEventListener('visibilitychange', refreshProfileOnReturn)
     // Floating chat staf: tersambung selama dashboard terbuka, di semua halaman.
     chat.start()
     // Refresh saat sedang siaran: sambung lagi otomatis di halaman mana pun.
@@ -141,7 +146,10 @@ onMounted(() => {
             toast.error('Siaran belum tersambung lagi', `${error.message} Buka Live Kerja lalu tekan Lanjutkan siaran.`)
     })
 })
-onBeforeUnmount(() => clearInterval(clockTimer))
+onBeforeUnmount(() => {
+    clearInterval(clockTimer)
+    document.removeEventListener('visibilitychange', refreshProfileOnReturn)
+})
 
 // Briefing yang mengundang user ini: banner "Gabung" di semua halaman.
 const BRIEFING_POLL_MS = 60_000
