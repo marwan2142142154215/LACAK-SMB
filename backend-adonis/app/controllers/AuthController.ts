@@ -15,8 +15,8 @@ import { autoProvisionEnabled, provisionPendingUser } from '#services/AccountCen
 import { laravelEncrypter, LARAVEL_USER_MORPH } from '#services/laravel/index'
 import { verifyLaravelPassword } from '#services/laravel/Bcrypt'
 import { ipRejectionBody, ipRejectionFor, isIpAllowed, normalizeIp } from '#services/IpWhitelist'
-import { removeBroadcaster } from '#services/Livekit'
-import { permissionNamesOf, roleNamesOf, siteScopeOf } from '#services/Permissions'
+import { removeBroadcaster, roomOfSession } from '#services/Livekit'
+import { permissionNamesOf, roleNamesOf, siteScopeOf, watchRolesOf } from '#services/Permissions'
 import * as TwoFactor from '#services/TwoFactor'
 import { isTwoFactorRequired } from '#services/TwoFactorPolicy'
 import { closeSession, openSessionOf, openSessions, record } from '#services/WorkPresence'
@@ -290,7 +290,7 @@ export default class AuthController {
                 attributes: { ended_at: laravelDate(session.ended_at), end_reason: 'logout' },
                 old: { ended_at: null, end_reason: null },
             })
-            await removeBroadcaster(session.organization_id, session.user_id)
+            await removeBroadcaster(roomOfSession(session), session.user_id)
         }
 
         if (await canBroadcast(user.id)) {
@@ -319,11 +319,12 @@ const DUMMY_PASSWORD_HASH = '$2y$10$Y18XUtkwVNaSkDxG0mGKX.51ec8i1y3rdvE4Cc.QSg9i
 
 /** Sama dengan AuthController::userPayload() di backend-api. */
 export async function userPayload(user: User) {
-    const [roles, permissions, siteRows, siteScope] = await Promise.all([
+    const [roles, permissions, siteRows, siteScope, watchRoles] = await Promise.all([
         roleNamesOf(user.id),
         permissionNamesOf(user.id),
         db.from('user_site_access').where('user_id', user.id).select('organization_id'),
         siteScopeOf(user.id),
+        watchRolesOf(user.id),
     ])
 
     return {
@@ -336,6 +337,8 @@ export async function userPayload(user: User) {
         permissions,
         site_scope: siteScope,
         accessible_organization_ids: siteRows.map((row) => row.organization_id),
+        // Peran penyiar yang boleh ditonton di Live Kerja; null = semua peran.
+        watch_roles: watchRoles,
     }
 }
 
@@ -497,7 +500,7 @@ async function endOtherSessions(user: User, client: Client) {
     // tetap terbuka -- staf bisa "Lanjutkan siaran" dari perangkat baru.
     const session = await openSessions(client).where('work_sessions.user_id', user.id).first()
     if (session) {
-        await removeBroadcaster(session.organization_id, session.user_id)
+        await removeBroadcaster(roomOfSession(session), session.user_id)
     }
 }
 

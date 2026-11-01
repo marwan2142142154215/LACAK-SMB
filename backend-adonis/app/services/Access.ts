@@ -1,6 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { permissionNamesOf, roleNamesOf, siteScopeOf } from '#services/Permissions'
+import { permissionNamesOf, roleNamesOf, siteScopeOf, watchRolesOf } from '#services/Permissions'
 import { BUILT_IN_SCOPES, widestScope, type SiteScope } from '#services/RoleRules'
 
 /**
@@ -16,6 +16,8 @@ export type Access = {
     grantedOrganizationIds: number[]
     /** Cakupan site terluas dari semua perannya; kosong = turunkan dari nama peran bawaan. */
     siteScope?: SiteScope
+    /** Peran penyiar yang boleh ditonton di Live Kerja; null/undefined = semua, [] = tidak ada. */
+    watchRoles?: string[] | null
 }
 
 /** Cakupan site efektif: dari database kalau ada, kalau tidak dari nama peran bawaan. */
@@ -38,11 +40,12 @@ export function accessOf(ctx: HttpContext): Promise<Access> {
 
 async function load(ctx: HttpContext): Promise<Access> {
     const user = ctx.authUser!
-    const [roles, permissions, grants, siteScope] = await Promise.all([
+    const [roles, permissions, grants, siteScope, watchRoles] = await Promise.all([
         roleNamesOf(user.id),
         permissionNamesOf(user.id),
         db.from('user_site_access').where('user_id', user.id).select('organization_id'),
         siteScopeOf(user.id),
+        watchRolesOf(user.id),
     ])
 
     return {
@@ -52,6 +55,7 @@ async function load(ctx: HttpContext): Promise<Access> {
         permissions,
         grantedOrganizationIds: grants.map((row) => Number(row.organization_id)),
         siteScope,
+        watchRoles,
     }
 }
 
@@ -64,3 +68,10 @@ export const hasRole = (access: Access, role: string) => access.roles.includes(r
  * peran pengawas bawaan (super_admin/admin/leader/site_admin), bukan staff_viewer.
  */
 export const seesOnlySelf = (access: Access) => !access.permissions.includes('live.roster')
+
+/** Boleh menonton siaran penyiar ber-peran ini (hak tonton per peran di menu Peran). */
+export const canWatchRole = (access: Access, role: string) =>
+    !access.watchRoles || access.watchRoles.includes(role)
+
+/** Boleh menonton Ruang pusat (siaran user yang tidak terikat site). */
+export const canWatchCentral = (access: Access) => access.permissions.includes('live.watch-central')

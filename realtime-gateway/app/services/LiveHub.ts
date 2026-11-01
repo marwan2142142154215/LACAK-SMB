@@ -31,20 +31,48 @@ type Ack = (response: Record<string, unknown>) => void
 
 const SWEEP_INTERVAL_MS = 10_000
 const ROOM_PREFIX = 'live:'
-const LEADERS_ROOM = `${ROOM_PREFIX}leaders`
+/** Penanda Ruang pusat di nama room (penyiar yang tidak terikat site). */
+const CENTRAL_KEY = 'pusat'
+/** Sama dengan UNKNOWN_LIVE_ROLE di backend-adonis (sesi tanpa live_role). */
+const UNKNOWN_LIVE_ROLE = 'lainnya'
+const ROLE_PATTERN = /^[a-z][a-z0-9_]{1,39}$/
 
-/** Room status per site; null = ruang leader (sesi leader tanpa site). */
-export const liveRoom = (organizationId: number | null) =>
-    organizationId === null ? LEADERS_ROOM : `${ROOM_PREFIX}${organizationId}`
+/** Satu room status = satu site (null = Ruang pusat) + satu peran penyiar. */
+export type LiveRoomRef = { organizationId: number | null; role: string }
 
-/** Ruang leader hanya ditonton peran di atas leader: admin & root. */
-export function canWatchLeaders(user: AuthenticatedUser): boolean {
-    return ['super_admin', 'admin'].some((role) => user.roles.includes(role))
+export const roleOf = (session: { live_role: string | null }) =>
+    session.live_role ?? UNKNOWN_LIVE_ROLE
+
+/**
+ * Room status `live:{site}:{peran}` / `live:pusat:{peran}` -- dipisah per peran
+ * seperti room LiveKit-nya, supaya status penyiar hanya sampai ke penonton yang
+ * boleh menonton peran itu.
+ */
+export const liveRoom = (organizationId: number | null, role: string) =>
+    `${ROOM_PREFIX}${organizationId ?? CENTRAL_KEY}:${role}`
+
+export function parseLiveRoom(room: string): LiveRoomRef | null {
+    const match = /^live:(pusat|\d+):([a-z][a-z0-9_]*)$/.exec(room)
+    if (!match) return null
+    return {
+        organizationId: match[1] === CENTRAL_KEY ? null : Number(match[1]),
+        role: match[2],
+    }
 }
 
-/** Leader menyiarkan ke ruang leader; staf butuh izin live.broadcast. */
+/** Ruang pusat (siaran tanpa site) hanya untuk pemegang izin live.watch-central. */
+export function canWatchCentral(user: AuthenticatedUser): boolean {
+    return user.permissions.includes('live.watch-central')
+}
+
+/** Semua peran bisa Live asal memegang izin live.broadcast. */
 export function canBroadcast(user: AuthenticatedUser): boolean {
-    return user.permissions.includes('live.broadcast') || user.roles.includes('leader')
+    return user.permissions.includes('live.broadcast')
+}
+
+/** Hak tonton per peran (roles.watchable_roles); null = semua peran. */
+export function canWatchRole(user: AuthenticatedUser, role: string): boolean {
+    return !user.watchRoles || user.watchRoles.includes(role)
 }
 
 /**
@@ -66,10 +94,33 @@ export function canWatchSite(user: AuthenticatedUser, organizationId: number): b
     return user.organizationId === organizationId
 }
 
+/** Boleh bergabung ke room status ini: lokasinya (site/pusat) DAN perannya boleh ditonton. */
+export function canWatchRoom(user: AuthenticatedUser, room: LiveRoomRef): boolean {
+    if (!canWatchRole(user, room.role)) return false
+    if (room.organizationId !== null) return canWatchSite(user, room.organizationId)
+    return user.permissions.includes('live.watch') && !seesOnlySelf(user) && canWatchCentral(user)
+}
+
+/** Isian `live:watch` -> LiveRoomRef yang sah, atau null. */
+function parseRoomRequest(value: unknown): LiveRoomRef | null {
+    const item = value as { organizationId?: unknown; role?: unknown } | null
+    const role = typeof item?.role === 'string' ? item.role : ''
+    if (!ROLE_PATTERN.test(role) && role !== UNKNOWN_LIVE_ROLE) return null
+    if (item?.organizationId === null) return { organizationId: null, role }
+    const organizationId = Number(item?.organizationId)
+    return Number.isInteger(organizationId) && organizationId > 0 ? { organizationId, role } : null
+}
+
 /** Status terakhir yang sudah dikirim, per sesi kerja terbuka. */
 const lastKnown = new Map<
     number,
-    { userId: number; organizationId: number | null; status: WorkStatus; faceMissing: boolean }
+    {
+        userId: number
+        organizationId: number | null
+        room: string
+        status: WorkStatus
+        faceMissing: boolean
+    }
 >()
 
 type MediaTransport = 'udp' | 'tcp'
@@ -79,34 +130,35 @@ type MediaTransport = 'udp' | 'tcp'
  * `live:state`): 'tcp' = UDP terblokir (biasanya VPN), jauh lebih berat untuk
  * server LiveKit. Hanya di memori -- penanda tampilan, bukan data kerja.
  */
-const transports = new Map<number, { organizationId: number | null; transport: MediaTransport }>()
+const transports = new Map<number, { room: string; transport: MediaTransport }>()
 
 export function parseTransport(payload: unknown): MediaTransport | null {
     const value = (payload as { transport?: unknown } | null)?.transport
     return value === 'udp' || value === 'tcp' ? value : null
 }
 
-/** identity peserta -> jalur video, untuk staf di site-site ini (null = leader). */
-function transportsIn(organizationIds: Array<number | null>): Record<string, MediaTransport> {
+/** identity peserta -> jalur video, untuk penyiar di room-room status ini. */
+function transportsIn(rooms: string[]): Record<string, MediaTransport> {
     const snapshot: Record<string, MediaTransport> = {}
     for (const [userId, entry] of transports) {
-        if (organizationIds.includes(entry.organizationId)) {
-            snapshot[`user-${userId}`] = entry.transport
-        }
+        if (rooms.includes(entry.room)) snapshot[`user-${userId}`] = entry.transport
     }
     return snapshot
 }
 
 function publishSession(opsNs: OpsNamespace, session: LiveSession, now: Date) {
     const status = statusOf(session, now)
+    const room = liveRoom(session.organization_id, roleOf(session))
     lastKnown.set(session.id, {
         userId: session.user_id,
         organizationId: session.organization_id,
+        room,
         status,
         faceMissing: session.face_missing,
     })
-    opsNs.to(liveRoom(session.organization_id)).emit('live:status', {
+    opsNs.to(room).emit('live:status', {
         organization_id: session.organization_id,
+        live_role: roleOf(session),
         user_id: session.user_id,
         participant_identity: `user-${session.user_id}`,
         status,
@@ -116,12 +168,18 @@ function publishSession(opsNs: OpsNamespace, session: LiveSession, now: Date) {
     })
 }
 
-async function publishEnded(opsNs: OpsNamespace, userId: number, organizationId: number | null) {
+async function publishEnded(
+    opsNs: OpsNamespace,
+    userId: number,
+    organizationId: number | null,
+    room: string
+) {
     // Selesai kerja tapi masih login = 'online'; logout / sesi habis = 'offline'.
     const status = (await hasActiveLogin(userId)) ? 'online' : 'offline'
     transports.delete(userId)
-    opsNs.to(liveRoom(organizationId)).emit('live:status', {
+    opsNs.to(room).emit('live:status', {
         organization_id: organizationId,
+        live_role: parseLiveRoom(room)?.role ?? null,
         user_id: userId,
         participant_identity: `user-${userId}`,
         status,
@@ -138,36 +196,34 @@ export function registerLiveHandlers(
 ) {
     const ack = (callback: unknown): Ack =>
         typeof callback === 'function' ? (callback as Ack) : () => {}
-    // null = ruang leader.
-    const watching = new Set<number | null>()
+    // Nama room status yang sedang diikuti socket ini.
+    const watching = new Set<string>()
 
-    socket.on(
-        'live:watch',
-        (payload: { organizationIds?: unknown; leaders?: unknown }, callback?: unknown) => {
-            const requested = Array.isArray(payload?.organizationIds) ? payload.organizationIds : []
-            const allowed: Array<number | null> = requested
-                .map(Number)
-                .filter((id) => Number.isInteger(id) && id > 0 && canWatchSite(user, id))
-            const leaders = payload?.leaders === true && canWatchLeaders(user)
-            if (leaders) allowed.push(null)
-
-            for (const id of watching) {
-                if (!allowed.includes(id)) socket.leave(liveRoom(id))
-            }
-            watching.clear()
-            for (const id of allowed) {
-                socket.join(liveRoom(id))
-                watching.add(id)
-            }
-
-            ack(callback)({
-                ok: true,
-                organizationIds: allowed.filter((id) => id !== null),
-                leaders,
-                transports: transportsIn(allowed),
-            })
+    // Penonton memilih room (site/pusat + peran); yang tidak boleh ditonton dibuang diam-diam.
+    socket.on('live:watch', (payload: { rooms?: unknown }, callback?: unknown) => {
+        const requested = Array.isArray(payload?.rooms) ? payload.rooms : []
+        const allowed = new Map<string, LiveRoomRef>()
+        for (const item of requested) {
+            const ref = parseRoomRequest(item)
+            if (ref && canWatchRoom(user, ref))
+                allowed.set(liveRoom(ref.organizationId, ref.role), ref)
         }
-    )
+
+        for (const room of watching) {
+            if (!allowed.has(room)) socket.leave(room)
+        }
+        watching.clear()
+        for (const room of allowed.keys()) {
+            socket.join(room)
+            watching.add(room)
+        }
+
+        ack(callback)({
+            ok: true,
+            rooms: [...allowed.values()],
+            transports: transportsIn([...allowed.keys()]),
+        })
+    })
 
     socket.on('live:state', async (payload: unknown, callback?: unknown) => {
         if (!canBroadcast(user)) {
@@ -186,7 +242,8 @@ export function registerLiveHandlers(
             socket.data.liveBroadcasting = true
             const transport = parseTransport(payload)
             if (transport) {
-                transports.set(user.id, { organizationId: session.organization_id, transport })
+                const room = liveRoom(session.organization_id, roleOf(session))
+                transports.set(user.id, { room, transport })
             }
             const now = new Date()
             ack(callback)({ ok: true, status: statusOf(session, now) })
@@ -205,31 +262,36 @@ export function startLiveSweeper(opsNs: OpsNamespace): () => void {
         if (running) return
         running = true
         try {
-            const rooms = [...opsNs.adapter.rooms.keys()].filter((room) =>
-                room.startsWith(ROOM_PREFIX)
+            const watched = new Set(
+                [...opsNs.adapter.rooms.keys()].filter((room) => room.startsWith(ROOM_PREFIX))
             )
-            const leadersWatched = rooms.includes(LEADERS_ROOM)
-            const watched = rooms
-                .filter((room) => room !== LEADERS_ROOM)
-                .map((room) => Number(room.slice(ROOM_PREFIX.length)))
-            const watchedSet = new Set<number | null>(watched)
-            if (leadersWatched) watchedSet.add(null)
-            const sessions = await openSessionsIn(watched, leadersWatched)
+            const refs = [...watched]
+                .map(parseLiveRoom)
+                .filter((ref): ref is LiveRoomRef => ref !== null)
+            const siteIds = [
+                ...new Set(
+                    refs.map((ref) => ref.organizationId).filter((id): id is number => id !== null)
+                ),
+            ]
+            const centralWatched = refs.some((ref) => ref.organizationId === null)
+            const sessions = await openSessionsIn(siteIds, centralWatched)
             const openIds = new Set(sessions.map((session) => session.id))
             const now = new Date()
 
             // Yang berakhir dulu, baru yang baru/berubah -- staf yang langsung
             // mulai sesi baru tidak boleh tertimpa "offline".
             for (const [sessionId, known] of lastKnown) {
-                if (!watchedSet.has(known.organizationId)) {
+                if (!watched.has(known.room)) {
                     lastKnown.delete(sessionId)
                 } else if (!openIds.has(sessionId)) {
                     lastKnown.delete(sessionId)
-                    await publishEnded(opsNs, known.userId, known.organizationId)
+                    await publishEnded(opsNs, known.userId, known.organizationId, known.room)
                 }
             }
 
             for (const session of sessions) {
+                // Site-nya ditonton, tapi room peran ini tidak: tidak ada yang perlu dikabari.
+                if (!watched.has(liveRoom(session.organization_id, roleOf(session)))) continue
                 // Wajah hilang/kembali dari APK (heartbeat HTTP) juga diteruskan.
                 const known = lastKnown.get(session.id)
                 if (

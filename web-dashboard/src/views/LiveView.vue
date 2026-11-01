@@ -45,7 +45,7 @@ import { LEAVE_LABELS } from '@/lib/attendance'
 import { backgroundSupported } from '@/lib/cameraBackground'
 import { ATTENTION_STATUSES, WORK_STATUS, workStatus } from '@/lib/workStatus'
 import { useAuthStore } from '@/stores/auth'
-import { CAMERA_SOURCE, LEADERS_ROOM_KEY, SCREEN_SOURCE, canShareScreen, micStateOf, useLiveStore } from '@/stores/live'
+import { CAMERA_SOURCE, SCREEN_SOURCE, canShareScreen, micStateOf, parseRoomKey, roomKey, useLiveStore } from '@/stores/live'
 
 const ALL_SITES = 'all'
 
@@ -69,7 +69,7 @@ const focused = computed(() => live.remoteParticipants.find((p) => p.identity ==
 const canWarn = computed(() => auth.hasPermission('warnings.send'))
 const focusedStaff = computed(() => {
     if (!focused.value) return null
-    const staff = [...roster.value, ...leadersRoster.value].find((item) => item.participant_identity === focused.value.identity)
+    const staff = [...roster.value, ...centralRoster.value].find((item) => item.participant_identity === focused.value.identity)
     return staff && staff.user_id !== auth.user?.id ? staff : null
 })
 const warnOpen = ref(false)
@@ -78,15 +78,23 @@ const confirmEndOpen = ref(false)
 // Catatan kerja yang ditulis saat Selesai kerja (tampil di Aktivitas user).
 const endNote = ref('')
 
-// Leader juga Live Kerja, tapi di ruang leader (terpisah dari staf) yang hanya
-// ditonton peran di atasnya (admin & root).
-const isLeader = computed(() => auth.user?.roles?.includes('leader') ?? false)
-// Siaran leader hanya ditonton peran di atasnya (admin & root).
-const canWatchLeaders = computed(() => ['super_admin', 'admin'].some((role) => auth.user?.roles?.includes(role)))
-const canBroadcast = computed(() => isLeader.value || (auth.hasPermission('live.broadcast') && !!auth.user?.organization_id))
+// Semua peran bisa Live lewat izin live.broadcast. Yang tidak terikat site siaran di
+// Ruang pusat dan tetap bisa memantau site-site lain sambil siaran (dulu khusus leader).
+const canBroadcast = computed(() => auth.hasPermission('live.broadcast'))
+const broadcastsCentral = computed(() => canBroadcast.value && !auth.user?.organization_id)
+// Ruang pusat (siaran tanpa site) hanya untuk pemegang live.watch-central.
+const canWatchCentral = computed(() => auth.hasPermission('live.watch-central'))
 const isAllSites = computed(() => selectedSiteId.value === ALL_SITES)
 const siteNames = computed(() => Object.fromEntries(sites.value.map((site) => [site.id, site.name])))
 const totalLive = computed(() => sites.value.reduce((total, site) => total + (site.live_count ?? 0), 0))
+// Nama peran untuk label & kelompok (dari /live/overview).
+const roleLabels = ref({})
+const roleLabel = (role) => roleLabels.value[role] ?? role
+const CENTRAL_LABEL = 'Ruang pusat'
+const siteLabel = (organizationId) => (organizationId === null ? CENTRAL_LABEL : (siteNames.value[organizationId] ?? null))
+
+/** Site & peran penyiar ini, dari room tempat ia siaran. */
+const roomOf = (participant) => parseRoomKey(live.participantRooms[participant.identity])
 
 // ---- Preferensi tampilan, diingat per browser (kebiasaan tiap penonton beda).
 function readPref(key, fallback) {
@@ -127,12 +135,28 @@ const savedCameraSize = readPref('lacak_live_camera_size', 'small')
 const cameraSize = ref(CAMERA_SIZES.some((option) => option.value === savedCameraSize) ? savedCameraSize : 'small')
 watch(cameraSize, (value) => writePref('lacak_live_camera_size', value))
 
+// Kelompokkan dinding siaran & daftar status: per site atau per peran penyiar.
+const GROUPINGS = [
+    { value: 'none', label: 'Tanpa' },
+    { value: 'site', label: 'Per site' },
+    { value: 'role', label: 'Per peran' },
+]
+const savedGrouping = readPref('lacak_live_grouping', 'none')
+const grouping = ref(GROUPINGS.some((option) => option.value === savedGrouping) ? savedGrouping : 'none')
+watch(grouping, (value) => {
+    writePref('lacak_live_grouping', value)
+    page.value = 0
+})
+
 // ---- Status semua staf: dimuat sekali dari /live/overview, lalu perubahan
 // per staf didorong gateway lewat socket (live:status). Muat ulang penuh
 // hanya sesekali sebagai pengaman (staf baru di roster, socket sempat putus).
 const STATUS_RESYNC_MS = 2 * 60_000
 const roster = ref([])
-const leadersRoster = ref([])
+// Penyiar yang tidak terikat site (Ruang pusat), mis. leader.
+const centralRoster = ref([])
+// Room (site/pusat + peran) yang sedang berisi siaran dan boleh ditonton, dari /live/overview.
+const liveRooms = ref([])
 const sessionByIdentity = ref({})
 let statusTimer = null
 let stopLiveStatus = null
@@ -146,51 +170,48 @@ function applyLiveStatus(event) {
     const update = (member) =>
         member.user_id === event.user_id ? { ...member, status: event.status, started_at: event.started_at } : member
     roster.value = roster.value.map(update)
-    leadersRoster.value = leadersRoster.value.map(update)
+    centralRoster.value = centralRoster.value.map(update)
 
-    // "Semua site" hanya membuka room site yang sedang ada staf live. Staf di site lain yang BARU
-    // mulai kerja muncul lewat event ini -> buka room site itu saat itu juga.
-    // Satu site dipilih: hanya ruang leader yang bisa muncul lewat jalur ini (room site-nya sudah terbuka).
+    // Room video hanya dibuka untuk site + peran yang sedang ada siaran. Penyiar yang BARU mulai
+    // kerja muncul lewat event ini -> buka room-nya saat itu juga (kalau boleh & sedang dipantau).
     if (event.session && !live.connecting) {
-        const key = event.organization_id ?? LEADERS_ROOM_KEY
-        const inScope =
-            key === LEADERS_ROOM_KEY
-                ? canWatchLeaders.value
-                : selectedSiteId.value === ALL_SITES && sites.value.some((site) => site.id === key)
-        if (inScope && !live.watchedSiteIds.includes(key)) live.addWatchSites([key]).catch(() => {})
+        const key = roomKey(event.organization_id, event.live_role)
+        if (statusRoomKeys.value.includes(key) && !live.watchedRoomKeys.includes(key)) live.addWatchRooms([key]).catch(() => {})
     }
 }
 
-// Event status (live:status) diterima untuk SEMUA site yang bisa dilihat saat "Semua site" dipilih,
-// walau room videonya baru dibuka untuk site yang sedang live. Satu site dipilih = site itu saja.
-const statusSiteIds = computed(() => {
-    const leaders = canWatchLeaders.value ? [LEADERS_ROOM_KEY] : []
-    return selectedSiteId.value === ALL_SITES
-        ? [...sites.value.map((site) => site.id), ...leaders]
-        : [...live.watchedSiteIds.filter((id) => id !== LEADERS_ROOM_KEY), ...leaders]
+/** Site ini sedang dipantau: "Semua site" = semua site yang boleh ditonton; Ruang pusat ikut kalau boleh. */
+function inScope(organizationId) {
+    if (organizationId === null) return canWatchCentral.value
+    return selectedSiteId.value === ALL_SITES ? sites.value.some((site) => site.id === organizationId) : organizationId === selectedSiteId.value
+}
+
+// Status (live:status) didengarkan untuk SEMUA room site + peran tempat penyiar yang dipantau bisa
+// siaran -- dari daftar penyiar (yang sudah disaring hak tonton per peran oleh server) -- walau room
+// videonya baru dibuka saat ada yang live.
+const statusRoomKeys = computed(() => {
+    const keys = new Set()
+    for (const member of [...roster.value, ...centralRoster.value]) {
+        if (inScope(member.organization_id)) keys.add(roomKey(member.organization_id, member.live_role))
+    }
+    return [...keys]
 })
 
-watch(statusSiteIds, (siteIds) => live.watchLiveStatus(siteIds), { immediate: true })
+watch(statusRoomKeys, (keys) => live.watchLiveStatus(keys), { immediate: true })
 
-/**
- * Room yang perlu dibuka: "Semua site" = site yang sedang ada staf live; satu site = site itu.
- * Ruang leader hanya dibuka kalau ada leader yang sedang live.
- */
+/** Room video yang perlu dibuka: site + peran yang sedang ada siaran, di site yang dipantau. */
 function wantedRoomKeys() {
-    const keys =
-        selectedSiteId.value === ALL_SITES
-            ? sites.value.filter((site) => (site.live_count ?? 0) > 0).map((site) => site.id)
-            : [selectedSiteId.value].filter((id) => Number.isInteger(id))
-    if (canWatchLeaders.value && leadersLive.value > 0) keys.push(LEADERS_ROOM_KEY)
-    return keys
+    return liveRooms.value
+        .filter((room) => room.live_count > 0 && inScope(room.organization_id))
+        .map((room) => roomKey(room.organization_id, room.role))
 }
 
 /** Samakan room yang terbuka dengan yang diinginkan (dipanggil tiap muat ulang status). */
 async function syncLazyRooms() {
     if (live.mode === 'idle' || live.connecting) return
     const wanted = wantedRoomKeys()
-    await live.addWatchSites(wanted.filter((key) => !live.watchedSiteIds.includes(key)))
-    await live.removeWatchSites(live.watchedSiteIds.filter((key) => !wanted.includes(key)))
+    await live.addWatchRooms(wanted.filter((key) => !live.watchedRoomKeys.includes(key)))
+    await live.removeWatchRooms(live.watchedRoomKeys.filter((key) => !wanted.includes(key)))
 }
 
 async function loadStatus() {
@@ -199,9 +220,11 @@ async function loadStatus() {
         const data = response.data.data
         sites.value = data.sites
         roster.value = data.roster
-        leadersRoster.value = data.leaders?.roster ?? []
+        centralRoster.value = data.central?.roster ?? []
+        liveRooms.value = data.rooms ?? []
+        roleLabels.value = Object.fromEntries((data.roles ?? []).map((role) => [role.name, role.label]))
         sessionByIdentity.value = Object.fromEntries(
-            [...data.items, ...(data.leaders?.items ?? [])].map((session) => [session.participant_identity, session]),
+            [...data.items, ...(data.central?.items ?? [])].map((session) => [session.participant_identity, session]),
         )
         syncLazyRooms().catch(() => {})
     } catch {
@@ -258,8 +281,17 @@ function liveSince(participant) {
     return sessionByIdentity.value[participant.identity]?.started_at ?? participant.joinedAt ?? null
 }
 
-function siteNameOf(participant) {
-    return isAllSites.value ? (siteNames.value[live.participantSites[participant.identity]] ?? null) : null
+/**
+ * Label kecil di ubin: site (kalau beberapa site ditonton) dan peran penyiar -- kecuali yang
+ * sudah jadi judul kelompoknya.
+ */
+function tileLabel(participant) {
+    const room = roomOf(participant)
+    if (!room) return null
+    const parts = []
+    if (grouping.value !== 'site' && (isAllSites.value || room.organizationId === null)) parts.push(siteLabel(room.organizationId))
+    if (grouping.value !== 'role') parts.push(roleLabel(room.role))
+    return parts.filter(Boolean).join(' · ') || null
 }
 
 // ---- Cari & saring: berlaku untuk dinding video DAN daftar status.
@@ -305,6 +337,17 @@ function rosterRank(status) {
     return status === 'offline' ? 2 : 1
 }
 
+// Daftar status dipecah per site/peran mengikuti pilihan "Kelompokkan" (urutan dalam kelompok tetap).
+const rosterGroups = computed(() => {
+    const groups = new Map()
+    for (const staff of filteredRoster.value) {
+        const group = groupOf(staff.organization_id, staff.live_role)
+        if (!groups.has(group.key)) groups.set(group.key, { ...group, items: [] })
+        groups.get(group.key).items.push(staff)
+    }
+    return [...groups.values()].sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''))
+})
+
 // ---- Jalur video staf (UDP normal / TCP lewat VPN yang memblokir UDP).
 const transportFilter = ref(null)
 
@@ -321,23 +364,48 @@ const transportCounts = computed(() => {
     return counts
 })
 
-// Leader yang siaran tampil di bagian Leader sendiri, bukan di dinding staf.
-const isLeaderParticipant = (participant) => live.participantSites[participant.identity] === LEADERS_ROOM_KEY
-const leaderParticipants = computed(() => live.remoteParticipants.filter(isLeaderParticipant))
-const leadersLive = computed(() => leadersRoster.value.filter((leader) => leader.started_at).length)
+// Siaran Ruang pusat (penyiar tanpa site) tampil di bagiannya sendiri, bukan di dinding site.
+const isCentralParticipant = (participant) => roomOf(participant)?.organizationId === null
+const centralParticipants = computed(() => live.remoteParticipants.filter(isCentralParticipant))
+const centralLive = computed(() => centralRoster.value.filter((member) => member.started_at).length)
 
-const wallParticipants = computed(() =>
-    live.remoteParticipants.filter(
+/** Kunci & judul kelompok sebuah penyiar/anggota daftar menurut pilihan "Kelompokkan". */
+function groupOf(organizationId, role) {
+    if (grouping.value === 'site') return { key: `site:${organizationId ?? 'pusat'}`, label: siteLabel(organizationId) ?? 'Site lain' }
+    if (grouping.value === 'role') return { key: `role:${role}`, label: roleLabel(role) }
+    return { key: 'all', label: null }
+}
+
+const groupOfParticipant = (participant) => {
+    const room = roomOf(participant)
+    return groupOf(room?.organizationId ?? null, room?.role ?? null)
+}
+
+const wallParticipants = computed(() => {
+    const list = live.remoteParticipants.filter(
         (participant) =>
-            !isLeaderParticipant(participant) &&
+            !isCentralParticipant(participant) &&
             (!statusFilter.value || statusOf(participant) === statusFilter.value) &&
             (!transportFilter.value || transportOf(participant) === transportFilter.value) &&
             matchesSearch(participant.name || participant.identity),
-    ),
-)
+    )
+    // Dikelompokkan: anggota satu kelompok berurutan (urutan nama tetap di dalam kelompok).
+    if (grouping.value === 'none') return list
+    return [...list].sort((a, b) => groupOfParticipant(a).label.localeCompare(groupOfParticipant(b).label))
+})
 
-// Urutan pindah staf di tampilan besar: leader dulu, lalu dinding staf (ikut saringan).
-const focusList = computed(() => [...leaderParticipants.value, ...wallParticipants.value])
+// Jumlah penyiar per kelompok di seluruh dinding (bukan hanya halaman ini), untuk judul kelompok.
+const groupTotals = computed(() => {
+    const totals = {}
+    for (const participant of wallParticipants.value) {
+        const key = groupOfParticipant(participant).key
+        totals[key] = (totals[key] ?? 0) + 1
+    }
+    return totals
+})
+
+// Urutan pindah staf di tampilan besar: Ruang pusat dulu, lalu dinding site (ikut saringan).
+const focusList = computed(() => [...centralParticipants.value, ...wallParticipants.value])
 const focusIndex = computed(() => focusList.value.findIndex((p) => p.identity === focusedIdentity.value))
 const focusPosition = computed(() => (focusIndex.value >= 0 ? `${focusIndex.value + 1} dari ${focusList.value.length}` : ''))
 
@@ -359,16 +427,27 @@ const compact = computed(() => wallParticipants.value.length > COMPACT_THRESHOLD
 const pageSize = computed(() => (compact.value ? COMPACT_PAGE_SIZE : layout.value))
 const pageCount = computed(() => Math.max(1, Math.ceil(wallParticipants.value.length / pageSize.value)))
 const visibleParticipants = computed(() => wallParticipants.value.slice(page.value * pageSize.value, (page.value + 1) * pageSize.value))
+// Halaman yang tampil dipecah per kelompok (satu kelompok "all" kalau tidak dikelompokkan).
+const visibleGroups = computed(() => {
+    const groups = []
+    for (const participant of visibleParticipants.value) {
+        const group = groupOfParticipant(participant)
+        const last = groups.at(-1)
+        if (last?.key === group.key) last.items.push(participant)
+        else groups.push({ ...group, total: groupTotals.value[group.key] ?? 0, items: [participant] })
+    }
+    return groups
+})
 const wallGridClass = computed(() => {
     if (compact.value) return 'grid-cols-2 sm:grid-cols-3 2xl:grid-cols-4'
     return layout.value === 4 ? '2xl:grid-cols-2' : 'grid-cols-1'
 })
 watch(compact, () => (page.value = 0))
 
-// Video yang diunduh: halaman dinding staf yang tampil + semua leader.
+// Video yang diunduh: halaman dinding site yang tampil + semua siaran Ruang pusat.
 watch(
-    [visibleParticipants, leaderParticipants],
-    ([participants, leaders]) => live.setVisibleParticipants([...participants, ...leaders].map((p) => p.identity)),
+    [visibleParticipants, centralParticipants],
+    ([participants, central]) => live.setVisibleParticipants([...participants, ...central].map((p) => p.identity)),
     { immediate: true },
 )
 watch(pageCount, (count) => {
@@ -396,8 +475,8 @@ const searchResults = computed(() =>
 )
 const searchShown = computed(() => searchResults.value.slice(0, SEARCH_RESULT_LIMIT))
 const searchSiteName = (participant) => {
-    const siteId = live.participantSites[participant.identity]
-    return siteId === LEADERS_ROOM_KEY ? 'Leader' : (siteNames.value[siteId] ?? null)
+    const room = roomOf(participant)
+    return room ? [siteLabel(room.organizationId), roleLabel(room.role)].filter(Boolean).join(' · ') : null
 }
 
 watch(search, () => {
@@ -462,7 +541,7 @@ async function toggleFullscreen() {
 
 const focusedSince = computed(() => (focused.value ? liveSince(focused.value) : null))
 const ownSiteName = computed(() =>
-    live.isBroadcasting && live.organizationId === null ? 'Ruang leader' : (siteNames.value[live.organizationId] ?? null),
+    live.isBroadcasting && live.organizationId === null ? CENTRAL_LABEL : (siteNames.value[live.organizationId] ?? null),
 )
 const broadcastElapsed = computed(() => formatElapsed(live.broadcastStartedAt, now.value))
 const myStatusMeta = computed(() => (live.myStatus ? workStatus(live.myStatus) : null))
@@ -475,7 +554,7 @@ const cameraSettings = computed(() => {
 })
 
 async function loadMySession() {
-    const params = isLeader.value ? {} : { organization_id: auth.user?.organization_id ?? undefined }
+    const params = auth.user?.organization_id ? { organization_id: auth.user.organization_id } : {}
     const response = await api.get('/live/sessions', { params })
     mySession.value = response.data.data.my_session
 }
@@ -488,15 +567,15 @@ const siteOptions = computed(() => [
 
 /** Tonton satu site, atau ALL_SITES = semua site sekaligus (satu koneksi per site). */
 async function selectSite(siteId) {
-    // Staf yang siaran terkunci ke site sendiri; leader yang siaran tetap bisa
-    // memantau site-site yang dipegangnya. Staf biasa tidak menonton siapa pun.
-    if (auth.seesOnlySelf || (live.isBroadcasting && !isLeader.value)) return
+    // Penyiar ber-site terkunci ke site sendiri; penyiar Ruang pusat (tanpa site) tetap bisa
+    // memantau site-site yang dipegangnya. Yang hanya melihat diri sendiri tidak menonton siapa pun.
+    if (auth.seesOnlySelf || (live.isBroadcasting && !broadcastsCentral.value)) return
     selectedSiteId.value = siteId
     page.value = 0
     try {
-        // "Semua site": hanya room site yang sedang ada staf live (bukan 49 room sekaligus);
-        // site lain dibuka belakangan begitu ada staf yang mulai kerja (applyLiveStatus / syncLazyRooms).
-        await live.setWatchRooms(wantedRoomKeys(), { allowEmpty: siteId === ALL_SITES })
+        // Hanya room site + peran yang sedang ada siaran (bukan semua kombinasi sekaligus); room lain
+        // dibuka belakangan begitu ada yang mulai kerja (applyLiveStatus / syncLazyRooms).
+        await live.setWatchRooms(wantedRoomKeys(), { allowEmpty: true })
         live.watchSelection = siteId
     } catch (err) {
         toast.error('Gagal membuka siaran', connectErrorMessage(err))
@@ -581,8 +660,8 @@ async function startWork() {
         await live.startWork()
         mySession.value = null
         loadStatus()
-        if (isLeader.value) {
-            // Ruang leader sudah tersambung; site yang dipegang ditonton lagi.
+        if (broadcastsCentral.value) {
+            // Siaran di Ruang pusat sudah tersambung; site yang dipegang ditonton lagi.
             await selectSite(selectedSiteId.value ?? ALL_SITES)
         } else {
             selectedSiteId.value = live.organizationId
@@ -644,10 +723,11 @@ onMounted(async () => {
     // sambung ulang kalau memang sudah terhubung.
     if (live.mode !== 'idle') {
         // Pilihan terakhir diingat di store; tanpa itu (mis. sedang siaran) turunkan dari room yang terbuka.
-        selectedSiteId.value = live.watchSelection ?? (live.watchedSiteIds.length > 1 ? ALL_SITES : live.organizationId)
-        // Leader yang siarannya baru dilanjutkan: hanya ruang leader yang
+        const watchedSites = new Set(live.watchedRoomKeys.map((key) => parseRoomKey(key)?.organizationId).filter((id) => id != null))
+        selectedSiteId.value = live.watchSelection ?? (watchedSites.size > 1 ? ALL_SITES : live.organizationId)
+        // Penyiar Ruang pusat yang siarannya baru dilanjutkan: hanya room siarannya yang
         // tersambung -- tonton lagi site-site yang dipegangnya.
-        if (isLeader.value && live.isBroadcasting && live.watchedSiteIds.length === 1) await selectSite(ALL_SITES)
+        if (broadcastsCentral.value && live.isBroadcasting && live.watchedRoomKeys.length === 1) await selectSite(ALL_SITES)
         // Pilihan tidak diketahui: jangan dibiarkan kosong, lanjut ke pilihan bawaan di bawah.
         if (selectedSiteId.value !== null) return
     }
@@ -1054,23 +1134,23 @@ onBeforeUnmount(() => {
                     aria-labelledby="live-wall-title"
                     :class="isFullscreen && 'overflow-auto bg-base-950 p-4'"
                 >
-                    <!-- Ruang leader: terpisah dari dinding staf, hanya untuk admin & root. -->
+                    <!-- Ruang pusat: siaran user yang tidak terikat site (mis. leader), terpisah dari dinding site. -->
                     <div
-                        v-if="canWatchLeaders && leaderParticipants.length"
+                        v-if="canWatchCentral && centralParticipants.length"
                         class="mb-6"
-                        aria-labelledby="live-leaders-title"
+                        aria-labelledby="live-central-title"
                         role="region"
                     >
                         <h2
-                            id="live-leaders-title"
+                            id="live-central-title"
                             class="mb-3 flex items-center gap-2 font-display text-lg font-bold text-base-50 tracking-[-0.015em]"
                         >
-                            Leader
-                            <span class="font-mono text-sm font-medium text-base-500 tabular-nums">{{ leaderParticipants.length }}</span>
-                            <span class="text-xs font-normal text-base-500">· hanya terlihat oleh admin & root</span>
+                            Ruang pusat
+                            <span class="font-mono text-sm font-medium text-base-500 tabular-nums">{{ centralParticipants.length }}</span>
+                            <span class="text-xs font-normal text-base-500">· siaran tanpa site</span>
                         </h2>
                         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
-                            <div v-for="participant in leaderParticipants" :key="participant.identity" class="relative">
+                            <div v-for="participant in centralParticipants" :key="participant.identity" class="relative">
                                 <button
                                     type="button"
                                     class="tile-button block w-full rounded-xl text-left focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:outline-none"
@@ -1079,7 +1159,7 @@ onBeforeUnmount(() => {
                                 >
                                     <LiveMiniTile
                                         :name="participant.name || participant.identity"
-                                        site="Leader"
+                                        :site="roleLabel(roomOf(participant)?.role)"
                                         :screen-track="trackOf(participant, SCREEN_SOURCE)"
                                         :camera-track="trackOf(participant, CAMERA_SOURCE)"
                                         :status="statusOf(participant)"
@@ -1112,6 +1192,25 @@ onBeforeUnmount(() => {
                             >
                         </h2>
                         <div class="flex flex-wrap items-center gap-2">
+                            <!-- Kelompokkan dinding & daftar status per site atau per peran penyiar. -->
+                            <div
+                                class="inline-flex overflow-hidden rounded-full border border-base-700 text-[12px] font-semibold"
+                                role="radiogroup"
+                                aria-label="Kelompokkan siaran"
+                            >
+                                <button
+                                    v-for="option in GROUPINGS"
+                                    :key="option.value"
+                                    type="button"
+                                    role="radio"
+                                    class="px-2.5 py-1 transition-colors"
+                                    :class="grouping === option.value ? 'bg-accent-500/15 text-accent-400' : 'text-base-400 hover:text-base-200'"
+                                    :aria-checked="grouping === option.value"
+                                    @click="grouping = option.value"
+                                >
+                                    {{ option.label }}
+                                </button>
+                            </div>
                             <!-- Jalur video: klik untuk menyaring (mis. hanya yang lewat TCP). -->
                             <div
                                 v-if="transportCounts.udp || transportCounts.tcp"
@@ -1193,9 +1292,19 @@ onBeforeUnmount(() => {
                          ukuran video, jadi bingkai besar = gambar lebih tajam. -->
                     <!-- Tombol suara SEJAJAR (bukan di dalam) tombol perbesar: tombol
                          bersarang tidak sah di HTML dan membingungkan pembaca layar. -->
-                    <TransitionGroup v-else-if="compact" tag="div" name="tile" class="grid gap-3" :class="wallGridClass">
+                    <template v-else>
+                    <!-- Satu kelompok per site/peran (atau satu kelompok tanpa judul kalau tidak dikelompokkan). -->
+                    <div v-for="group in visibleGroups" :key="group.key" :class="group.label && 'mb-5 last:mb-0'">
+                    <h3
+                        v-if="group.label"
+                        class="mb-2 flex items-center gap-2 border-b border-base-800 pb-1.5 text-sm font-semibold text-base-200"
+                    >
+                        {{ group.label }}
+                        <span class="font-mono text-xs font-medium text-base-500 tabular-nums">{{ group.total }}</span>
+                    </h3>
+                    <TransitionGroup v-if="compact" tag="div" name="tile" class="grid gap-3" :class="wallGridClass">
                         <div
-                            v-for="participant in visibleParticipants"
+                            v-for="participant in group.items"
                             :key="participant.identity"
                             class="relative rounded-xl"
                             :class="attentionRing(participant)"
@@ -1208,7 +1317,7 @@ onBeforeUnmount(() => {
                             >
                                 <LiveMiniTile
                                     :name="participant.name || participant.identity"
-                                    :site="siteNameOf(participant)"
+                                    :site="tileLabel(participant)"
                                     :screen-track="trackOf(participant, SCREEN_SOURCE)"
                                     :camera-track="trackOf(participant, CAMERA_SOURCE)"
                                     :status="statusOf(participant)"
@@ -1234,7 +1343,7 @@ onBeforeUnmount(() => {
                     </TransitionGroup>
                     <TransitionGroup v-else tag="div" name="tile" class="grid gap-4" :class="wallGridClass">
                         <div
-                            v-for="participant in visibleParticipants"
+                            v-for="participant in group.items"
                             :key="participant.identity"
                             class="relative rounded-xl"
                             :class="attentionRing(participant)"
@@ -1247,7 +1356,7 @@ onBeforeUnmount(() => {
                             >
                                 <LivePairTile
                                     :name="participant.name || participant.identity"
-                                    :site="siteNameOf(participant)"
+                                    :site="tileLabel(participant)"
                                     :screen-track="trackOf(participant, SCREEN_SOURCE)"
                                     :camera-track="trackOf(participant, CAMERA_SOURCE)"
                                     :status="statusOf(participant)"
@@ -1275,6 +1384,8 @@ onBeforeUnmount(() => {
                             >
                         </div>
                     </TransitionGroup>
+                    </div>
+                    </template>
 
                     <div
                         v-if="pageCount > 1"
@@ -1329,14 +1440,14 @@ onBeforeUnmount(() => {
                         </div>
                     </div>
 
-                    <!-- Status leader: hanya untuk admin & root. -->
-                    <div v-if="canWatchLeaders && leadersRoster.length" class="border-b border-base-800">
+                    <!-- Status Ruang pusat: penyiar tanpa site, hanya untuk pemegang live.watch-central. -->
+                    <div v-if="canWatchCentral && centralRoster.length" class="border-b border-base-800">
                         <p class="eyebrow flex items-center justify-between px-4 pt-3 pb-1">
-                            Leader
-                            <span class="font-mono text-[10.5px] text-base-500 tabular-nums">{{ leadersLive }} live</span>
+                            Ruang pusat
+                            <span class="font-mono text-[10.5px] text-base-500 tabular-nums">{{ centralLive }} live</span>
                         </p>
                         <ul class="max-h-48 divide-y divide-base-800 overflow-y-auto">
-                            <li v-for="leader in leadersRoster" :key="leader.user_id">
+                            <li v-for="leader in centralRoster" :key="leader.user_id">
                                 <button
                                     type="button"
                                     class="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-base-850 focus-visible:bg-base-850 focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent"
@@ -1350,6 +1461,7 @@ onBeforeUnmount(() => {
                                             <LoginDeviceIcon :device="leader.login_device" />
                                         </span>
                                         <span class="block truncate text-xs text-base-500">
+                                            {{ roleLabel(leader.live_role) }} ·
                                             <template v-if="leader.started_at">live {{ formatElapsed(leader.started_at, now) }}</template>
                                             <template v-else>belum mulai kerja</template>
                                         </span>
@@ -1368,8 +1480,14 @@ onBeforeUnmount(() => {
                     <p v-if="!filteredRoster.length" class="px-4 py-8 text-center text-sm text-base-500">
                         {{ siteRoster.length ? 'Tidak ada staf yang cocok.' : 'Belum ada staf yang terdaftar untuk Live Kerja.' }}
                     </p>
-                    <ul v-else class="max-h-[32rem] divide-y divide-base-800 overflow-y-auto xl:max-h-[calc(100dvh-14rem)]">
-                        <li v-for="staff in filteredRoster" :key="staff.user_id">
+                    <div v-else class="max-h-[32rem] overflow-y-auto xl:max-h-[calc(100dvh-14rem)]">
+                    <template v-for="group in rosterGroups" :key="group.key">
+                    <p v-if="group.label" class="eyebrow flex items-center justify-between border-b border-base-800 px-4 pt-3 pb-1">
+                        {{ group.label }}
+                        <span class="font-mono text-[10.5px] text-base-500 tabular-nums">{{ group.items.length }}</span>
+                    </p>
+                    <ul class="divide-y divide-base-800">
+                        <li v-for="staff in group.items" :key="staff.user_id">
                             <button
                                 type="button"
                                 class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-base-850 focus-visible:bg-base-850 focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent"
@@ -1386,7 +1504,8 @@ onBeforeUnmount(() => {
                                         <LoginDeviceIcon :device="staff.login_device" />
                                     </span>
                                     <span class="block truncate text-xs text-base-500">
-                                        <template v-if="isAllSites"
+                                        <template v-if="grouping !== 'role'">{{ roleLabel(staff.live_role) }} · </template>
+                                        <template v-if="isAllSites && grouping !== 'site'"
                                             >{{ siteNames[staff.organization_id]
                                             }}<template v-if="staff.started_at"> · </template></template
                                         >
@@ -1414,6 +1533,8 @@ onBeforeUnmount(() => {
                             </button>
                         </li>
                     </ul>
+                    </template>
+                    </div>
                 </aside>
             </div>
         </div>
@@ -1490,7 +1611,7 @@ onBeforeUnmount(() => {
                     <LivePairTile
                         v-if="focused"
                         :name="focused.name || focused.identity"
-                        :site="siteNames[live.participantSites[focused.identity]] ?? null"
+                        :site="searchSiteName(focused)"
                         :screen-track="trackOf(focused, SCREEN_SOURCE)"
                         :camera-track="trackOf(focused, CAMERA_SOURCE)"
                         :status="statusOf(focused)"

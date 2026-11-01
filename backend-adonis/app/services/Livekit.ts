@@ -4,22 +4,42 @@ import log from '@adonisjs/core/services/logger'
 
 /**
  * Token LiveKit (JWT HS256) untuk Live Kerja -- padanan LiveKitTokenIssuer di
- * backend-api. Token inilah pagar isolasi antar-site: room SELALU diturunkan
- * dari organization_id yang sudah lolos cakupan site, bukan dari input client.
+ * backend-api. Token inilah pagar isolasi: room SELALU diturunkan dari site
+ * yang sudah lolos cakupan site DAN peran yang boleh ditonton, bukan dari input
+ * client mentah.
  */
-
-export const roomForOrganization = (organizationId: number) => `site-${organizationId}`
 
 /**
- * Ruang Live Kerja leader: satu room global untuk semua leader (leader bisa
- * memegang beberapa site), hanya bisa ditonton leader, admin & root. Sesi
- * kerja leader disimpan dengan organization_id NULL.
+ * Satu room Live Kerja = satu site + satu peran penyiar. Dipisah per peran
+ * supaya hak tonton per peran (roles.watchable_roles) benar-benar ditegakkan
+ * di LiveKit: token tonton hanya membuka room peran yang boleh ditonton.
+ * organizationId null = Ruang pusat (penyiar yang tidak terikat site).
  */
-export const LEADERS_ROOM = 'leaders'
+export type LiveRoom = { organizationId: number | null; role: string }
 
-/** Room LiveKit sesi kerja: site-{id}, atau ruang leader kalau tanpa site. */
-export const roomForSession = (organizationId: number | null) =>
-    organizationId === null ? LEADERS_ROOM : roomForOrganization(organizationId)
+/** Peran pengganti untuk sesi lama tanpa live_role (sebelum migrasi 0012). */
+export const UNKNOWN_LIVE_ROLE = 'lainnya'
+
+/** site-{id}-{peran}, atau pusat-{peran} untuk Ruang pusat. */
+export const roomName = ({ organizationId, role }: LiveRoom) =>
+    organizationId === null ? `pusat-${role}` : `site-${organizationId}-${role}`
+
+/** Kebalikan roomName() untuk webhook LiveKit; null kalau bukan room Live Kerja. */
+export function parseRoomName(name: string): LiveRoom | null {
+    const site = /^site-(\d+)-([a-z][a-z0-9_]*)$/.exec(name)
+    if (site) return { organizationId: Number(site[1]), role: site[2] }
+    const central = /^pusat-([a-z][a-z0-9_]*)$/.exec(name)
+    return central ? { organizationId: null, role: central[1] } : null
+}
+
+/** Room sebuah sesi kerja (site sesi + peran yang dicatat saat Mulai kerja). */
+export const roomOfSession = (session: {
+    organization_id: number | null
+    live_role?: string | null
+}): LiveRoom => ({
+    organizationId: session.organization_id,
+    role: session.live_role ?? UNKNOWN_LIVE_ROLE,
+})
 
 export type LiveKitConfig = {
     url: string
@@ -37,13 +57,13 @@ export function liveKitConfig(): LiveKitConfig {
     }
 }
 
-/** Staf yang Mulai kerja: menyiarkan kamera, mikrofon, layar, dan menonton rekan se-site. */
+/** Penyiar Live Kerja: menyiarkan kamera, mikrofon, layar, dan (kalau boleh) menonton rekan se-room. */
 export function broadcasterToken(
-    organizationId: number | null,
+    room: LiveRoom,
     userId: number,
     displayName: string,
-    // Staf biasa & leader hanya menyiarkan, tidak menonton peserta lain di room.
-    { canSubscribe = organizationId !== null }: { canSubscribe?: boolean } = {},
+    // Yang tidak boleh melihat rekan hanya menyiarkan, tidak menonton peserta lain di room.
+    { canSubscribe = room.organizationId !== null }: { canSubscribe?: boolean } = {},
     config: LiveKitConfig = liveKitConfig(),
     now: number = Math.floor(Date.now() / 1000)
 ): string {
@@ -51,7 +71,7 @@ export function broadcasterToken(
         `user-${userId}`,
         displayName,
         {
-            room: roomForSession(organizationId),
+            room: roomName(room),
             roomJoin: true,
             canPublish: true,
             canPublishSources: ['camera', 'microphone', 'screen_share'],
@@ -66,7 +86,7 @@ export function broadcasterToken(
 
 /** Penonton saja; `hidden` & identity acak supaya bisa dari beberapa tab sekaligus. */
 export function viewerToken(
-    organizationId: number | null,
+    room: LiveRoom,
     userId: number,
     displayName: string,
     config: LiveKitConfig = liveKitConfig()
@@ -75,7 +95,7 @@ export function viewerToken(
         `viewer-${userId}-${randomBytes(4).toString('hex')}`,
         displayName,
         {
-            room: roomForSession(organizationId),
+            room: roomName(room),
             roomJoin: true,
             canPublish: false,
             canSubscribe: true,
@@ -88,12 +108,12 @@ export function viewerToken(
 }
 
 /**
- * Paksa keluarkan staf dari room site-nya. Best-effort, sama seperti
+ * Paksa keluarkan penyiar dari room-nya. Best-effort, sama seperti
  * backend-api: kegagalan hanya dicatat (404 = memang sudah tidak di room).
  */
-export async function removeBroadcaster(organizationId: number | null, userId: number) {
+export async function removeBroadcaster(liveRoom: LiveRoom, userId: number) {
     const config = liveKitConfig()
-    const room = roomForSession(organizationId)
+    const room = roomName(liveRoom)
     const httpUrl = config.url.replace(/\/+$/, '').replace(/^ws(s?):\/\//, 'http$1://')
 
     try {

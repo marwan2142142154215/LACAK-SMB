@@ -2,18 +2,29 @@ import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import redis from '@adonisjs/redis/services/main'
 import vine from '@vinejs/vine'
-import { accessOf, can, hasRole, seesOnlySelf, type Access } from '#services/Access'
+import {
+    accessOf,
+    can,
+    canWatchCentral,
+    canWatchRole,
+    seesOnlySelf,
+    type Access,
+} from '#services/Access'
 import { fail, success } from '#services/ApiResponse'
 import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/ActivityLog'
 import { laravelUrlSigner, LARAVEL_USER_MORPH } from '#services/laravel/index'
 import {
     broadcasterToken,
-    LEADERS_ROOM,
     liveKitConfig,
     removeBroadcaster,
-    roomForSession,
+    roomName,
+    roomOfSession,
+    UNKNOWN_LIVE_ROLE,
     viewerToken,
+    type LiveRoom,
 } from '#services/Livekit'
+import { liveRolesOf } from '#services/Permissions'
+import { ROLE_NAME_PATTERN } from '#services/RoleRules'
 import {
     authorizedOrganizationId,
     hasCrossOrganizationAccess,
@@ -88,7 +99,8 @@ export default class WorkSessionsController {
         const siteIds = sites.map((site) => site.id).sort((a, b) => a - b)
 
         // Dipanggil oleh setiap tab Live Kerja & Aktivitas; hasilnya sama
-        // untuk semua yang menonton kumpulan site yang sama.
+        // untuk semua yang menonton kumpulan site yang sama. Hak tonton per
+        // peran disaring SETELAH cache, karena cache dipakai bersama.
         const live = await cachedOverview(`live:overview:${siteIds.join(',')}`, async () => {
             const sessions = await openSessionsIn(siteIds)
             return {
@@ -97,34 +109,47 @@ export default class WorkSessionsController {
             }
         })
 
-        // Ruang leader: hanya untuk admin & root (leader & staf tidak melihatnya).
-        const leaders = canWatchLeaders(access)
-            ? await cachedOverview('live:overview:leaders', async () => {
+        // Ruang pusat (penyiar tanpa site): hanya pemegang izin live.watch-central.
+        const central = canWatchCentral(access)
+            ? await cachedOverview('live:overview:central', async () => {
                   const sessions: WorkSessionRow[] = await openSessions()
                       .whereNull('work_sessions.organization_id')
                       .orderBy('work_sessions.started_at')
                   return {
                       items: sessions.map((session) => sessionResource(session)),
-                      roster: await leaderRoster(sessions),
+                      roster: await centralRoster(sessions),
                   }
               })
             : null
 
+        const visible = onlySelfIfStaff(access, byWatchRoles(access, live))
+        const visibleCentral =
+            central && !seesOnlySelf(access) ? byWatchRoles(access, central) : null
+
         return success('Semua staf yang sedang live', {
             sites,
-            ...onlySelfIfStaff(access, live),
-            leaders,
+            ...visible,
+            central: visibleCentral,
+            // Room yang sedang berisi siaran dan boleh ditonton (site + peran).
+            rooms: seesOnlySelf(access)
+                ? []
+                : liveRoomsOf([...visible.items, ...(visibleCentral?.items ?? [])]),
+            roles: await roleOptions(),
         })
     }
 
     /** Staf live di satu site, status semua staf site itu, dan sesi milik user ini. */
     async index(ctx: HttpContext) {
         const access = await accessOf(ctx)
-        if (!can(access, 'live.watch')) return forbidden(ctx)
+        const canWatch = can(access, 'live.watch')
+        if (!canWatch && !can(access, 'live.broadcast')) return forbidden(ctx)
 
-        // Leader tanpa site: cukup sesi kerjanya sendiri (melanjutkan siaran
-        // setelah reload) -- siaran leader ada di ruang leader, bukan site.
-        if (requestedOrganizationId(ctx) === null && hasRole(access, 'leader')) {
+        // Penyiar tanpa izin tonton, atau tanpa site (Ruang pusat): cukup sesi
+        // kerjanya sendiri, untuk melanjutkan siaran setelah reload.
+        if (
+            !canWatch ||
+            (requestedOrganizationId(ctx) === null && access.organizationId === null)
+        ) {
             const mine = await openSessionOf(access.userId)
             return success('Staf yang sedang live', {
                 organization_id: null,
@@ -144,27 +169,25 @@ export default class WorkSessionsController {
 
         return success('Staf yang sedang live', {
             organization_id: organizationId,
-            ...onlySelfIfStaff(access, {
-                items: sessions.map((session) => sessionResource(session)),
-                roster: await rosterFor([organizationId], sessions),
-            }),
+            ...onlySelfIfStaff(
+                access,
+                byWatchRoles(access, {
+                    items: sessions.map((session) => sessionResource(session)),
+                    roster: await rosterFor([organizationId], sessions),
+                })
+            ),
             my_session: mine ? sessionResource(withoutUserName(mine)) : null,
         })
     }
 
     async start(ctx: HttpContext) {
         const access = await accessOf(ctx)
-        // Leader menyiarkan ke ruang leader global (organization_id NULL);
-        // staf selalu ke site "rumah"-nya -- tidak ada parameter site.
-        const asLeader = hasRole(access, 'leader')
-        if (!asLeader && !can(access, 'live.broadcast')) return forbidden(ctx)
+        // Semua peran bisa Live asal memegang izin live.broadcast. Penyiar
+        // ber-site masuk room site-nya; yang tidak terikat site masuk Ruang
+        // pusat (organization_id NULL). Tidak ada parameter site dari client.
+        if (!can(access, 'live.broadcast')) return forbidden(ctx)
 
         const user = ctx.authUser!
-        if (!asLeader && user.organizationId === null) {
-            return ctx.response
-                .status(422)
-                .send(fail('Akun Anda tidak terikat ke site mana pun, tidak bisa memulai siaran'))
-        }
 
         // Layar & kamera wajib: dashboard di komputer, atau APK Live Kerja
         // versi berbagi layar ('android_app'). Browser HP & APK lama ditolak.
@@ -178,18 +201,25 @@ export default class WorkSessionsController {
                 )
         }
 
+        const liveRoles = await liveRolesOf([user.id])
+        const liveRole = liveRoles.get(user.id) ?? UNKNOWN_LIVE_ROLE
         const session =
             (await openSessionOf(user.id)) ??
-            (await createSession(ctx, user.id, asLeader ? null : user.organizationId))
+            (await createSession(ctx, user.id, user.organizationId, liveRole))
 
-        // Sesi lama dilanjutkan memakai site yang tercatat di sesi.
+        // Sesi lama dilanjutkan memakai site & peran yang tercatat di sesi.
+        const room = roomOfSession(session)
         return ctx.response.status(201).send(
             success('Mulai kerja -- siaran kamera aktif', {
                 session: sessionResource(withoutUserName(session)),
                 ...connectionDetails(
-                    session.organization_id,
-                    broadcasterToken(session.organization_id, user.id, user.name, {
-                        canSubscribe: session.organization_id !== null && !seesOnlySelf(access),
+                    room,
+                    broadcasterToken(room, user.id, user.name, {
+                        // Rekan se-room ikut terlihat hanya kalau penyiar boleh menontonnya.
+                        canSubscribe:
+                            !seesOnlySelf(access) &&
+                            canWatchRole(access, room.role) &&
+                            (room.organizationId !== null || canWatchCentral(access)),
                     })
                 ),
             })
@@ -229,7 +259,7 @@ export default class WorkSessionsController {
             attributes: { ended_at: laravelDate(session.ended_at), end_reason: 'manual' },
             old: { ended_at: null, end_reason: null },
         })
-        await removeBroadcaster(session.organization_id, session.user_id)
+        await removeBroadcaster(roomOfSession(session), session.user_id)
 
         return success(
             'Selesai kerja -- siaran kamera dihentikan',
@@ -376,7 +406,11 @@ export default class WorkSessionsController {
         })
     }
 
-    /** Token tonton-saja untuk satu site, atau ruang leader (room=leaders). */
+    /**
+     * Token tonton-saja untuk satu room: site + peran penyiar, atau Ruang
+     * pusat (central=true) + peran. Room hanya dibuka kalau site boleh
+     * diakses DAN peran itu termasuk hak tonton peran user ini.
+     */
     async watchToken(ctx: HttpContext) {
         const access = await accessOf(ctx)
         if (!can(access, 'live.watch')) return forbidden(ctx)
@@ -384,16 +418,32 @@ export default class WorkSessionsController {
             return ctx.response.status(403).send(fail('Staf hanya bisa melihat siarannya sendiri'))
         }
 
-        if (ctx.request.input('room') === LEADERS_ROOM) {
-            if (!canWatchLeaders(access)) {
+        const role = String(ctx.request.input('role') ?? '')
+        if (!ROLE_NAME_PATTERN.test(role) && role !== UNKNOWN_LIVE_ROLE) {
+            return ctx.response.status(422).send(
+                fail('Data yang diberikan tidak valid.', {
+                    role: ['Pilih peran siaran yang akan ditonton.'],
+                })
+            )
+        }
+        if (!canWatchRole(access, role)) {
+            return ctx.response
+                .status(403)
+                .send(fail('Peran Anda tidak diizinkan menonton siaran peran ini'))
+        }
+
+        const viewer = ctx.authUser!
+        const central = [true, 'true', '1', 1].includes(ctx.request.input('central'))
+        if (central) {
+            if (!canWatchCentral(access)) {
                 return ctx.response
                     .status(403)
-                    .send(fail('Anda tidak berwenang menonton ruang leader'))
+                    .send(fail('Anda tidak berwenang menonton Ruang pusat'))
             }
-            const viewer = ctx.authUser!
+            const room = { organizationId: null, role }
             return success(
                 'Token tonton',
-                connectionDetails(null, viewerToken(null, viewer.id, viewer.name))
+                connectionDetails(room, viewerToken(room, viewer.id, viewer.name))
             )
         }
 
@@ -411,10 +461,10 @@ export default class WorkSessionsController {
             return ctx.response.status(403).send(fail('Anda tidak berwenang menonton site ini'))
         }
 
-        const user = ctx.authUser!
+        const room = { organizationId, role }
         return success(
             'Token tonton',
-            connectionDetails(organizationId, viewerToken(organizationId, user.id, user.name))
+            connectionDetails(room, viewerToken(room, viewer.id, viewer.name))
         )
     }
 }
@@ -423,7 +473,8 @@ export default class WorkSessionsController {
 async function createSession(
     ctx: HttpContext,
     userId: number,
-    organizationId: number | null
+    organizationId: number | null,
+    liveRole: string
 ): Promise<WorkSessionRow> {
     try {
         const now = new Date()
@@ -432,6 +483,7 @@ async function createSession(
             .insert({
                 user_id: userId,
                 organization_id: organizationId,
+                live_role: liveRole,
                 started_at: now,
                 last_heartbeat_at: now,
                 created_at: now,
@@ -475,15 +527,58 @@ function requestedOrganizationId(ctx: HttpContext): number | null {
     return Number.isInteger(value) && value > 0 ? value : null
 }
 
-function connectionDetails(organizationId: number | null, token: string) {
+function connectionDetails(room: LiveRoom, token: string) {
     return {
         livekit_url: liveKitConfig().url,
-        room: roomForSession(organizationId),
+        room: roomName(room),
         token,
     }
 }
 
-/** Ruang leader hanya ditonton peran di atas leader: admin & root. */
+/** Hak tonton per peran: buang siaran & status penyiar dari peran yang tidak boleh ditonton. */
+function byWatchRoles<
+    T extends { live_role?: string | null },
+    R extends { live_role?: string | null },
+>(access: Access, live: { items: T[]; roster: R[] }): { items: T[]; roster: R[] } {
+    const allowed = (role: string | null | undefined) =>
+        canWatchRole(access, role ?? UNKNOWN_LIVE_ROLE)
+    return {
+        items: live.items.filter((item) => allowed(item.live_role)),
+        roster: live.roster.filter((member) => allowed(member.live_role)),
+    }
+}
+
+/** Room (site/pusat + peran) yang sedang berisi siaran, dari daftar sesi yang boleh ditonton. */
+function liveRoomsOf(items: Array<{ organization_id: number | null; live_role?: string | null }>) {
+    const rooms = new Map<
+        string,
+        { organization_id: number | null; role: string; live_count: number }
+    >()
+    for (const item of items) {
+        const role = item.live_role ?? UNKNOWN_LIVE_ROLE
+        const key = `${item.organization_id ?? 'pusat'}:${role}`
+        const room = rooms.get(key) ?? {
+            organization_id: item.organization_id,
+            role,
+            live_count: 0,
+        }
+        room.live_count++
+        rooms.set(key, room)
+    }
+    return [...rooms.values()]
+}
+
+/** Nama & label semua peran, untuk mengelompokkan siaran per peran di dashboard. */
+async function roleOptions(): Promise<Array<{ name: string; label: string }>> {
+    const rows = await db
+        .from('roles')
+        .where('guard_name', 'web')
+        .whereNot('name', 'telegram_bot_service')
+        .orderBy('id')
+        .select('name', 'label')
+    return rows.map((row) => ({ name: row.name, label: row.label ?? row.name }))
+}
+
 /** Staf biasa: daftar siaran & status hanya berisi dirinya sendiri. */
 function onlySelfIfStaff<T extends { user_id: number }, R extends { user_id: number }>(
     access: Access,
@@ -496,10 +591,6 @@ function onlySelfIfStaff<T extends { user_id: number }, R extends { user_id: num
     }
 }
 
-function canWatchLeaders(access: Access): boolean {
-    return ['super_admin', 'admin'].some((role) => hasRole(access, role))
-}
-
 /** Cache singkat jawaban overview (JSON polos, tanggal jadi string ISO). */
 async function cachedOverview<T>(cacheKey: string, load: () => Promise<T>): Promise<T> {
     const cached = await redis.get(cacheKey)
@@ -509,97 +600,44 @@ async function cachedOverview<T>(cacheKey: string, load: () => Promise<T>): Prom
     return fresh
 }
 
-/** Semua leader aktif beserta status Live Kerja-nya (ruang leader). */
-async function leaderRoster(openSessionRows: WorkSessionRow[]) {
+/**
+ * Ruang pusat: semua penyiar aktif yang tidak terikat site (mis. leader),
+ * beserta status Live Kerja-nya, plus yang sedang siaran di sana.
+ */
+async function centralRoster(openSessionRows: WorkSessionRow[]) {
     const sessionsByUser = new Map(openSessionRows.map((session) => [session.user_id, session]))
-    const leaders = await db
-        .from('users')
-        .where('is_active', true)
-        .whereNull('deleted_at')
-        .whereIn(
-            'id',
-            db
-                .from('model_has_roles')
-                .join('roles', 'roles.id', 'model_has_roles.role_id')
-                .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
-                .where('roles.name', 'leader')
-                .select('model_has_roles.model_id')
+    const members = await broadcasters()
+        .where((query) =>
+            query.whereNull('organization_id').orWhereIn('id', [...sessionsByUser.keys()])
         )
         .orderBy('name')
         .select('id', 'name')
 
-    const logins = await activeLoginsOf(leaders.map((leader) => leader.id))
+    const ids = members.map((member) => member.id)
+    const [logins, liveRoles] = await Promise.all([activeLoginsOf(ids), liveRolesOf(ids)])
     const now = new Date()
-    return leaders.map((leader) => {
-        const session = sessionsByUser.get(leader.id) ?? null
+    return members.map((member) => {
+        const session = sessionsByUser.get(member.id) ?? null
         const status = statusOf(session, now)
         return {
-            user_id: leader.id,
-            name: leader.name,
+            user_id: member.id,
+            name: member.name,
             organization_id: null,
-            participant_identity: `user-${leader.id}`,
-            status: status === 'offline' && logins.has(leader.id) ? 'online' : status,
+            live_role: session?.live_role ?? liveRoles.get(member.id) ?? UNKNOWN_LIVE_ROLE,
+            participant_identity: `user-${member.id}`,
+            status: status === 'offline' && logins.has(member.id) ? 'online' : status,
             started_at: session?.started_at ?? null,
-            login_device: logins.get(leader.id) ?? null,
+            login_device: logins.get(member.id) ?? null,
         }
     })
 }
 
-/** WorkSessionResource tanpa relasi user dimuat tidak punya kunci user_name. */
-function withoutUserName(session: WorkSessionRow): WorkSessionRow {
-    const rest = { ...session }
-    delete rest.user_name
-    return rest
-}
-
-async function openSessionsIn(organizationIds: number[]): Promise<WorkSessionRow[]> {
-    if (!organizationIds.length) return []
-    return openSessions()
-        .whereIn('work_sessions.organization_id', organizationIds)
-        .orderBy('work_sessions.started_at')
-}
-
-/** Site aktif yang boleh ditonton user ini, dengan jumlah staf yang sedang live. */
-async function watchableSites(
-    access: Access
-): Promise<Array<{ id: number; name: string; live_count: number }>> {
-    const query = db
-        .from('organizations')
-        .where('is_active', true)
-        .whereNull('deleted_at')
-        .select('id', 'name')
-        .select(
-            db.raw(
-                '(select count(*) from work_sessions where work_sessions.organization_id = organizations.id and work_sessions.ended_at is null)::int as live_count'
-            )
-        )
-        .orderBy('name')
-
-    if (!hasCrossOrganizationAccess(access)) {
-        query.whereIn(
-            'id',
-            hasGrantBasedAccess(access)
-                ? access.grantedOrganizationIds
-                : access.organizationId === null
-                  ? []
-                  : [access.organizationId]
-        )
-    }
-
-    return query
-}
-
-/** Semua staf (yang boleh Live Kerja) di site-site ini beserta statusnya. */
-async function rosterFor(organizationIds: number[], openSessionRows: WorkSessionRow[]) {
-    if (!organizationIds.length) return []
-
-    const sessionsByUser = new Map(openSessionRows.map((session) => [session.user_id, session]))
-
-    // Padanan User::permission('live.broadcast'): izin langsung atau lewat peran.
+/** User aktif yang boleh Live Kerja: izin live.broadcast langsung atau lewat peran. */
+function broadcasters() {
+    // Padanan User::permission('live.broadcast').
     const permissionId = db.from('permissions').where('name', 'live.broadcast').select('id')
-    const staff = await db
+    return db
         .from('users')
-        .whereIn('organization_id', organizationIds)
         .where('is_active', true)
         .whereNull('deleted_at')
         .where((query) => {
@@ -626,11 +664,78 @@ async function rosterFor(organizationIds: number[], openSessionRows: WorkSession
                         .select('model_has_roles.model_id')
                 )
         })
+}
+
+/** WorkSessionResource tanpa relasi user dimuat tidak punya kunci user_name. */
+function withoutUserName(session: WorkSessionRow): WorkSessionRow {
+    const rest = { ...session }
+    delete rest.user_name
+    return rest
+}
+
+async function openSessionsIn(organizationIds: number[]): Promise<WorkSessionRow[]> {
+    if (!organizationIds.length) return []
+    return openSessions()
+        .whereIn('work_sessions.organization_id', organizationIds)
+        .orderBy('work_sessions.started_at')
+}
+
+/**
+ * Site aktif yang boleh ditonton user ini, dengan jumlah siaran yang boleh ia
+ * tonton (hak tonton per peran ikut dihitung).
+ */
+async function watchableSites(
+    access: Access
+): Promise<Array<{ id: number; name: string; live_count: number }>> {
+    const roles = access.watchRoles
+    const liveCount = db
+        .from('work_sessions')
+        .whereColumn('work_sessions.organization_id', 'organizations.id')
+        .whereNull('work_sessions.ended_at')
+        .if(Array.isArray(roles), (count) => count.whereIn('work_sessions.live_role', roles!))
+        .count('*')
+        .as('live_count')
+    const query = db
+        .from('organizations')
+        .where('is_active', true)
+        .whereNull('deleted_at')
+        .select('id', 'name')
+        .select(liveCount)
+        .orderBy('name')
+
+    if (!hasCrossOrganizationAccess(access)) {
+        query.whereIn(
+            'id',
+            hasGrantBasedAccess(access)
+                ? access.grantedOrganizationIds
+                : access.organizationId === null
+                  ? []
+                  : [access.organizationId]
+        )
+    }
+
+    // count(*) Postgres = bigint (string di driver pg).
+    const rows = await query
+    return rows.map((row) => ({ id: row.id, name: row.name, live_count: Number(row.live_count) }))
+}
+
+/** Semua staf (yang boleh Live Kerja) di site-site ini beserta statusnya. */
+async function rosterFor(organizationIds: number[], openSessionRows: WorkSessionRow[]) {
+    if (!organizationIds.length) return []
+
+    const sessionsByUser = new Map(openSessionRows.map((session) => [session.user_id, session]))
+
+    const staff = await broadcasters()
+        .whereIn('organization_id', organizationIds)
         .orderBy('name')
         .select('id', 'name', 'organization_id')
 
-    const logins = await activeLoginsOf(staff.map((member) => member.id))
-    const leaves = await leaveToday(staff.map((member) => member.id))
+    const ids = staff.map((member) => member.id)
+    const [logins, leaves, liveRoles] = await Promise.all([
+        activeLoginsOf(ids),
+        leaveToday(ids),
+        liveRolesOf(ids),
+    ])
     const now = new Date()
 
     return staff.map((member) => {
@@ -640,6 +745,8 @@ async function rosterFor(organizationIds: number[], openSessionRows: WorkSession
             user_id: member.id,
             name: member.name,
             organization_id: member.organization_id,
+            // Peran tempat siarannya dicatat (sesi berjalan), atau peran pertamanya.
+            live_role: session?.live_role ?? liveRoles.get(member.id) ?? UNKNOWN_LIVE_ROLE,
             participant_identity: `user-${member.id}`,
             // Login tapi belum Mulai kerja = 'online', bukan 'offline'. Hanya
             // tampilan roster -- log & jam kerja tetap memakai statusOf().

@@ -60,6 +60,58 @@ export async function siteScopeOf(userId: number): Promise<SiteScope> {
     )
 }
 
+/**
+ * Peran penyiar yang boleh ditonton user ini (gabungan roles.watchable_roles semua perannya).
+ * null = semua peran: salah satu perannya tidak membatasi (kolom NULL, bawaan).
+ */
+export async function watchRolesOf(userId: number): Promise<string[] | null> {
+    const rows = await db
+        .from('roles')
+        .join('model_has_roles', 'model_has_roles.role_id', 'roles.id')
+        .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
+        .where('model_has_roles.model_id', userId)
+        .select('roles.watchable_roles')
+
+    if (rows.some((row) => row.watchable_roles === null)) return null
+    return [...new Set(rows.flatMap((row) => parseRoleList(row.watchable_roles)))]
+}
+
+/**
+ * Peran tempat siaran tiap user dicatat: peran pertamanya (urutan id peran).
+ * User tanpa peran tidak masuk peta.
+ */
+export async function liveRolesOf(userIds: number[]): Promise<Map<number, string>> {
+    if (!userIds.length) return new Map()
+    const rows = await db
+        .from('model_has_roles')
+        .join('roles', 'roles.id', 'model_has_roles.role_id')
+        .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
+        .whereIn('model_has_roles.model_id', userIds)
+        .orderBy('roles.id')
+        .select('model_has_roles.model_id', 'roles.name')
+
+    const roles = new Map<number, string>()
+    for (const row of rows) {
+        const userId = Number(row.model_id)
+        if (!roles.has(userId)) roles.set(userId, row.name)
+    }
+    return roles
+}
+
+/** Kolom jsonb (array nama peran) -> string[]; nilai rusak dianggap kosong. */
+export function parseRoleList(value: unknown): string[] {
+    const list = typeof value === 'string' ? safeJson(value) : value
+    return Array.isArray(list) ? list.filter((item) => typeof item === 'string') : []
+}
+
+function safeJson(value: string): unknown {
+    try {
+        return JSON.parse(value)
+    } catch {
+        return null
+    }
+}
+
 export async function hasPermission(userId: number, permission: string): Promise<boolean> {
     const permissions = await permissionNamesOf(userId)
     return permissions.includes(permission)

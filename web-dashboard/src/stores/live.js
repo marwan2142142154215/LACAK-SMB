@@ -65,10 +65,22 @@ const REJOIN_JITTER_MS = 10_000
 // ditulis langsung supaya store ini (dipakai AppShell di SEMUA halaman)
 // tidak ikut memuat livekit-client (~500 kB). Library-nya baru di-import
 // dinamis di connect(), saat staf benar-benar membuka siaran.
-// Ruang Live Kerja leader (room LiveKit "leaders"): satu ruang global untuk
-// semua leader, hanya ditonton admin & root. Dipakai sebagai kunci
-// `rooms` / watchedSiteIds di samping id site.
-export const LEADERS_ROOM_KEY = 'leaders'
+// Kunci room tonton = site + peran penyiar: "3:staff_viewer", atau "pusat:leader"
+// untuk Ruang pusat (penyiar yang tidak terikat site). Satu room LiveKit per
+// site + peran, supaya hak tonton per peran ditegakkan server (token per room).
+export const CENTRAL_SITE = 'pusat'
+// Sama dengan UNKNOWN_LIVE_ROLE di backend (sesi lama tanpa peran).
+export const UNKNOWN_LIVE_ROLE = 'lainnya'
+
+/** Kunci room dari site (null = Ruang pusat) + peran. */
+export const roomKey = (organizationId, role) => `${organizationId ?? CENTRAL_SITE}:${role ?? UNKNOWN_LIVE_ROLE}`
+
+/** "3:staff_viewer" -> { organizationId: 3, role }; "pusat:leader" -> { organizationId: null, role }; selain itu null. */
+export function parseRoomKey(key) {
+    const match = /^(pusat|\d+):([a-z][a-z0-9_]*)$/.exec(String(key ?? ''))
+    if (!match) return null
+    return { organizationId: match[1] === CENTRAL_SITE ? null : Number(match[1]), role: match[2] }
+}
 
 export const CAMERA_SOURCE = 'camera'
 export const SCREEN_SOURCE = 'screen_share'
@@ -275,7 +287,7 @@ export const useLiveStore = defineStore('live', () => {
 
     const isBroadcasting = computed(() => mode.value === 'broadcasting')
 
-    const watchedSiteIds = ref([])
+    const watchedRoomKeys = ref([])
 
     const remoteParticipants = computed(() => {
         revision.value // dependensi reaktif, lihat catatan di atas
@@ -287,14 +299,14 @@ export const useLiveStore = defineStore('live', () => {
             .sort((a, b) => (a.name || a.identity).localeCompare(b.name || b.identity))
     })
 
-    /** identity peserta -> id site-nya (untuk label site di mode "Semua site"). */
-    const participantSites = computed(() => {
+    /** identity peserta -> kunci room-nya ("3:staff_viewer"), untuk label & kelompok site/peran. */
+    const participantRooms = computed(() => {
         revision.value
-        const sites = {}
-        for (const [siteId, room] of rooms) {
-            for (const participant of room.remoteParticipants.values()) sites[participant.identity] = siteId
+        const byIdentity = {}
+        for (const [key, room] of rooms) {
+            for (const participant of room.remoteParticipants.values()) byIdentity[participant.identity] = key
         }
-        return sites
+        return byIdentity
     })
 
     const localCameraTrack = computed(() => {
@@ -504,7 +516,7 @@ export const useLiveStore = defineStore('live', () => {
         const current = [...rooms.values()]
         rooms.clear()
         ownRoom = null
-        watchedSiteIds.value = []
+        watchedRoomKeys.value = []
         listening.value = []
         visibleIdentities = new Set()
         audioContainer?.replaceChildren()
@@ -520,7 +532,7 @@ export const useLiveStore = defineStore('live', () => {
     function handleRoomDisconnected(siteId, room) {
         const wasBroadcasting = room === ownRoom && mode.value === 'broadcasting'
         if (rooms.get(siteId) === room) rooms.delete(siteId)
-        watchedSiteIds.value = watchedSiteIds.value.filter((id) => rooms.has(id))
+        watchedRoomKeys.value = watchedRoomKeys.value.filter((id) => rooms.has(id))
         if (rooms.size === 0) stopTransportCheck()
         if (room === ownRoom || rooms.size === 0) {
             ownRoom = null
@@ -626,62 +638,35 @@ export const useLiveStore = defineStore('live', () => {
         rejoinAttempt = 0
     }
 
-    const watchSite = (siteId) => watchSites([siteId])
+    // Kunci room yang sah: "site:peran" / "pusat:peran". Selain itu (null, 'all', undefined) bukan room.
+    const isRoomKey = (key) => parseRoomKey(key) !== null
 
-    // Kunci room yang sah: id site (angka) atau ruang leader. Selain itu (null, 'all', undefined) bukan room.
-    const isRoomKey = (id) => id === LEADERS_ROOM_KEY || Number.isInteger(id)
-
-    /** Minta token tonton untuk satu room site (atau ruang leader) lalu sambung. */
-    async function connectWatchRoom(siteId) {
-        if (!isRoomKey(siteId)) throw new Error('Site yang ditonton belum dipilih')
-        const params = siteId === LEADERS_ROOM_KEY ? { room: LEADERS_ROOM_KEY } : { organization_id: siteId }
-        const response = await api.post('/live/watch-token', params)
-        const { livekit_url, token } = response.data.data
-        await connect(livekit_url, token, siteId)
+    /** Satu-satunya site di kunci-kunci ini, atau null (beberapa site / Ruang pusat saja). */
+    function singleSiteOf(keys) {
+        const sites = new Set(keys.map((key) => parseRoomKey(key)?.organizationId).filter((id) => id !== null && id !== undefined))
+        return sites.size === 1 ? [...sites][0] : null
     }
 
-    /**
-     * Tonton satu atau beberapa site sekaligus. Site yang gagal tersambung
-     * dilewati; error baru dilempar kalau SEMUA site gagal.
-     *
-     * allowEmpty: daftar kosong BUKAN error (mis. "Semua site" saat belum ada staf yang live):
-     * mode tetap "menonton" tanpa room, dan room baru dibuka belakangan lewat addWatchSites().
-     */
-    async function watchSites(siteIds, { allowEmpty = false } = {}) {
-        connecting.value = true
-        try {
-            // Leader yang sedang siaran tetap di ruang leader-nya sendiri dan
-            // ikut menonton site yang dipegangnya.
-            const broadcasting = mode.value === 'broadcasting' && ownRoom
-            if (broadcasting) await disconnectWatchRooms()
-            else await disconnect()
-            const results = await settledPool(
-                siteIds.filter((siteId) => !rooms.has(siteId)),
-                WATCH_CONNECT_CONCURRENCY,
-                connectWatchRoom,
-            )
-            if (!rooms.size && !(allowEmpty && siteIds.length === 0)) {
-                throw results.find((result) => result.status === 'rejected')?.reason ?? new Error('Tidak ada site')
-            }
-            watchedSiteIds.value = [...rooms.keys()]
-            if (broadcasting) return
-            organizationId.value = siteIds.length === 1 ? siteIds[0] : null
-            mode.value = 'watching'
-        } finally {
-            connecting.value = false
-        }
+    /** Minta token tonton untuk satu room (site/pusat + peran) lalu sambung. */
+    async function connectWatchRoom(key) {
+        const room = parseRoomKey(key)
+        if (!room) throw new Error('Site yang ditonton belum dipilih')
+        const params = room.organizationId === null ? { central: true, role: room.role } : { organization_id: room.organizationId, role: room.role }
+        const response = await api.post('/live/watch-token', params)
+        const { livekit_url, token } = response.data.data
+        await connect(livekit_url, token, key)
     }
 
     // Room yang sedang dalam proses tersambung -- mencegah dua permintaan token untuk site yang sama.
     const pendingWatchRooms = new Set()
 
     /**
-     * Buka room site-site ini TANPA memutus yang sudah terbuka (dipakai "Semua site" yang hanya
+     * Buka room-room ini (site/pusat + peran) TANPA memutus yang sudah terbuka (dipakai "Semua site" yang hanya
      * membuka site yang sedang ada staf live, lalu menambah saat ada staf baru mulai kerja).
      */
-    async function addWatchSites(siteIds) {
+    async function addWatchRooms(keys) {
         if (mode.value === 'idle') return
-        const missing = [...new Set(siteIds)].filter(isRoomKey).filter((id) => !rooms.has(id) && !pendingWatchRooms.has(id))
+        const missing = [...new Set(keys)].filter(isRoomKey).filter((id) => !rooms.has(id) && !pendingWatchRooms.has(id))
         if (!missing.length) return
         missing.forEach((id) => pendingWatchRooms.add(id))
         try {
@@ -689,16 +674,16 @@ export const useLiveStore = defineStore('live', () => {
         } finally {
             missing.forEach((id) => pendingWatchRooms.delete(id))
         }
-        watchedSiteIds.value = [...rooms.keys()]
+        watchedRoomKeys.value = [...rooms.keys()]
         bump()
     }
 
-    /** Putus room site-site ini (bukan room siaran saya sendiri), mis. site yang sudah tidak ada staf live. */
-    async function removeWatchSites(siteIds) {
-        const doomed = [...rooms].filter(([id, room]) => siteIds.includes(id) && room !== ownRoom)
+    /** Putus room-room ini (bukan room siaran saya sendiri), mis. site yang sudah tidak ada staf live. */
+    async function removeWatchRooms(keys) {
+        const doomed = [...rooms].filter(([id, room]) => keys.includes(id) && room !== ownRoom)
         if (!doomed.length) return
         doomed.forEach(([id]) => rooms.delete(id))
-        watchedSiteIds.value = [...rooms.keys()]
+        watchedRoomKeys.value = [...rooms.keys()]
         await Promise.all(doomed.map(([, room]) => room.removeAllListeners().disconnect()))
         bump()
     }
@@ -718,15 +703,15 @@ export const useLiveStore = defineStore('live', () => {
      *
      * allowEmpty: daftar kosong BUKAN error ("Semua site" saat belum ada staf yang live).
      */
-    async function setWatchRooms(requestedIds, { allowEmpty = false } = {}) {
-        const siteIds = requestedIds.filter(isRoomKey)
-        const wanted = new Set(siteIds)
+    async function setWatchRooms(requestedKeys, { allowEmpty = false } = {}) {
+        const keys = requestedKeys.filter(isRoomKey)
+        const wanted = new Set(keys)
         wantedRooms = wanted
         connecting.value = true
         try {
             const broadcasting = mode.value === 'broadcasting' && ownRoom
             if (mode.value === 'idle') await disconnect()
-            await removeWatchSites([...rooms.keys()].filter((id) => !wanted.has(id)))
+            await removeWatchRooms([...rooms.keys()].filter((id) => !wanted.has(id)))
             const missing = [...wanted].filter((id) => !rooms.has(id) && !pendingWatchRooms.has(id))
             missing.forEach((id) => pendingWatchRooms.add(id))
             let results = []
@@ -736,26 +721,18 @@ export const useLiveStore = defineStore('live', () => {
                 missing.forEach((id) => pendingWatchRooms.delete(id))
             }
             // Ada pemanggilan yang lebih baru selama menunggu: buang room yang tidak lagi diinginkan.
-            await removeWatchSites([...rooms.keys()].filter((id) => !wantedRooms.has(id)))
-            watchedSiteIds.value = [...rooms.keys()]
-            if (!rooms.size && !(allowEmpty && !siteIds.length)) {
+            await removeWatchRooms([...rooms.keys()].filter((id) => !wantedRooms.has(id)))
+            watchedRoomKeys.value = [...rooms.keys()]
+            if (!rooms.size && !(allowEmpty && !keys.length)) {
                 throw results.find((result) => result.status === 'rejected')?.reason ?? new Error('Tidak ada site')
             }
             if (broadcasting || wantedRooms !== wanted) return
-            organizationId.value = siteIds.length === 1 ? siteIds[0] : null
+            organizationId.value = singleSiteOf(keys)
             mode.value = 'watching'
             bump()
         } finally {
             if (wantedRooms === wanted) connecting.value = false
         }
-    }
-
-    /** Putus semua room tonton, kecuali room siaran saya sendiri. */
-    async function disconnectWatchRooms() {
-        const watched = [...rooms].filter(([, room]) => room !== ownRoom)
-        watched.forEach(([siteId]) => rooms.delete(siteId))
-        await Promise.all(watched.map(([, room]) => room.removeAllListeners().disconnect()))
-        bump()
     }
 
     // Kamera/layar menyala atau mati -> laporkan segera (log kerja mencatat
@@ -838,11 +815,11 @@ export const useLiveStore = defineStore('live', () => {
             const response = await api.post('/live/sessions/start', { device: 'computer' })
             const { livekit_url, token, session } = response.data.data
             await disconnect()
-            // Sesi leader tanpa site -> ruang leader.
-            const roomKey = session.organization_id ?? LEADERS_ROOM_KEY
-            ownRoom = await connect(livekit_url, token, roomKey)
+            // Room siaran = site sesi (null = Ruang pusat) + peran yang dicatat server.
+            const ownKey = roomKey(session.organization_id, session.live_role)
+            ownRoom = await connect(livekit_url, token, ownKey)
             organizationId.value = session.organization_id
-            watchedSiteIds.value = [roomKey]
+            watchedRoomKeys.value = [ownKey]
             await ownRoom.localParticipant.setCameraEnabled(true)
             // Kamera bisa "berhasil" dibuka lalu langsung berhenti (mis. sedang
             // dipakai aplikasi lain) -- jangan anggap siaran jalan tanpa gambar.
@@ -906,14 +883,12 @@ export const useLiveStore = defineStore('live', () => {
         if (resumeUserId !== auth.user?.id) resumeTask = null
         resumeUserId = auth.user?.id
         resumeTask ??= (async () => {
-            // Leader menyiarkan ke ruang leader (tanpa site); staf ke site-nya.
-            const isLeader = auth.user?.roles?.includes('leader') ?? false
-            const isStaff = auth.hasPermission('live.broadcast') && !!auth.user?.organization_id
-            if (mode.value !== 'idle' || (!isLeader && !isStaff)) {
+            // Semua peran dengan izin live.broadcast bisa siaran: ke site-nya, atau ke Ruang pusat kalau tanpa site.
+            if (mode.value !== 'idle' || !auth.hasPermission('live.broadcast')) {
                 return { resumed: false }
             }
             try {
-                const params = isLeader ? {} : { organization_id: auth.user.organization_id }
+                const params = auth.user?.organization_id ? { organization_id: auth.user.organization_id } : {}
                 const response = await api.get('/live/sessions', { params })
                 if (!response.data.data.my_session) return { resumed: false }
                 await startWork({ resuming: true })
@@ -1135,23 +1110,22 @@ export const useLiveStore = defineStore('live', () => {
         transportByIdentity.value = next
     }
 
-    /** Gabung room status site & ambil jalur video staf yang sudah siaran. */
+    /** Gabung room status (site/pusat + peran) & ambil jalur video penyiar yang sudah siaran. */
     function emitWatch() {
-        const organizationIds = liveWatchIds.filter((id) => typeof id === 'number')
-        const leaders = liveWatchIds.includes(LEADERS_ROOM_KEY)
-        ensureLiveSocket()?.emit('live:watch', { organizationIds, leaders }, (reply) => {
+        const requested = liveWatchIds.map(parseRoomKey).filter(Boolean)
+        ensureLiveSocket()?.emit('live:watch', { rooms: requested }, (reply) => {
             if (reply?.transports) transportByIdentity.value = { ...reply.transports }
         })
     }
 
-    /** Terima perubahan status staf di site-site ini (kosong = berhenti menonton). */
-    function watchLiveStatus(organizationIds) {
-        liveWatchIds = [...organizationIds]
+    /** Terima perubahan status penyiar di room-room ini (kunci "site:peran"; kosong = berhenti menonton). */
+    function watchLiveStatus(keys) {
+        liveWatchIds = [...keys]
         if (liveWatchIds.length) {
             emitWatch()
         } else {
             transportByIdentity.value = {}
-            liveSocket?.emit('live:watch', { organizationIds: [] })
+            liveSocket?.emit('live:watch', { rooms: [] })
             releaseLiveSocketIfUnused()
         }
     }
@@ -1352,16 +1326,14 @@ export const useLiveStore = defineStore('live', () => {
         connecting,
         isBroadcasting,
         remoteParticipants,
-        participantSites,
-        watchedSiteIds,
+        participantRooms,
+        watchedRoomKeys,
         localCameraTrack,
         localScreenTrack,
         watchLiveStatus,
         onLiveStatus,
-        watchSite,
-        watchSites,
-        addWatchSites,
-        removeWatchSites,
+        addWatchRooms,
+        removeWatchRooms,
         setWatchRooms,
         watchSelection,
         startWork,

@@ -42,8 +42,10 @@ export const FACE_LOG_MIN_SECONDS = 5 * 60
 export type WorkSessionRow = {
     id: number
     user_id: number
-    // NULL = sesi leader (ruang leader global).
+    // NULL = siaran Ruang pusat (penyiar yang tidak terikat site).
     organization_id: number | null
+    // Peran tempat siaran dicatat; room status = site + peran (lihat LiveHub.liveRoom).
+    live_role: string | null
     started_at: Date
     last_heartbeat_at: Date
     ended_at: Date | null

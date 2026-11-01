@@ -18,7 +18,7 @@ import {
     summarize,
     type SkippedUser,
 } from '#services/BulkSiteAccess'
-import { removeBroadcaster } from '#services/Livekit'
+import { removeBroadcaster, roomOfSession } from '#services/Livekit'
 import { hasGrantBasedAccess } from '#services/OrganizationScope'
 import { ROLE_NAME_PATTERN } from '#services/RoleRules'
 import { MAX_LOOKUP_EMAILS, parseBulkUserUpdate, parseEmailList } from '#services/BulkUserUpdate'
@@ -908,7 +908,7 @@ async function endLiveWork(ctx: HttpContext, userId: number, reason: string) {
         attributes: { ended_at: laravelDate(session.ended_at), end_reason: reason },
         old: { ended_at: null, end_reason: null },
     })
-    await removeBroadcaster(session.organization_id, userId)
+    await removeBroadcaster(roomOfSession(session), userId)
 }
 
 function forbidden(ctx: HttpContext) {

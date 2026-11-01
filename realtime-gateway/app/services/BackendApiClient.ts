@@ -13,6 +13,8 @@ export type AuthenticatedUser = {
     permissions: string[]
     /** Site yang diberikan ke admin/leader (user_site_access); kosong untuk peran lain. */
     accessibleOrganizationIds: number[]
+    /** Peran penyiar yang boleh ditonton di Live Kerja; null = semua peran. */
+    watchRoles: string[] | null
 }
 
 type AuthMeResponse = {
@@ -25,6 +27,7 @@ type AuthMeResponse = {
         roles: string[]
         permissions: string[]
         accessible_organization_ids?: number[]
+        watch_roles?: string[] | null
     }
 }
 
@@ -93,6 +96,8 @@ export async function verifyBearerToken(token: string): Promise<AuthenticatedUse
             roles: body.data.roles,
             permissions: body.data.permissions,
             accessibleOrganizationIds: (body.data.accessible_organization_ids ?? []).map(Number),
+            // Backend lama tanpa kolom ini = semua peran (perilaku sebelum hak tonton per peran).
+            watchRoles: Array.isArray(body.data.watch_roles) ? body.data.watch_roles : null,
         }
     } catch (error) {
         log.error('gagal memverifikasi token ke backend-api', describeHttpError(error))

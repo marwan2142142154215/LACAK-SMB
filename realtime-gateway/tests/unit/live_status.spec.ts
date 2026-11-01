@@ -10,6 +10,7 @@ function session(overrides: Partial<WorkSessionRow> = {}): WorkSessionRow {
         id: 1,
         user_id: 7,
         organization_id: 3,
+        live_role: 'staff_viewer',
         started_at: secondsAgo(3600),
         last_heartbeat_at: secondsAgo(10),
         ended_at: null,

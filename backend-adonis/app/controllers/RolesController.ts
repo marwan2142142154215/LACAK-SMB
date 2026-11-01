@@ -6,6 +6,7 @@ import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
 import { describePermission, GROUP_ORDER } from '#services/PermissionCatalog'
+import { parseRoleList } from '#services/Permissions'
 import {
     BUILT_IN_SCOPES,
     LOCKED_ROLES,
@@ -26,9 +27,19 @@ type RoleRow = {
     description: string | null
     site_scope: SiteScope
     is_system: boolean
+    /** jsonb array nama peran; NULL = boleh menonton siaran semua peran. */
+    watchable_roles: unknown
 }
 
-const ROLE_COLUMNS: string[] = ['id', 'name', 'label', 'description', 'site_scope', 'is_system']
+const ROLE_COLUMNS: string[] = [
+    'id',
+    'name',
+    'label',
+    'description',
+    'site_scope',
+    'is_system',
+    'watchable_roles',
+]
 
 /**
  * Menu Peran (Akses > Peran): membuat peran baru dan mengatur izin + cakupan site tiap peran.
@@ -97,6 +108,7 @@ export default class RolesController {
             input.siteScope
         )
         if (!permissionIds) return
+        if (!(await checkWatchableRoles(ctx, input.watchableRoles ?? null))) return
 
         const roleId = await db.transaction(async (trx) => {
             const now = new Date()
@@ -108,6 +120,7 @@ export default class RolesController {
                     label: input.label,
                     description: input.description,
                     site_scope: input.siteScope,
+                    watchable_roles: watchableColumn(input.watchableRoles ?? null),
                     is_system: false,
                     created_at: now,
                     updated_at: now,
@@ -131,6 +144,7 @@ export default class RolesController {
                     label: input.label,
                     site_scope: input.siteScope,
                     permissions: input.permissions,
+                    watchable_roles: input.watchableRoles ?? null,
                 },
             },
         })
@@ -173,14 +187,21 @@ export default class RolesController {
             input.siteScope
         )
         if (!permissionIds) return
+        if (!(await checkWatchableRoles(ctx, input.watchableRoles ?? null))) return
+        const watchable =
+            input.watchableRoles === undefined ? watchableOfRow(role) : input.watchableRoles
 
         await db.transaction(async (trx) => {
-            await trx.from('roles').where('id', role.id).update({
-                label: input.label,
-                description: input.description,
-                site_scope: input.siteScope,
-                updated_at: new Date(),
-            })
+            await trx
+                .from('roles')
+                .where('id', role.id)
+                .update({
+                    label: input.label,
+                    description: input.description,
+                    site_scope: input.siteScope,
+                    watchable_roles: watchableColumn(watchable),
+                    updated_at: new Date(),
+                })
             await replacePermissions(trx, role.id, permissionIds)
         })
 
@@ -194,6 +215,7 @@ export default class RolesController {
             properties: {
                 name: role.name,
                 site_scope: { old: scopeOfRow(role), new: input.siteScope },
+                watchable_roles: { old: watchableOfRow(role), new: watchable },
                 permissions_added: input.permissions.filter((item) => !before.includes(item)),
                 permissions_removed: before.filter((item) => !input.permissions.includes(item)),
             },
@@ -321,6 +343,35 @@ function scopeOfRow(row: Pick<RoleRow, 'name' | 'site_scope'>): SiteScope {
     return BUILT_IN_SCOPES[row.name] ?? row.site_scope
 }
 
+/** Hak tonton Live Kerja peran ini: null = semua peran. */
+function watchableOfRow(row: Pick<RoleRow, 'watchable_roles'>): string[] | null {
+    return row.watchable_roles === null || row.watchable_roles === undefined
+        ? null
+        : parseRoleList(row.watchable_roles)
+}
+
+/** Nilai kolom jsonb: null = semua peran. */
+function watchableColumn(roles: string[] | null): string | null {
+    return roles === null ? null : JSON.stringify(roles)
+}
+
+/** Semua peran di daftar "boleh ditonton" harus ada. Respons error sudah dikirim kalau gagal. */
+async function checkWatchableRoles(ctx: HttpContext, roles: string[] | null): Promise<boolean> {
+    if (!roles?.length) return true
+    const rows = await db
+        .from('roles')
+        .where('guard_name', 'web')
+        .whereIn('name', roles)
+        .select('name')
+    const known = new Set(rows.map((row) => row.name as string))
+    const unknown = roles.filter((role) => !known.has(role))
+    if (unknown.length > 0) {
+        invalid(ctx, { watchable_roles: [`Peran tidak dikenal: ${unknown.join(', ')}`] })
+        return false
+    }
+    return true
+}
+
 async function findRole(param: unknown): Promise<RoleRow | null> {
     const id = Number(param)
     if (!Number.isInteger(id) || id <= 0) return null
@@ -356,6 +407,7 @@ function shape(row: RoleRow, permissions: string[], users: number) {
         label: row.label ?? row.name,
         description: row.description,
         site_scope: scopeOfRow(row),
+        watchable_roles: watchableOfRow(row),
         is_system: row.is_system,
         locked: LOCKED_ROLES.includes(row.name),
         permissions,

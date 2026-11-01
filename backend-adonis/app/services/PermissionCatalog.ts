@@ -77,7 +77,8 @@ const CATALOG: Record<string, Entry> = {
     'live.broadcast': {
         group: 'Live Kerja',
         label: 'Mulai kerja & siaran',
-        description: 'Menyalakan Live Kerja dan menyiarkan kamera/layar sendiri.',
+        description:
+            'Menyalakan Live Kerja dan menyiarkan kamera/layar sendiri. User ber-site siaran di site-nya; yang tidak terikat site siaran di Ruang pusat.',
     },
     'live.watch': {
         group: 'Live Kerja',
@@ -89,6 +90,12 @@ const CATALOG: Record<string, Entry> = {
         label: 'Lihat rekan se-site',
         description:
             'Melihat staf lain di Live Kerja, log kerja, dan rekaman. Tanpa ini, hanya melihat diri sendiri.',
+    },
+    'live.watch-central': {
+        group: 'Live Kerja',
+        label: 'Pantau Ruang pusat',
+        description:
+            'Menonton siaran user yang tidak terikat site (mis. leader). Peran yang boleh ditonton tetap mengikuti pengaturan "Boleh menonton siaran dari".',
     },
     'attendance.manage': {
         group: 'Kerja & pengawasan',

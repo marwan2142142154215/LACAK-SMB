@@ -1,5 +1,5 @@
 import { test } from '@japa/runner'
-import { broadcasterToken } from '#services/Livekit'
+import { broadcasterToken, issue, parseRoomName, roomName } from '#services/Livekit'
 import type { Access } from '#services/Access'
 import { authorizedOrganizationId, organizationFilter } from '#services/OrganizationScope'
 import {
@@ -18,23 +18,56 @@ const LARAVEL_LIVEKIT = {
     token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrdW5jaS11amkiLCJzdWIiOiJ1c2VyLTQyIiwianRpIjoidXNlci00MiIsIm5hbWUiOiJTdGFmIMOcbsOvY29kZSAvIEExIiwibmJmIjoxNzkyOTAzMDcxLCJleHAiOjE3OTI5MDM2NzEsInZpZGVvIjp7InJvb20iOiJzaXRlLTMiLCJyb29tSm9pbiI6dHJ1ZSwiY2FuUHVibGlzaCI6dHJ1ZSwiY2FuUHVibGlzaFNvdXJjZXMiOlsiY2FtZXJhIiwibWljcm9waG9uZSIsInNjcmVlbl9zaGFyZSJdLCJjYW5TdWJzY3JpYmUiOnRydWUsImNhblB1Ymxpc2hEYXRhIjpmYWxzZSwiY2FuVXBkYXRlT3duTWV0YWRhdGEiOmZhbHNlfX0.QQqKoNduG-5VOy2_A9dwGJ-ltGsx6d5s0sBYnlZwiyo',
 }
 
+const CONFIG = {
+    url: 'wss://live.test',
+    apiKey: 'kunci-uji',
+    apiSecret: 'r'.repeat(40),
+    tokenTtlSeconds: 600,
+}
+
 test.group('Live Kerja: token LiveKit', () => {
-    test('token siaran sama persis dengan buatan Laravel', ({ assert }) => {
-        const token = broadcasterToken(
-            3,
-            42,
+    test('format JWT sama persis dengan buatan Laravel', ({ assert }) => {
+        // Grant room lama (site-3) dari vector Laravel: memastikan urutan klaim & encoding.
+        const token = issue(
+            'user-42',
             'Staf Ünïcode / A1',
-            {},
             {
-                url: 'wss://live.test',
-                apiKey: 'kunci-uji',
-                apiSecret: 'r'.repeat(40),
-                tokenTtlSeconds: 600,
+                room: 'site-3',
+                roomJoin: true,
+                canPublish: true,
+                canPublishSources: ['camera', 'microphone', 'screen_share'],
+                canSubscribe: true,
+                canPublishData: false,
+                canUpdateOwnMetadata: false,
             },
+            CONFIG,
             LARAVEL_LIVEKIT.nbf
         )
 
         assert.equal(token, LARAVEL_LIVEKIT.token)
+    })
+
+    test('room dipisah per site + peran; Ruang pusat untuk yang tanpa site', ({ assert }) => {
+        assert.equal(roomName({ organizationId: 3, role: 'staff_viewer' }), 'site-3-staff_viewer')
+        assert.equal(roomName({ organizationId: null, role: 'leader' }), 'pusat-leader')
+        assert.deepEqual(parseRoomName('site-3-staff_viewer'), {
+            organizationId: 3,
+            role: 'staff_viewer',
+        })
+        assert.deepEqual(parseRoomName('pusat-leader'), { organizationId: null, role: 'leader' })
+        assert.isNull(parseRoomName('site-3'))
+        assert.isNull(parseRoomName('briefing-9'))
+
+        const token = broadcasterToken(
+            { organizationId: 3, role: 'operator' },
+            42,
+            'Op',
+            {},
+            CONFIG,
+            LARAVEL_LIVEKIT.nbf
+        )
+        const grant = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).video
+        assert.equal(grant.room, 'site-3-operator')
     })
 })
 

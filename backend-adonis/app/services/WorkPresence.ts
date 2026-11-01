@@ -43,8 +43,10 @@ export const FACE_LOG_MIN_SECONDS = 5 * 60
 export type WorkSessionRow = {
     id: number
     user_id: number
-    // NULL = sesi leader (ruang leader global, lihat LEADERS_ROOM).
+    // NULL = siaran Ruang pusat (penyiar yang tidak terikat site).
     organization_id: number | null
+    // Peran tempat siaran dicatat saat Mulai kerja (room = site + peran, lihat Livekit.roomName).
+    live_role?: string | null
     started_at: Date
     last_heartbeat_at: Date
     ended_at: Date | null
@@ -231,6 +233,7 @@ export function sessionResource(session: WorkSessionRow, now: Date = new Date())
         user_id: session.user_id,
         ...(session.user_name !== undefined ? { user_name: session.user_name } : {}),
         organization_id: session.organization_id,
+        live_role: session.live_role ?? null,
         participant_identity: `user-${session.user_id}`,
         started_at: session.started_at,
         last_heartbeat_at: session.last_heartbeat_at,

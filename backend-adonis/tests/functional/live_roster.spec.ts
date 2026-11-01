@@ -135,7 +135,7 @@ test.group('Ringkasan dashboard: staf online', (group) => {
     })
 })
 
-test.group('Live Kerja: ruang leader', (group) => {
+test.group('Live Kerja: Ruang pusat & semua peran', (group) => {
     group.each.setup(() => testUtils.db().withGlobalTransaction())
 
     async function userWithRole(role: string) {
@@ -167,7 +167,7 @@ test.group('Live Kerja: ruang leader', (group) => {
         }
     }
 
-    test('leader Mulai kerja masuk ruang leader, tanpa site', async ({ client, assert }) => {
+    test('leader Mulai kerja masuk Ruang pusat, tanpa site', async ({ client, assert }) => {
         const leader = await userWithRole('leader')
 
         const response = await client
@@ -176,8 +176,111 @@ test.group('Live Kerja: ruang leader', (group) => {
             .bearerToken(leader.bearer)
 
         response.assertStatus(201)
-        assert.equal(response.body().data.room, 'leaders')
+        assert.equal(response.body().data.room, 'pusat-leader')
         assert.isNull(response.body().data.session.organization_id)
+        assert.equal(response.body().data.session.live_role, 'leader')
+    })
+
+    test('peran buatan sendiri bisa Live lewat izin live.broadcast, di room site + perannya', async ({
+        client,
+        assert,
+    }) => {
+        const [org] = await db
+            .table('organizations')
+            .insert({
+                name: `Site Operator ${randomBytes(3).toString('hex')}`,
+                type: 'company_asset',
+                unique_site_code: `UJI-${randomBytes(4).toString('hex').toUpperCase()}`,
+                is_active: true,
+                created_at: new Date(),
+                updated_at: new Date(),
+            })
+            .returning(['id'])
+        const [role] = await db
+            .table('roles')
+            .insert({ name: 'operator', guard_name: 'web', label: 'Operator', site_scope: 'own' })
+            .returning(['id'])
+        const operator = await staffIn(org.id, 'operator')
+        const bearer = await loginToken(operator, DateTime.now().plus({ hours: 2 }))
+
+        // Tanpa izin: ditolak.
+        const denied = await client
+            .post('/api/v1/live/sessions/start')
+            .json({ device: 'computer' })
+            .bearerToken(bearer)
+        denied.assertStatus(403)
+
+        const broadcast = await db.from('permissions').where('name', 'live.broadcast').firstOrFail()
+        await db
+            .table('role_has_permissions')
+            .insert({ role_id: role.id, permission_id: broadcast.id })
+
+        const started = await client
+            .post('/api/v1/live/sessions/start')
+            .json({ device: 'computer' })
+            .bearerToken(bearer)
+        started.assertStatus(201)
+        assert.equal(started.body().data.room, `site-${org.id}-operator`)
+    })
+
+    test('hak tonton per peran: token & daftar hanya untuk peran yang boleh ditonton', async ({
+        client,
+        assert,
+    }) => {
+        const [org] = await db
+            .table('organizations')
+            .insert({
+                name: `Site Tonton ${randomBytes(3).toString('hex')}`,
+                type: 'company_asset',
+                unique_site_code: `UJI-${randomBytes(4).toString('hex').toUpperCase()}`,
+                is_active: true,
+                created_at: new Date(),
+                updated_at: new Date(),
+            })
+            .returning(['id'])
+        const staff = await staffIn(org.id)
+        // Pengawas site yang hanya boleh menonton peran "operator" (bukan staff_viewer).
+        await db.table('roles').insert({
+            name: 'pengawas_operator',
+            guard_name: 'web',
+            label: 'Pengawas operator',
+            site_scope: 'own',
+            watchable_roles: JSON.stringify(['operator']),
+        })
+        const permissionIds = await db
+            .from('permissions')
+            .whereIn('name', ['live.watch', 'live.roster'])
+            .select('id')
+        const pengawasRole = await db.from('roles').where('name', 'pengawas_operator').firstOrFail()
+        await db
+            .table('role_has_permissions')
+            .multiInsert(
+                permissionIds.map((row) => ({ role_id: pengawasRole.id, permission_id: row.id }))
+            )
+        const pengawas = await staffIn(org.id, 'pengawas_operator')
+        const bearer = await loginToken(pengawas, DateTime.now().plus({ hours: 2 }))
+
+        const forbiddenRole = await client
+            .post('/api/v1/live/watch-token')
+            .json({ organization_id: org.id, role: 'staff_viewer' })
+            .bearerToken(bearer)
+        forbiddenRole.assertStatus(403)
+
+        const allowedRole = await client
+            .post('/api/v1/live/watch-token')
+            .json({ organization_id: org.id, role: 'operator' })
+            .bearerToken(bearer)
+        allowedRole.assertStatus(200)
+        assert.equal(allowedRole.body().data.room, `site-${org.id}-operator`)
+
+        // Staf (staff_viewer) tidak muncul di daftar milik pengawas ini.
+        const list = await client
+            .get('/api/v1/live/sessions')
+            .qs({ organization_id: org.id })
+            .bearerToken(bearer)
+        list.assertStatus(200)
+        const ids = list.body().data.roster.map((member: { user_id: number }) => member.user_id)
+        assert.notInclude(ids, staff)
     })
 
     test('Mulai kerja: komputer & APK Live Kerja boleh, browser HP / APK lama ditolak', async ({
@@ -241,14 +344,23 @@ test.group('Live Kerja: ruang leader', (group) => {
         assert.deepEqual(await faceEvents(), ['face_lost', 'face_back'])
     })
 
-    test('ruang leader bisa ditonton admin, tidak bisa oleh staf', async ({ client }) => {
+    test('Ruang pusat bisa ditonton admin, tidak bisa oleh leader atau staf', async ({
+        client,
+    }) => {
         const admin = await userWithRole('admin')
         const allowed = await client
             .post('/api/v1/live/watch-token')
-            .json({ room: 'leaders' })
+            .json({ central: true, role: 'leader' })
             .bearerToken(admin.bearer)
         allowed.assertStatus(200)
-        allowed.assertBodyContains({ data: { room: 'leaders' } })
+        allowed.assertBodyContains({ data: { room: 'pusat-leader' } })
+
+        const leader = await userWithRole('leader')
+        const leaderDenied = await client
+            .post('/api/v1/live/watch-token')
+            .json({ central: true, role: 'leader' })
+            .bearerToken(leader.bearer)
+        leaderDenied.assertStatus(403)
 
         const [org] = await db
             .table('organizations')
@@ -265,7 +377,7 @@ test.group('Live Kerja: ruang leader', (group) => {
         const staffBearer = await loginToken(staff, DateTime.now().plus({ hours: 2 }))
         const denied = await client
             .post('/api/v1/live/watch-token')
-            .json({ room: 'leaders' })
+            .json({ central: true, role: 'leader' })
             .bearerToken(staffBearer)
         denied.assertStatus(403)
     })

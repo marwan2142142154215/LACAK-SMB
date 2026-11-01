@@ -3,7 +3,7 @@ import type { CommandOptions } from '@adonisjs/core/types/ace'
 import db from '@adonisjs/lucid/services/db'
 import env from '#start/env'
 import { laravelDate, logModelEvent, WORK_SESSION_MORPH } from '#services/ActivityLog'
-import { removeBroadcaster } from '#services/Livekit'
+import { removeBroadcaster, roomOfSession } from '#services/Livekit'
 import {
     closeSession,
     DISCONNECTED_AFTER_SECONDS,
@@ -64,7 +64,7 @@ export async function closeStaleWorkSessions(now: () => Date = () => new Date())
             attributes: { ended_at: laravelDate(session.ended_at), end_reason: 'timeout' },
             old: { ended_at: null, end_reason: null },
         })
-        await removeBroadcaster(session.organization_id, session.user_id)
+        await removeBroadcaster(roomOfSession(session), session.user_id)
         closed++
     }
 

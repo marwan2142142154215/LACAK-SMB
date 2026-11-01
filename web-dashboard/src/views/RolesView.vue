@@ -37,8 +37,33 @@ const SCOPE_HINTS = {
     own: 'Hanya site tempat staf itu terdaftar.',
 }
 
-const emptyForm = () => ({ name: '', label: '', description: '', site_scope: 'own', permissions: [] })
+// watch_all = boleh menonton siaran Live Kerja semua peran; kalau tidak, hanya watchable_roles.
+const emptyForm = () => ({
+    name: '',
+    label: '',
+    description: '',
+    site_scope: 'own',
+    permissions: [],
+    watch_all: true,
+    watchable_roles: [],
+})
 const form = ref(emptyForm())
+
+// Peran yang bisa dipilih sebagai "boleh ditonton" (akun layanan bot tidak pernah siaran).
+const watchableOptions = computed(() => roles.value.filter((role) => role.name !== 'telegram_bot_service'))
+
+function toggleWatchable(name, checked) {
+    const current = form.value.watchable_roles
+    form.value.watchable_roles = checked ? [...new Set([...current, name])] : current.filter((item) => item !== name)
+}
+
+/** Ringkasan hak tonton di kartu peran. */
+function watchSummary(role) {
+    if (!role.watchable_roles) return 'Semua peran'
+    if (!role.watchable_roles.length) return 'Tidak ada'
+    const labels = Object.fromEntries(roles.value.map((item) => [item.name, item.label]))
+    return role.watchable_roles.map((name) => labels[name] ?? name).join(', ')
+}
 
 // Peran dikunci (super_admin, akun layanan bot) hanya bisa dilihat. Cakupan peran bawaan tetap.
 const isLocked = computed(() => editTarget.value?.locked ?? false)
@@ -81,6 +106,8 @@ function openEdit(role) {
         description: role.description ?? '',
         site_scope: role.site_scope,
         permissions: [...role.permissions],
+        watch_all: role.watchable_roles === null || role.watchable_roles === undefined,
+        watchable_roles: [...(role.watchable_roles ?? [])],
     }
     dialogOpen.value = true
 }
@@ -116,6 +143,8 @@ async function submitForm() {
             description: form.value.description || null,
             site_scope: form.value.site_scope,
             permissions: form.value.permissions,
+            // null = boleh menonton siaran semua peran.
+            watchable_roles: form.value.watch_all ? null : form.value.watchable_roles,
         }
         if (editTarget.value) {
             await api.put(`/roles/${editTarget.value.id}`, payload)
@@ -204,6 +233,9 @@ onMounted(loadRoles)
                         <dd class="text-base-100">{{ role.users_count }}</dd>
                     </div>
                 </dl>
+                <p class="text-xs text-base-500">
+                    Tonton Live: <span class="text-base-200">{{ watchSummary(role) }}</span>
+                </p>
                 <div class="mt-auto flex items-center gap-2 pt-1">
                     <BaseButton variant="outline" size="sm" @click="openEdit(role)">
                         <Pencil class="size-3.5" /> {{ role.locked ? 'Lihat' : 'Atur' }}
@@ -289,6 +321,41 @@ onMounted(loadRoles)
                             </li>
                         </ul>
                     </div>
+                </fieldset>
+
+                <!-- Hak tonton Live Kerja per peran: siaran peran mana saja yang boleh ditonton peran ini. -->
+                <fieldset class="space-y-2" :disabled="isLocked">
+                    <legend class="field-label">Boleh menonton siaran Live dari</legend>
+                    <p class="text-xs text-base-500">
+                        Berlaku untuk video, status, dan rekaman Live Kerja. Tetap butuh izin "Pantau Live Kerja" & "Lihat rekan
+                        se-site", dan hanya di site dalam cakupannya.
+                    </p>
+                    <div class="flex flex-wrap gap-4 text-sm text-base-100">
+                        <label class="flex cursor-pointer items-center gap-2">
+                            <input v-model="form.watch_all" type="radio" :value="true" class="size-4 accent-copper-500" />
+                            Semua peran
+                        </label>
+                        <label class="flex cursor-pointer items-center gap-2">
+                            <input v-model="form.watch_all" type="radio" :value="false" class="size-4 accent-copper-500" />
+                            Peran tertentu
+                        </label>
+                    </div>
+                    <ul v-if="!form.watch_all" class="grid gap-1 rounded-lg border border-base-800 bg-base-900/60 p-2 sm:grid-cols-2">
+                        <li v-for="option in watchableOptions" :key="option.name">
+                            <label class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-base-100 hover:bg-base-850">
+                                <input
+                                    type="checkbox"
+                                    class="size-4 accent-copper-500"
+                                    :checked="form.watchable_roles.includes(option.name)"
+                                    @change="toggleWatchable(option.name, $event.target.checked)"
+                                />
+                                {{ option.label }}
+                            </label>
+                        </li>
+                    </ul>
+                    <p v-if="!form.watch_all && !form.watchable_roles.length" class="text-xs text-warning-400">
+                        Belum ada peran dipilih: peran ini tidak akan bisa menonton siaran siapa pun.
+                    </p>
                 </fieldset>
             </form>
             <template #footer>

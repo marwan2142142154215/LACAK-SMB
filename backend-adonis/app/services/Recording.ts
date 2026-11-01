@@ -2,7 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import db from '@adonisjs/lucid/services/db'
 import log from '@adonisjs/core/services/logger'
 import env from '#start/env'
-import { issue, liveKitConfig, roomForOrganization } from '#services/Livekit'
+import { issue, liveKitConfig, parseRoomName, roomName, roomOfSession } from '#services/Livekit'
 import { disk, spacesKey, stripSpacesPrefix } from '#services/Storage'
 import { openSessionOf } from '#services/WorkPresence'
 
@@ -133,7 +133,7 @@ export async function startTrackRecording(input: {
     )
     try {
         const info = await egressApi('StartTrackEgress', {
-            room_name: roomForOrganization(input.organizationId),
+            room_name: roomName(roomOfSession(session)),
             track_id: input.trackSid,
             file: { filepath: spacesKey(filepath), s3: spacesUpload() },
         })
@@ -188,7 +188,8 @@ export async function handleTrackPublished(event: Record<string, unknown>) {
     const room = field(event.room as Record<string, unknown>, 'name')
     const identity = field(event.participant as Record<string, unknown>, 'identity')
     const track = event.track as Record<string, unknown> | undefined
-    const organizationId = /^site-(\d+)$/.exec(String(room ?? ''))?.[1]
+    // Hanya room site (site-{id}-{peran}); Ruang pusat tidak direkam, sama seperti dulu.
+    const organizationId = parseRoomName(String(room ?? ''))?.organizationId
     const userId = /^user-(\d+)$/.exec(String(identity ?? ''))?.[1]
     const trackSid = String(field(track, 'sid') ?? '')
     const source = String(field(track, 'source') ?? '').toLowerCase() as RecordingSource

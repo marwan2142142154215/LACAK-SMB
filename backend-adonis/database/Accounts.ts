@@ -29,6 +29,9 @@ export const PERMISSIONS = [
     // Melihat rekan se-site di Live Kerja/log kerja/rekaman. Tanpa izin ini, user
     // hanya melihat dirinya sendiri (pengganti aturan "hanya staff_viewer" yang lama).
     'live.roster',
+    // Menonton Ruang pusat: siaran user yang tidak terikat site (dulu "ruang leader",
+    // dikunci ke admin & root).
+    'live.watch-central',
     // Kerja & pengawasan: kelola absensi, shift, izin/cuti, pengumuman, kirim
     // peringatan staf, dan memimpin briefing -- dulu dikunci ke nama peran (isManager).
     'attendance.manage',
@@ -81,6 +84,8 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         'devices.locate',
         'geofence-rules.manage',
         'live.watch',
+        // Menonton Ruang pusat (siaran leader & user lain tanpa site).
+        'live.watch-central',
         'apk-builds.manage',
         // Memimpin briefing + kelola kerja/pengawasan untuk site yang dipegang.
         'briefing.host',
@@ -93,6 +98,8 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         'devices.locate',
         'geofence-rules.manage',
         'live.watch',
+        // Leader siaran ke Ruang pusat (tidak terikat site); dulu dikunci ke nama peran.
+        'live.broadcast',
         'apk-builds.manage',
         'briefing.host',
         ...WORK_SUPERVISION,

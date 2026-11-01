@@ -28,6 +28,7 @@ const SESSION_COLUMNS = [
     'work_sessions.id',
     'work_sessions.user_id',
     'work_sessions.organization_id',
+    'work_sessions.live_role',
     'work_sessions.started_at',
     'work_sessions.last_heartbeat_at',
     'work_sessions.ended_at',
@@ -56,16 +57,16 @@ export async function openSessionOf(userId: number): Promise<LiveSession | null>
     return (await openSessionsQuery(db).where('work_sessions.user_id', userId).first()) ?? null
 }
 
-/** Sesi terbuka di site-site ini, plus sesi leader (organization_id NULL) kalau diminta. */
+/** Sesi terbuka di site-site ini, plus sesi Ruang pusat (organization_id NULL) kalau diminta. */
 export async function openSessionsIn(
     organizationIds: number[],
-    includeLeaders = false
+    includeCentral = false
 ): Promise<LiveSession[]> {
-    if (!organizationIds.length && !includeLeaders) return []
+    if (!organizationIds.length && !includeCentral) return []
     const db = await getDb()
     return openSessionsQuery(db).where((query) => {
         if (organizationIds.length) query.whereIn('work_sessions.organization_id', organizationIds)
-        if (includeLeaders) query.orWhereNull('work_sessions.organization_id')
+        if (includeCentral) query.orWhereNull('work_sessions.organization_id')
     })
 }
 
@@ -177,6 +178,7 @@ export function sessionPayload(session: LiveSession, now: Date = new Date()) {
         user_id: session.user_id,
         user_name: session.user_name,
         organization_id: session.organization_id,
+        live_role: session.live_role,
         participant_identity: `user-${session.user_id}`,
         started_at: session.started_at,
         last_heartbeat_at: session.last_heartbeat_at,

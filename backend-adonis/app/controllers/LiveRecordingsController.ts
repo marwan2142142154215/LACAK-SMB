@@ -1,9 +1,11 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import log from '@adonisjs/core/services/logger'
-import { accessOf, can, seesOnlySelf } from '#services/Access'
+import { accessOf, can, canWatchRole, seesOnlySelf } from '#services/Access'
 import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
+import { UNKNOWN_LIVE_ROLE } from '#services/Livekit'
+import { liveRolesOf } from '#services/Permissions'
 import { authorizedOrganizationId } from '#services/OrganizationScope'
 import {
     handleEgressEnded,
@@ -37,10 +39,14 @@ export default class LiveRecordingsController {
         }
 
         const staff = await db.from('users').where('id', userId).whereNull('deleted_at').first()
+        const staffRoles = await liveRolesOf([userId])
+        const staffRole = staffRoles.get(userId) ?? UNKNOWN_LIVE_ROLE
         if (
             !staff ||
             // Staf biasa hanya boleh memutar rekamannya sendiri.
             (seesOnlySelf(access) && userId !== access.userId) ||
+            // Hak tonton per peran berlaku juga untuk rekaman siaran.
+            (userId !== access.userId && !canWatchRole(access, staffRole)) ||
             authorizedOrganizationId(access, staff.organization_id) !== staff.organization_id
         ) {
             return ctx.response

@@ -57,6 +57,8 @@ export type RoleInput = {
     description: string | null
     siteScope: SiteScope
     permissions: string[]
+    /** Peran penyiar yang boleh ditonton di Live Kerja; null = semua peran, undefined = tidak diubah. */
+    watchableRoles?: string[] | null
 }
 
 type Parsed = { ok: true; data: RoleInput } | { ok: false; errors: Record<string, string[]> }
@@ -111,6 +113,25 @@ export function parseRoleInput(raw: Record<string, unknown>, creating: boolean):
         }
     }
 
+    // Hak tonton Live Kerja per peran: null = semua peran, array = hanya peran itu,
+    // tidak dikirim = tidak diubah (peran baru: semua peran).
+    let watchableRoles: string[] | null | undefined =
+        raw.watchable_roles === null ? null : undefined
+    if (raw.watchable_roles !== undefined && raw.watchable_roles !== null) {
+        if (!Array.isArray(raw.watchable_roles)) {
+            add('watchable_roles', 'Daftar peran yang boleh ditonton harus berupa array.')
+        } else {
+            watchableRoles = []
+            for (const item of raw.watchable_roles) {
+                if (typeof item !== 'string' || !ROLE_NAME_PATTERN.test(item)) {
+                    add('watchable_roles', 'Ada peran yang tidak valid.')
+                    break
+                }
+                if (!watchableRoles.includes(item)) watchableRoles.push(item)
+            }
+        }
+    }
+
     if (Object.keys(errors).length > 0) return { ok: false, errors }
     return {
         ok: true,
@@ -120,6 +141,7 @@ export function parseRoleInput(raw: Record<string, unknown>, creating: boolean):
             description,
             siteScope: raw.site_scope as SiteScope,
             permissions,
+            watchableRoles,
         },
     }
 }
