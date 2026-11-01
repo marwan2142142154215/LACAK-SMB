@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"time"
@@ -10,7 +12,8 @@ import (
 
 // Config dibaca dari environment (dan opsional berkas .env, supaya key LiveKit tidak diduplikasi).
 type Config struct {
-	// Alamat HTTP yang didengar rekorder. Harus loopback: hanya backend di server yang sama yang boleh memanggil.
+	// Alamat HTTP yang didengar rekorder. Loopback (backend di server yang sama) atau IP privat (VPC) --
+	// tidak pernah IP publik.
 	Listen string
 	// URL LiveKit untuk rekorder (WebSocket), biasanya ws://127.0.0.1:7880.
 	LiveKitURL string
@@ -79,10 +82,25 @@ func loadConfig() (Config, error) {
 	if cfg.APIKey == "" || cfg.APISecret == "" {
 		return cfg, fmt.Errorf("LIVEKIT_API_KEY dan LIVEKIT_API_SECRET wajib diisi")
 	}
-	if !isLoopback(cfg.Listen) {
-		return cfg, fmt.Errorf("RECORDER_LISTEN harus alamat loopback (127.0.0.1/localhost/[::1]), bukan %q", cfg.Listen)
+	if !isLoopback(cfg.Listen) && !isPrivateListen(cfg.Listen) {
+		return cfg, fmt.Errorf("RECORDER_LISTEN harus loopback (127.0.0.1/localhost/[::1]) atau IP jaringan privat (10.x, 172.16-31.x, 192.168.x), bukan %q", cfg.Listen)
 	}
 	return cfg, nil
+}
+
+// isPrivateListen mengizinkan rekorder di server LiveKit terpisah dipanggil backend lewat jaringan
+// privat (VPC): hanya IP literal RFC1918, tidak pernah 0.0.0.0, nama host, atau IP publik.
+// Pembatasan siapa yang boleh menyambung tetap lewat firewall + token bearer.
+func isPrivateListen(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	return ip.Is4() && ip.IsPrivate()
 }
 
 // isLoopback memastikan rekorder tidak pernah terbuka ke jaringan luar.

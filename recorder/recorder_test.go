@@ -93,6 +93,28 @@ func TestIsLoopback(t *testing.T) {
 	}
 }
 
+func TestIsPrivateListen(t *testing.T) {
+	for addr, want := range map[string]bool{
+		"10.114.0.5:7870":   true,
+		"172.16.0.9:7870":   true,
+		"172.31.255.1:7870": true,
+		"192.168.1.10:7870": true,
+		"172.32.0.1:7870":   false,
+		"8.8.8.8:7870":      false,
+		"143.198.1.1:7870":  false,
+		"0.0.0.0:7870":      false,
+		":7870":             false,
+		"[::]:7870":         false,
+		"[fd00::1]:7870":    false,
+		"example.com:7870":  false,
+		"10.0.0.5":          false,
+	} {
+		if got := isPrivateListen(addr); got != want {
+			t.Errorf("isPrivateListen(%q) = %v, seharusnya %v", addr, got, want)
+		}
+	}
+}
+
 func TestStartRequestValidate(t *testing.T) {
 	good := startRequest{
 		Room:     "site-12-staff_viewer",
