@@ -40,6 +40,20 @@ export const BUILT_IN_SCOPES: Record<string, SiteScope> = {
 export const LEVEL_ROOT = 0
 export const LEVEL_LOWEST = 100
 
+/**
+ * Level awal peran bawaan (sama dengan migrasi 0015_role_levels). Dipakai seeder saat peran bawaan
+ * BARU dibuat -- instalasi baru menjalankan migrasi sebelum perannya ada, jadi tanpa ini semua
+ * peran bawaan jatuh ke level 100 (admin & leader tidak melihat staf siapa pun).
+ */
+export const BUILT_IN_LEVELS: Record<string, number> = {
+    super_admin: 0,
+    admin: 10,
+    site_admin: 30,
+    leader: 50,
+    staff_viewer: 100,
+    telegram_bot_service: 100,
+}
+
 export const isLevel = (value: unknown): value is number =>
     typeof value === 'number' &&
     Number.isInteger(value) &&

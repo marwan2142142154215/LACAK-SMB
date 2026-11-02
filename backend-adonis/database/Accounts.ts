@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import db from '@adonisjs/lucid/services/db'
 import type { QueryClientContract } from '@adonisjs/lucid/types/database'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
-import { BUILT_IN_SCOPES } from '#services/RoleRules'
+import { BUILT_IN_LEVELS, BUILT_IN_SCOPES } from '#services/RoleRules'
 
 /**
  * Peran, izin, dan akun bawaan sistem (padanan seeder Laravel lama).
@@ -166,6 +166,8 @@ export async function seedRolesAndPermissions(client: QueryClientContract = db.c
                 label: existed?.label ?? label,
                 description: existed?.description ?? description,
                 site_scope: BUILT_IN_SCOPES[role],
+                // Level hanya dipasang saat peran baru dibuat; level yang sudah diatur di menu Peran tetap.
+                ...(existed ? {} : { level: BUILT_IN_LEVELS[role] }),
             })
 
         if (existed && role !== 'super_admin') continue

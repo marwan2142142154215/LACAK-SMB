@@ -1,5 +1,7 @@
 import { test } from '@japa/runner'
 import {
+    BUILT_IN_LEVELS,
+    BUILT_IN_SCOPES,
     canSeeLevel,
     effectiveLevel,
     levelExceedsActor,
@@ -18,6 +20,17 @@ const valid = {
     site_scope: 'granted',
     permissions: ['devices.view', 'devices.view', 'live.watch'],
 }
+
+test.group('Peran: level peran bawaan', () => {
+    test('setiap peran bawaan punya level awal (instalasi baru tidak jatuh ke level 100)', ({
+        assert,
+    }) => {
+        assert.sameMembers(Object.keys(BUILT_IN_LEVELS), Object.keys(BUILT_IN_SCOPES))
+        assert.equal(BUILT_IN_LEVELS.super_admin, 0)
+        assert.isBelow(BUILT_IN_LEVELS.admin, BUILT_IN_LEVELS.staff_viewer)
+        assert.isBelow(BUILT_IN_LEVELS.leader, BUILT_IN_LEVELS.staff_viewer)
+    })
+})
 
 test.group('Peran: validasi isian', () => {
     test('isian lengkap diterima, kode dirapikan, izin dibuat unik', ({ assert }) => {
