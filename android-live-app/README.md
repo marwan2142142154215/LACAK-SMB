@@ -64,6 +64,14 @@ dengan pesan yang jelas.
 - **Peringatan atasan**: dicek tiap 30 detik saat aplikasi terbuka (dialog *Saya mengerti*) dan
   tiap detak siaran saat di latar belakang (notifikasi penting).
 
+## Kamera + layar atau kamera saja (per peran)
+
+Diatur di dashboard, menu **Peran > Saat Live Kerja, wajib membagikan** (= izin
+`live.screen-optional`, "Boleh menutup layar"). Peran *Kamera saja*: izin berbagi layar tetap
+ditawarkan, tapi boleh ditolak/dihentikan tanpa peringatan Screen off, dan server menghitung
+statusnya bekerja selama kamera menyala. Profil (izin) dimuat ulang dari `/auth/me` setiap layar
+Live dibuka, jadi perubahan dari admin berlaku tanpa login ulang.
+
 ## Ukuran APK
 
 `build_only.sh` membangun **rilis** (R8 + resource shrink), library native disimpan terkompresi

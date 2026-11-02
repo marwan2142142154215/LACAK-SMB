@@ -575,6 +575,14 @@ class LiveBroadcastService : Service() {
         if (LiveBroadcastState.onBreak.value) {
             return "Sedang istirahat — tidak dihitung jam kerja. Tekan Lanjut kerja bila sudah kembali."
         }
+        // Peran kamera saja (izin live.screen-optional): layar tidak dibagikan bukan masalah.
+        if (!LiveBroadcastState.screenSharing.value && sessionStore.user()?.screenOptional == true) {
+            return when (LiveBroadcastState.micState.value) {
+                MicState.On -> "Kamera & suara disiarkan ke atasan"
+                MicState.Muted -> "Kamera disiarkan · mikrofon dibisukan"
+                MicState.None -> "Kamera disiarkan ke atasan (tanpa suara)"
+            }
+        }
         if (!LiveBroadcastState.screenSharing.value) {
             return "Layar belum dibagikan — tidak dihitung kerja. Buka aplikasi lalu Bagikan layar."
         }

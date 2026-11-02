@@ -105,15 +105,8 @@ export function micStateOf(participant) {
 /** Browser ini bisa berbagi layar? (HP: tidak -- iOS/Android browser tidak punya getDisplayMedia.) */
 export const canShareScreen = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia
 
-/**
- * iPhone/iPad (Safari & PWA): iOS tidak mengizinkan berbagi layar dari browser, jadi Live Kerja
- * berjalan KAMERA SAJA (server menandai sesinya camera_only; hanya diterima dari browser iOS).
- */
-export const cameraOnlyDevice =
-    !canShareScreen && typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent)
-
-/** Bisa Mulai kerja dari perangkat ini: komputer (layar + kamera) atau iPhone/iPad (kamera saja). */
-export const canStartWorkHere = canShareScreen || cameraOnlyDevice
+/** Browser ini bisa membuka kamera (semua browser modern, termasuk Safari iPhone). */
+const canUseCamera = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
 
 // Layar kerja: SELURUH layar (bukan satu jendela/tab), tanpa audio sistem
 // (suara staf lewat mikrofon, track tersendiri). Teks harus
@@ -287,6 +280,14 @@ export const useLiveStore = defineStore('live', () => {
     const reconnecting = ref(false)
 
     const isBroadcasting = computed(() => mode.value === 'broadcasting')
+    // Aturan peran (menu Peran > Saat Live Kerja wajib membagikan): izin live.screen-optional =
+    // kamera saja cukup (layar ditawarkan kalau perangkatnya bisa, boleh dilewati); tanpa izin =
+    // kamera + seluruh layar wajib.
+    const screenOptional = computed(() => auth.hasPermission('live.screen-optional'))
+    // Perangkat ini tidak bisa membagikan layar (iPhone, browser HP): siaran kamera saja.
+    const cameraOnly = computed(() => screenOptional.value && !canShareScreen)
+    // Bisa Mulai kerja dari sini: kamera + layar = hanya komputer; kamera saja = perangkat berkamera apa pun.
+    const canStartHere = computed(() => canShareScreen || (screenOptional.value && canUseCamera))
     // true = siaran ini diambil alih tab/perangkat lain dengan akun yang sama (tidak disambung ulang).
     const broadcastElsewhere = ref(false)
 
@@ -808,9 +809,13 @@ export const useLiveStore = defineStore('live', () => {
      * menyala -- mulai kerja = layar + kamera langsung tersiar.
      */
     async function startWork({ resuming = false } = {}) {
-        // Layar & kamera wajib -- browser HP tidak bisa membagikan layar (kecuali iPhone: kamera saja).
-        if (!canStartWorkHere) {
-            const error = new Error('Live Kerja hanya bisa dari komputer (Chrome atau Edge): layar & kamera wajib dibagikan.')
+        // Peran kamera + layar: browser HP tidak bisa membagikan layar. Peran kamera saja: cukup kamera.
+        if (!canStartHere.value) {
+            const error = new Error(
+                screenOptional.value
+                    ? 'Browser ini tidak bisa membuka kamera. Pakai Chrome, Edge, atau Safari terbaru.'
+                    : 'Peran Anda wajib membagikan layar & kamera: Mulai kerja dari komputer (Chrome atau Edge) atau APK Live Kerja Android.',
+            )
             error.name = 'ComputerRequired'
             throw error
         }
@@ -829,11 +834,10 @@ export const useLiveStore = defineStore('live', () => {
         }
         // Peran berizin live.screen-optional ("Boleh menutup layar"): dialog layar tetap ditawarkan,
         // tapi dibatalkan = lanjut siaran tanpa layar (tidak ada kunci "Layar wajib dibagikan").
-        const screenOptional = auth.hasPermission('live.screen-optional')
         try {
-            if (!resuming && !cameraOnlyDevice) screenTrack = await captureEntireScreen()
+            if (!resuming && !cameraOnly.value) screenTrack = await captureEntireScreen()
         } catch (err) {
-            if (!screenOptional || err.name !== 'ScreenShareFailed') {
+            if (!screenOptional.value || err.name !== 'ScreenShareFailed') {
                 connecting.value = false
                 throw err
             }
@@ -842,7 +846,7 @@ export const useLiveStore = defineStore('live', () => {
         try {
             // device: backend menolak Mulai kerja dari selain komputer (APK
             // Live / klien lama tidak mengirimnya) -- layar wajib dibagikan.
-            const response = await api.post('/live/sessions/start', { device: cameraOnlyDevice ? 'ios_camera' : 'computer' })
+            const response = await api.post('/live/sessions/start', { device: cameraOnly.value ? 'camera' : 'computer' })
             const { livekit_url, token, session } = response.data.data
             await disconnect()
             // Room siaran = site sesi (null = Ruang pusat) + peran yang dicatat server.
@@ -869,7 +873,7 @@ export const useLiveStore = defineStore('live', () => {
             // reload = ikut pilihan bisu terakhir staf.
             if (!resuming) setMicMutedPref(true)
             await enableMicrophone()
-            screenRequired.value = !cameraOnlyDevice && !session.screen_optional
+            screenRequired.value = !cameraOnly.value && !session.screen_optional
             mode.value = 'broadcasting'
             broadcastStartedAt.value = session.started_at ?? new Date().toISOString()
             onBreak.value = !!session.on_break
@@ -1356,6 +1360,9 @@ export const useLiveStore = defineStore('live', () => {
         connecting,
         isBroadcasting,
         broadcastElsewhere,
+        screenOptional,
+        cameraOnly,
+        canStartHere,
         remoteParticipants,
         participantRooms,
         watchedRoomKeys,

@@ -7,6 +7,7 @@
     <string name="live_logout">Keluar</string>
     <string name="live_staff_fallback">Staf</string>
     <string name="live_subtitle">Siaran layar HP &amp; kamera depan ke atasan</string>
+    <string name="live_subtitle_camera">Siaran kamera depan ke atasan · layar tidak wajib</string>
 
     <string name="live_status_idle">Tidak live</string>
     <string name="live_status_connecting">Menyambung</string>

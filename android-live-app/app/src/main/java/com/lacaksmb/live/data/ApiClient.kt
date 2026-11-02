@@ -95,6 +95,12 @@ class ApiClient(private val sessionStore: SessionStore) {
             .build(),
     )
 
+    /** Profil terbaru (izin & aturan Live Kerja); null kalau gagal (pakai profil tersimpan). */
+    suspend fun me(): UserProfile? {
+        val result = execute(authedBuilder("/auth/me").get().build())
+        return (result as? ApiResult.Ok)?.data?.let { runCatching { UserProfile.fromJson(it) }.getOrNull() }
+    }
+
     suspend fun logout(): ApiResult = execute(authedBuilder("/auth/logout").post(emptyBody()).build())
 
     // ---- Live Kerja ----

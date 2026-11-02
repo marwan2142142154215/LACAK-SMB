@@ -57,7 +57,7 @@ import { backgroundSupported } from '@/lib/cameraBackground'
 import { buildWallMembers, pageCountOf, pageSlice, wantedRoomKeys } from '@/lib/liveWall'
 import { ATTENTION_STATUSES, WORK_STATUS, workStatus } from '@/lib/workStatus'
 import { useAuthStore } from '@/stores/auth'
-import { CAMERA_SOURCE, SCREEN_SOURCE, cameraOnlyDevice, canShareScreen, canStartWorkHere, micStateOf, parseRoomKey, roomKey, useLiveStore } from '@/stores/live'
+import { CAMERA_SOURCE, SCREEN_SOURCE, canShareScreen, micStateOf, parseRoomKey, roomKey, useLiveStore } from '@/stores/live'
 
 const ALL_SITES = 'all'
 
@@ -305,7 +305,7 @@ watch(
 
 // Cek wajah: kamera menyala tapi tidak ada wajah >= 30 detik (hanya catatan).
 const faceMissingOf = (identity) => !!sessionByIdentity.value[identity]?.face_missing
-// Siaran dari iPhone: kamera saja (iOS tidak bisa membagikan layar dari browser).
+// Siaran kamera saja (peran berizin "Boleh menutup layar" dari HP/iPhone): layar memang tidak ada.
 const cameraOnlyOf = (identity) => !!sessionByIdentity.value[identity]?.camera_only
 
 function statusOf(participant) {
@@ -982,7 +982,7 @@ onBeforeUnmount(() => {
                         Siaran Anda · {{ myStatusMeta?.label ?? 'Aktif' }}
                     </span>
                     <BaseButton
-                        v-if="canBroadcast && canStartWorkHere && !live.isBroadcasting"
+                        v-if="canBroadcast && live.canStartHere && !live.isBroadcasting"
                         :loading="live.connecting"
                         @click="confirmStartOpen = true"
                     >
@@ -1046,21 +1046,21 @@ onBeforeUnmount(() => {
 
             <!-- Layar & kamera wajib: browser HP tidak bisa membagikan layar,
                  jadi kerja (siaran) hanya bisa dimulai dari komputer. -->
-            <!-- iPhone: kamera saja. Safari menghentikan kamera saat aplikasi ditutup / layar dikunci. -->
+            <!-- Peran kamera saja di HP/iPhone: browser HP menghentikan kamera saat aplikasi ditutup / layar dikunci. -->
             <div
-                v-if="canBroadcast && cameraOnlyDevice"
+                v-if="canBroadcast && live.cameraOnly"
                 class="flex items-start gap-3 rounded-lg border border-accent-500/30 bg-accent-500/10 px-4 py-3 text-sm text-pretty text-base-200"
                 role="note"
             >
                 <Smartphone class="mt-0.5 size-4 shrink-0 text-accent-500" />
                 <span>
-                    Di iPhone, Live Kerja menyiarkan <strong>kamera saja</strong> (iPhone tidak bisa membagikan layar dari browser).
+                    Dari HP ini, Live Kerja menyiarkan <strong>kamera saja</strong> (peran Anda tidak wajib membagikan layar).
                     Biarkan aplikasi ini <strong>tetap terbuka</strong> dan layar menyala: kalau ditutup atau layar dikunci, siaran
                     terputus dan tercatat <strong>Disconnected</strong>.
                 </span>
             </div>
             <div
-                v-if="canBroadcast && !canStartWorkHere"
+                v-if="canBroadcast && !live.canStartHere"
                 class="flex items-start gap-3 rounded-lg border border-warning-500/30 bg-warning-500/10 px-4 py-3 text-sm text-pretty text-warning-400"
                 role="note"
             >
@@ -1583,8 +1583,8 @@ onBeforeUnmount(() => {
                             <span
                                 v-else-if="cameraOnlyOf(participant.identity)"
                                 class="pointer-events-none !absolute top-1.5 left-1.5 rounded-full bg-base-950/80 px-2 py-0.5 text-[11px] font-bold text-white shadow"
-                                title="Siaran dari iPhone: kamera saja, tanpa layar"
-                                >Kamera saja · iPhone</span
+                                title="Siaran kamera saja dari HP: layar tidak dibagikan"
+                                >Kamera saja</span
                             >
                         </div>
                     </TransitionGroup>
@@ -1632,8 +1632,8 @@ onBeforeUnmount(() => {
                             <span
                                 v-else-if="cameraOnlyOf(participant.identity)"
                                 class="pointer-events-none !absolute top-1.5 left-1.5 rounded-full bg-base-950/80 px-2 py-0.5 text-[11px] font-bold text-white shadow"
-                                title="Siaran dari iPhone: kamera saja, tanpa layar"
-                                >Kamera saja · iPhone</span
+                                title="Siaran kamera saja dari HP: layar tidak dibagikan"
+                                >Kamera saja</span
                             >
                         </div>
                     </TransitionGroup>
@@ -1772,8 +1772,8 @@ onBeforeUnmount(() => {
                                             <span
                                                 v-if="staff.started_at && cameraOnlyOf(staff.participant_identity)"
                                                 class="rounded-full bg-st-screen/12 px-1.5 py-0.5 text-[11px] font-semibold text-st-screen"
-                                                title="Siaran dari iPhone: kamera saja, tanpa layar"
-                                                >iPhone</span
+                                                title="Siaran kamera saja dari HP: layar tidak dibagikan"
+                                                >Kamera</span
                                             >
                                             <span
                                                 class="min-w-[4.75rem] rounded-full border px-2 py-0.5 text-center text-[11px] font-semibold"
@@ -1907,7 +1907,7 @@ onBeforeUnmount(() => {
 
         <ConfirmDialog
             v-model:open="confirmStartOpen"
-            :title="canShareScreen ? 'Mulai kerja & bagikan seluruh layar?' : 'Mulai kerja & nyalakan kamera?'"
+            :title="live.cameraOnly ? 'Mulai kerja & nyalakan kamera?' : 'Mulai kerja & bagikan seluruh layar?'"
             :description="
                 canShareScreen
                     ? 'Setelah menekan Mulai kerja, pilih tab Entire screen (Seluruh layar) lalu tekan Share. Layar, kamera, dan suara mikrofon Anda disiarkan ke atasan Anda (leader, admin, dan admin site) sampai Anda menekan Selesai kerja. Mikrofon bisa Anda bisukan kapan saja. Tidak direkam. Jam mulai, istirahat, dan selesai kerja tercatat di log kerja.'

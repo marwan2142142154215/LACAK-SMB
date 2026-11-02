@@ -1,5 +1,5 @@
 <script setup>
-import { Lock, Pencil, Plus, ShieldCheck, Trash2 } from '@lucide/vue'
+import { Camera, Lock, MonitorSmartphone, Pencil, Plus, ShieldCheck, Trash2 } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
@@ -38,6 +38,31 @@ const SCOPE_HINTS = {
 }
 
 // watch_all = boleh menonton siaran Live Kerja semua peran; kalau tidak, hanya watchable_roles.
+// Yang wajib dibagikan saat Live Kerja. Disimpan sebagai izin live.screen-optional ("Boleh menutup
+// layar"), jadi pilihan ini dan centang izin itu di daftar izin selalu sama.
+const SCREEN_OPTIONAL = 'live.screen-optional'
+const LIVE_MEDIA_OPTIONS = [
+    {
+        value: false,
+        label: 'Kamera + seluruh layar',
+        short: 'Kamera + layar',
+        hint: 'Mulai kerja dari komputer (Chrome atau Edge) atau APK Live Kerja Android. Layar ditutup = Screen off.',
+        icon: MonitorSmartphone,
+    },
+    {
+        value: true,
+        label: 'Kamera saja',
+        short: 'Kamera saja',
+        hint: 'Bisa dari HP & iPhone juga. Di komputer layar tetap ditawarkan, tapi boleh dilewati atau ditutup.',
+        icon: Camera,
+    },
+]
+const liveMediaLabel = (role) => (role.permissions.includes(SCREEN_OPTIONAL) ? 'Kamera saja' : 'Kamera + layar')
+const screenOptional = computed({
+    get: () => form.value.permissions.includes(SCREEN_OPTIONAL),
+    set: (value) => togglePermission(SCREEN_OPTIONAL, value),
+})
+
 const emptyForm = () => ({
     name: '',
     label: '',
@@ -241,6 +266,8 @@ onMounted(loadRoles)
                     </div>
                 </dl>
                 <p class="text-xs text-base-500">
+                    Siaran Live: <span class="text-base-200">{{ liveMediaLabel(role) }}</span>
+                    <span class="mx-1 text-base-700">·</span>
                     Tonton Live: <span class="text-base-200">{{ watchSummary(role) }}</span>
                 </p>
                 <div class="mt-auto flex items-center gap-2 pt-1">
@@ -341,6 +368,37 @@ onMounted(loadRoles)
                             </li>
                         </ul>
                     </div>
+                </fieldset>
+
+                <!-- Yang wajib dibagikan saat staf peran ini Live Kerja (izin live.screen-optional). -->
+                <fieldset class="space-y-2" :disabled="isLocked">
+                    <legend class="field-label">Saat Live Kerja, wajib membagikan</legend>
+                    <div class="grid gap-2 sm:grid-cols-2" role="radiogroup">
+                        <label
+                            v-for="option in LIVE_MEDIA_OPTIONS"
+                            :key="option.label"
+                            class="flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-500"
+                            :class="
+                                screenOptional === option.value
+                                    ? 'border-accent-500 bg-accent-500/8'
+                                    : 'border-base-800 bg-base-900/60 hover:border-base-700'
+                            "
+                        >
+                            <input v-model="screenOptional" type="radio" :value="option.value" class="sr-only" />
+                            <component
+                                :is="option.icon"
+                                class="mt-0.5 size-5 shrink-0"
+                                :class="screenOptional === option.value ? 'text-accent-500' : 'text-base-500'"
+                            />
+                            <span class="min-w-0">
+                                <span class="block text-sm font-semibold text-base-50">{{ option.label }}</span>
+                                <span class="mt-0.5 block text-xs text-pretty text-base-400">{{ option.hint }}</span>
+                            </span>
+                        </label>
+                    </div>
+                    <p class="text-xs text-base-500">
+                        Berlaku untuk staf yang memegang izin Siaran Live. Sama dengan izin "Boleh menutup layar" di daftar izin.
+                    </p>
                 </fieldset>
 
                 <!-- Hak tonton Live Kerja per peran: siaran peran mana saja yang boleh ditonton peran ini. -->

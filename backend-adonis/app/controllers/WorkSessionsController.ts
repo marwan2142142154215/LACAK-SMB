@@ -51,9 +51,6 @@ const OVERVIEW_CACHE_SECONDS = 5
 
 /** Perangkat yang bisa membagikan layar + kamera saat Mulai kerja. */
 const LIVE_START_DEVICES = ['computer', 'android_app']
-/** iPhone/iPad (Safari & PWA): kamera saja, karena iOS tidak mengizinkan berbagi layar dari browser. */
-const CAMERA_ONLY_DEVICE = 'ios_camera'
-const IOS_USER_AGENT = /iPhone|iPad|iPod/i
 
 const heartbeatValidator = vine.compile(
     vine.object({
@@ -210,31 +207,25 @@ export default class WorkSessionsController {
 
         const user = ctx.authUser!
 
-        // Layar & kamera wajib: dashboard di komputer, atau APK Live Kerja
-        // versi berbagi layar ('android_app'). Pengecualian: iPhone/iPad (kamera saja) --
-        // hanya dari browser iOS, dan sesinya ditandai camera_only supaya terlihat atasan.
+        // Yang wajib dibagikan diatur per peran lewat izin live.screen-optional ("Boleh menutup
+        // layar", menu Peran > Saat Live Kerja wajib membagikan):
+        // - tanpa izin: kamera + layar wajib -> hanya dari perangkat yang bisa membagikan seluruh
+        //   layar (dashboard di komputer, atau APK Live Kerja 'android_app');
+        // - dengan izin: kamera saja cukup -> juga dari perangkat tanpa berbagi layar (iPhone,
+        //   browser HP); sesi dari perangkat itu ditandai camera_only (penanda "Kamera saja").
         const device = ctx.request.input('device')
-        const cameraOnly =
-            device === CAMERA_ONLY_DEVICE &&
-            IOS_USER_AGENT.test(ctx.request.header('user-agent') ?? '')
-        if (device === CAMERA_ONLY_DEVICE && !cameraOnly) {
+        const screenOptional = can(access, 'live.screen-optional')
+        const screenCapable = LIVE_START_DEVICES.includes(device)
+        if (!screenCapable && !screenOptional) {
             return ctx.response
                 .status(422)
                 .send(
                     fail(
-                        'Siaran kamera saja hanya untuk iPhone/iPad. Di komputer, bagikan layar & kamera.'
+                        'Peran Anda wajib membagikan layar & kamera: Mulai kerja dari komputer (Chrome atau Edge) atau APK Live Kerja Android.'
                     )
                 )
         }
-        if (!cameraOnly && !LIVE_START_DEVICES.includes(device)) {
-            return ctx.response
-                .status(422)
-                .send(
-                    fail(
-                        'Live Kerja hanya bisa dimulai dari komputer (Chrome atau Edge): layar & kamera wajib dibagikan.'
-                    )
-                )
-        }
+        const cameraOnly = !screenCapable
 
         const liveRoles = await liveRolesOf([user.id])
         const liveRole = liveRoles.get(user.id) ?? UNKNOWN_LIVE_ROLE
@@ -251,7 +242,6 @@ export default class WorkSessionsController {
         }
         // Izin "Boleh menutup layar" dibaca dari izin user saat ini (bukan dari client) dan disegarkan tiap
         // Mulai kerja / lanjut siaran, jadi perubahan peran berlaku di siaran berikutnya.
-        const screenOptional = can(access, 'live.screen-optional')
         if ((session.screen_optional === true) !== screenOptional) {
             await db
                 .from('work_sessions')

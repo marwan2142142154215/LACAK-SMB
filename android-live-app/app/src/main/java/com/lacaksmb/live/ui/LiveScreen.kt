@@ -108,7 +108,17 @@ import kotlinx.coroutines.launch
 fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: NavHostController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val user = remember { sessionStore.user() }
+    var user by remember { mutableStateOf(sessionStore.user()) }
+    // Aturan peran bisa diubah admin kapan saja: muat profil terbaru setiap layar Live dibuka.
+    LaunchedEffect(Unit) {
+        apiClient.me()?.let { fresh ->
+            sessionStore.saveUser(fresh)
+            user = fresh
+        }
+    }
+    // Peran "kamera saja" (izin live.screen-optional): layar tetap ditawarkan, tapi boleh ditolak/ditutup
+    // tanpa peringatan Screen off -- sama dengan dashboard web.
+    val screenOptional = user?.screenOptional == true
     val status by LiveBroadcastState.status.collectAsStateWithLifecycle()
     val room by LiveBroadcastState.room.collectAsStateWithLifecycle()
     val liveSince by LiveBroadcastState.liveSince.collectAsStateWithLifecycle()
@@ -136,7 +146,8 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
             active -> Unit
             else -> LiveBroadcastService.start(app, data)
         }
-        if (data == null) {
+        // Peran kamera saja boleh melewati berbagi layar: bukan kesalahan.
+        if (data == null && !screenOptional) {
             permissionError = context.getString(R.string.live_screen_share_denied)
         }
     }
@@ -222,7 +233,7 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            val badge = statusBadge(status, onBreak, screenSharing, cameraActive)
+            val badge = statusBadge(status, onBreak, screenSharing || screenOptional, cameraActive)
             SectionCard(contentPadding = PaddingValues(16.dp)) {
                 // Kepala: siapa yang menyiarkan + status siaran.
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -248,7 +259,7 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            stringResource(R.string.live_subtitle),
+                            stringResource(if (screenOptional) R.string.live_subtitle_camera else R.string.live_subtitle),
                             style = MaterialTheme.typography.bodySmall,
                             color = Base400,
                             maxLines = 1,
@@ -342,7 +353,7 @@ fun LiveScreen(apiClient: ApiClient, sessionStore: SessionStore, navController: 
                         body = stringResource(R.string.live_break_banner_body),
                     )
                 }
-                if (live && !screenSharing) {
+                if (live && !screenSharing && !screenOptional) {
                     Notice(
                         icon = Icons.AutoMirrored.Filled.StopScreenShare,
                         color = Warning500,

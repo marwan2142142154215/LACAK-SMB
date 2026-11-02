@@ -46,6 +46,11 @@ class SessionStore(context: Context) {
         return UserProfile.fromJson(JSONObject(raw))
     }
 
+    /** Profil terbaru dari server (izin & aturan Live bisa diubah admin setelah login). */
+    fun saveUser(user: UserProfile) {
+        prefs.edit().putString(KEY_USER, user.toJson().toString()).apply()
+    }
+
     fun isLoggedIn(): Boolean = !accessToken().isNullOrBlank()
 
     companion object {
@@ -64,6 +69,9 @@ data class UserProfile(
     val permissions: List<String>,
 ) {
     fun can(permission: String): Boolean = permissions.contains(permission)
+
+    /** Izin live.screen-optional (menu Peran > Kamera saja): layar ditawarkan, tapi tidak wajib. */
+    val screenOptional: Boolean get() = can("live.screen-optional")
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
