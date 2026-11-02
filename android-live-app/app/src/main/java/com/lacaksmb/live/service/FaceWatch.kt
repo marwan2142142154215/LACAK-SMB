@@ -31,6 +31,9 @@ class FaceWatch(
 
     @Volatile private var lastCheck = 0L
     @Volatile private var lastSeen = System.currentTimeMillis()
+    // Cek terakhir yang BERHASIL. Gagal terus (mis. model Play services belum terunduh) selama
+    // UNKNOWN_AFTER_MS = status tidak diketahui -> "hilang" dicabut, tidak tertahan selamanya.
+    @Volatile private var lastChecked = System.currentTimeMillis()
     @Volatile var missing = false
         private set
 
@@ -43,21 +46,25 @@ class FaceWatch(
             frame.toNv21InputImage()
         } catch (_: Exception) {
             busy.set(false)
+            checkFailed()
             return
         }
         detector.process(image)
             .addOnSuccessListener { faces -> update(faces.isNotEmpty()) }
+            .addOnFailureListener { checkFailed() }
             .addOnCompleteListener { busy.set(false) }
     }
 
     /** Kamera mati / macet: urusan status Camera off, bukan wajah. */
     fun cameraUnavailable() {
         lastSeen = System.currentTimeMillis()
+        lastChecked = lastSeen
         setMissing(false)
     }
 
     fun reset() {
         lastSeen = System.currentTimeMillis()
+        lastChecked = lastSeen
         lastCheck = 0
         missing = false
     }
@@ -66,11 +73,21 @@ class FaceWatch(
 
     private fun update(faceFound: Boolean) {
         val now = System.currentTimeMillis()
+        lastChecked = now
         if (faceFound && personVisible() != false) {
             lastSeen = now
             setMissing(false)
         } else if (now - lastSeen >= MISSING_AFTER_MS) {
             setMissing(true)
+        }
+    }
+
+    /** Cek gagal: error tidak boleh membuat staf tercatat hilang (sama dengan web faceState.js). */
+    private fun checkFailed() {
+        val now = System.currentTimeMillis()
+        if (now - lastChecked >= UNKNOWN_AFTER_MS) {
+            lastSeen = now
+            setMissing(false)
         }
     }
 
@@ -83,5 +100,6 @@ class FaceWatch(
     companion object {
         private const val CHECK_INTERVAL_MS = 1_000L
         const val MISSING_AFTER_MS = 30_000L
+        private const val UNKNOWN_AFTER_MS = 30_000L
     }
 }

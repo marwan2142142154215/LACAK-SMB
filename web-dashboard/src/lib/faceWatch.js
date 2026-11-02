@@ -1,6 +1,8 @@
 import wasmBinaryPath from '../../node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_internal.wasm?url'
 import wasmLoaderPath from '../../node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_internal.js?url'
 
+import { createFaceState } from './faceState'
+
 /**
  * Cek wajah di kamera staf yang sedang Live Kerja. Deteksi berjalan di
  * browser staf sendiri (MediaPipe Face Detector, model di /models) -- tidak
@@ -15,6 +17,11 @@ import wasmLoaderPath from '../../node_modules/@mediapipe/tasks-vision/wasm/visi
  */
 const CHECK_INTERVAL_MS = 1000
 export const FACE_MISSING_AFTER_MS = 30_000
+// Cek gagal terus selama ini (frame macet, model error) = status wajah tidak diketahui, "hilang" dicabut.
+const UNKNOWN_AFTER_MS = 30_000
+// grabFrame() Chrome kadang tidak pernah selesai (kamera dinyalakan ulang / track diganti). Tanpa
+// batas waktu, cek berikutnya tertahan "sibuk" selamanya dan status wajah membeku.
+const GRAB_TIMEOUT_MS = 3000
 const MODEL_PATH = '/models/blaze_face_short_range.tflite'
 
 let detectorPromise = null
@@ -46,8 +53,8 @@ export function createFaceWatch(onChange) {
     let getPersonVisible = () => null
     let capture = null
     let busy = false
-    let lastSeen = 0
     let missing = false
+    const state = createFaceState({ missingAfterMs: FACE_MISSING_AFTER_MS, unknownAfterMs: UNKNOWN_AFTER_MS })
 
     function setMissing(value) {
         if (missing === value) return
@@ -55,32 +62,37 @@ export function createFaceWatch(onChange) {
         onChange(value)
     }
 
+    function grabFrame(imageCapture) {
+        let timer = null
+        const timeout = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('grabFrame macet')), GRAB_TIMEOUT_MS)
+        })
+        return Promise.race([imageCapture.grabFrame(), timeout]).finally(() => clearTimeout(timer))
+    }
+
     async function check() {
         if (busy) return
         const track = getTrack()
         // Kamera mati / dibisukan: urusan status Camera off, bukan wajah.
         if (!track || track.readyState !== 'live' || track.muted || !track.enabled) {
-            lastSeen = Date.now()
-            setMissing(false)
+            setMissing(state.cameraOff())
             return
         }
         busy = true
         try {
             const detector = await loadDetector()
             if (!capture || capture.track !== track) capture = new window.ImageCapture(track)
-            const frame = await capture.grabFrame()
+            const frame = await grabFrame(capture)
             const faces = detector.detect(frame).detections.length
             frame.close()
             // Wajah ada di kamera asli tapi background menutupi orangnya
             // (penonton hanya melihat background) = tetap dianggap hilang.
-            if (faces > 0 && getPersonVisible() !== false) {
-                lastSeen = Date.now()
-                setMissing(false)
-            } else if (Date.now() - lastSeen >= FACE_MISSING_AFTER_MS) {
-                setMissing(true)
-            }
+            setMissing(faces > 0 && getPersonVisible() !== false ? state.seen() : state.notSeen())
         } catch {
-            // Frame belum siap / model gagal dimuat: lewati, jangan tandai hilang.
+            // Frame belum siap / macet / model gagal dimuat: jangan tandai hilang; ImageCapture dibuat
+            // ulang di cek berikutnya. Gagal terus = status tidak diketahui (lihat faceState.js).
+            capture = null
+            setMissing(state.failed())
         } finally {
             busy = false
         }
@@ -97,7 +109,7 @@ export function createFaceWatch(onChange) {
             getTrack = cameraTrack
             getPersonVisible = personVisible
             if (timer) return
-            lastSeen = Date.now()
+            state.reset()
             timer = setInterval(check, CHECK_INTERVAL_MS)
         },
         stop() {
@@ -106,7 +118,8 @@ export function createFaceWatch(onChange) {
             getTrack = () => null
             getPersonVisible = () => null
             capture = null
-            lastSeen = 0
+            busy = false
+            state.reset()
             missing = false
         },
         get missing() {
