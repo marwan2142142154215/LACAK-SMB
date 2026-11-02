@@ -125,6 +125,24 @@ test.group('Live Kerja: statusOf (padanan WorkPresence::statusOf)', () => {
             'camera_off'
         )
     })
+
+    test('izin "Boleh menutup layar": layar tidak wajib, kamera tetap wajib', ({ assert }) => {
+        const optional = { screen_optional: true, screen_active: false }
+        assert.equal(statusOf(session(optional), NOW), 'working')
+        assert.equal(statusOf(session({ ...optional, idle: true }), NOW), 'idle')
+        // Kamera dan layar sama-sama mati: tidak ada yang tersiar.
+        assert.equal(statusOf(session({ ...optional, camera_active: false }), NOW), 'alert')
+        // Layar masih dibagikan tapi kamera mati: tetap camera_off seperti staf lain.
+        assert.equal(
+            statusOf(session({ screen_optional: true, camera_active: false }), NOW),
+            'camera_off'
+        )
+        // Tanpa izin, layar mati tetap Screen off.
+        assert.equal(
+            statusOf(session({ screen_optional: false, screen_active: false }), NOW),
+            'screen_off'
+        )
+    })
 })
 
 test.group('Live Kerja: ringkasan jam kerja (padanan WorkPresence::summarize)', () => {

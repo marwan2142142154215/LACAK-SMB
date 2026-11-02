@@ -97,6 +97,12 @@ const CATALOG: Record<string, Entry> = {
         description:
             'Menonton siaran user yang tidak terikat site (mis. leader). Peran yang boleh ditonton tetap mengikuti pengaturan "Boleh menonton siaran dari".',
     },
+    'live.screen-optional': {
+        group: 'Live Kerja',
+        label: 'Boleh menutup layar',
+        description:
+            'Layar tidak wajib dibagikan saat Live Kerja: boleh dihentikan tanpa dikunci, dan status tetap dihitung bekerja selama kamera menyala.',
+    },
     'attendance.manage': {
         group: 'Kerja & pengawasan',
         label: 'Kelola absensi',

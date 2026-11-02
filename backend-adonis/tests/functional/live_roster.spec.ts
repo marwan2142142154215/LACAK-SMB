@@ -222,6 +222,49 @@ test.group('Live Kerja: Ruang pusat & semua peran', (group) => {
         assert.isFalse(resumed.body().data.session.camera_only)
     })
 
+    test('izin live.screen-optional: sesi ditandai screen_optional dan layar tertutup tetap Working', async ({
+        client,
+        assert,
+    }) => {
+        const leader = await userWithRole('leader')
+        const start = () =>
+            client
+                .post('/api/v1/live/sessions/start')
+                .json({ device: 'computer' })
+                .bearerToken(leader.bearer)
+        const beat = () =>
+            client
+                .post('/api/v1/live/sessions/heartbeat')
+                .json({ camera_active: true, screen_active: false })
+                .bearerToken(leader.bearer)
+
+        // Tanpa izin: layar tertutup = Screen off.
+        const before = await start()
+        before.assertStatus(201)
+        assert.isFalse(before.body().data.session.screen_optional)
+        const closedBefore = await beat()
+        assert.equal(closedBefore.body().data.status, 'screen_off')
+
+        // Peran leader diberi izin lewat menu Peran: berlaku saat siaran dilanjutkan/dimulai lagi.
+        const permission = await db
+            .from('permissions')
+            .where({ name: 'live.screen-optional', guard_name: 'web' })
+            .firstOrFail()
+        const role = await db
+            .from('roles')
+            .where({ name: 'leader', guard_name: 'web' })
+            .firstOrFail()
+        await db
+            .table('role_has_permissions')
+            .insert({ role_id: role.id, permission_id: permission.id })
+
+        const after = await start()
+        after.assertStatus(201)
+        assert.isTrue(after.body().data.session.screen_optional)
+        const closedAfter = await beat()
+        assert.equal(closedAfter.body().data.status, 'working')
+    })
+
     test('peran buatan sendiri bisa Live lewat izin live.broadcast, di room site + perannya', async ({
         client,
         assert,

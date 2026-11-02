@@ -40,6 +40,7 @@ const SESSION_COLUMNS = [
     'work_sessions.idle',
     'work_sessions.face_missing',
     'work_sessions.camera_only',
+    'work_sessions.screen_optional',
     'users.name as user_name',
 ]
 

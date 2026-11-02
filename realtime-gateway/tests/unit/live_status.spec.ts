@@ -61,6 +61,20 @@ test.group('Live Kerja: statusOf (padanan WorkPresence::statusOf)', () => {
         assert.equal(statusOf(session({ ...iphone, camera_active: false }), NOW), 'alert')
     })
 
+    test('izin "Boleh menutup layar": layar tidak wajib, kamera tetap wajib', ({ assert }) => {
+        const optional = { screen_optional: true, screen_active: false }
+        assert.equal(statusOf(session(optional), NOW), 'working')
+        assert.equal(statusOf(session({ ...optional, camera_active: false }), NOW), 'alert')
+        assert.equal(
+            statusOf(session({ screen_optional: true, camera_active: false }), NOW),
+            'camera_off'
+        )
+        assert.equal(
+            statusOf(session({ screen_optional: false, screen_active: false }), NOW),
+            'screen_off'
+        )
+    })
+
     test('kamera & layar mati di menit pertama kerja belum alert', ({ assert }) => {
         const justStarted = { camera_active: false, screen_active: false }
 

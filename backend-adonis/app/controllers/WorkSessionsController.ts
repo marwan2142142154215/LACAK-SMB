@@ -247,6 +247,16 @@ export default class WorkSessionsController {
                 .update({ camera_only: cameraOnly })
             session.camera_only = cameraOnly
         }
+        // Izin "Boleh menutup layar" dibaca dari izin user saat ini (bukan dari client) dan disegarkan tiap
+        // Mulai kerja / lanjut siaran, jadi perubahan peran berlaku di siaran berikutnya.
+        const screenOptional = can(access, 'live.screen-optional')
+        if ((session.screen_optional === true) !== screenOptional) {
+            await db
+                .from('work_sessions')
+                .where('id', session.id)
+                .update({ screen_optional: screenOptional })
+            session.screen_optional = screenOptional
+        }
 
         // Sesi lama dilanjutkan memakai site & peran yang tercatat di sesi.
         const room = roomOfSession(session)

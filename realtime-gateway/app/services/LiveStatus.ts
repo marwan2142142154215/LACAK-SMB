@@ -57,6 +57,8 @@ export type WorkSessionRow = {
     face_missing: boolean
     // Sesi iPhone (Safari tidak bisa membagikan layar): layar tidak wajib. Tidak ada = false.
     camera_only?: boolean
+    // Peran pemegang izin live.screen-optional: layar boleh ditutup. Tidak ada = false.
+    screen_optional?: boolean
 }
 
 export function statusOf(session: WorkSessionRow | null, now: Date = new Date()): WorkStatus {
@@ -74,7 +76,9 @@ export function statusOf(session: WorkSessionRow | null, now: Date = new Date())
     }
     if (session.on_break) return 'break'
     // Sesi kamera saja (iPhone): layar dianggap terpenuhi, yang wajib hanya kamera.
-    const screenOk = session.screen_active || session.camera_only === true
+    // Pemegang izin "Boleh menutup layar" (screen_optional) diperlakukan sama: layar bukan syarat bekerja.
+    const screenOk =
+        session.screen_active || session.camera_only === true || session.screen_optional === true
     // Kamera saja + kamera mati = tidak ada yang tersiar sama sekali.
     if (!session.camera_active && (session.camera_only === true || !session.screen_active)) {
         // Detik-detik pertama sesi kamera memang belum menyala.

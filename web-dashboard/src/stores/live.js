@@ -827,11 +827,16 @@ export const useLiveStore = defineStore('live', () => {
         if (!resuming && typeof Notification !== 'undefined' && Notification.permission === 'default') {
             Notification.requestPermission().catch(() => {})
         }
+        // Peran berizin live.screen-optional ("Boleh menutup layar"): dialog layar tetap ditawarkan,
+        // tapi dibatalkan = lanjut siaran tanpa layar (tidak ada kunci "Layar wajib dibagikan").
+        const screenOptional = auth.hasPermission('live.screen-optional')
         try {
             if (!resuming && !cameraOnlyDevice) screenTrack = await captureEntireScreen()
         } catch (err) {
-            connecting.value = false
-            throw err
+            if (!screenOptional || err.name !== 'ScreenShareFailed') {
+                connecting.value = false
+                throw err
+            }
         }
         const idlePermission = resuming ? idlePermissionAlreadyGranted() : requestIdlePermission()
         try {
@@ -864,7 +869,7 @@ export const useLiveStore = defineStore('live', () => {
             // reload = ikut pilihan bisu terakhir staf.
             if (!resuming) setMicMutedPref(true)
             await enableMicrophone()
-            screenRequired.value = !cameraOnlyDevice
+            screenRequired.value = !cameraOnlyDevice && !session.screen_optional
             mode.value = 'broadcasting'
             broadcastStartedAt.value = session.started_at ?? new Date().toISOString()
             onBreak.value = !!session.on_break
