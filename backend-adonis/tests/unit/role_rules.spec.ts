@@ -1,8 +1,12 @@
 import { test } from '@japa/runner'
 import {
+    canSeeLevel,
+    effectiveLevel,
+    levelExceedsActor,
     parseRoleInput,
     permissionsActorLacks,
     scopeExceedsActor,
+    watchableRoleNames,
     widestScope,
 } from '#services/RoleRules'
 import { normalizeSiteName } from '#services/SiteName'
@@ -82,5 +86,70 @@ test.group('Nama site: normalisasi', () => {
     test('spasi tepi dibuang dan spasi berderet diringkas', ({ assert }) => {
         assert.equal(normalizeSiteName('  Situs   1 '), 'Situs 1')
         assert.equal(normalizeSiteName('SITUS1'), 'SITUS1')
+    })
+})
+
+test.group('Peran: tingkatan (level)', () => {
+    const roles = [
+        { name: 'super_admin', level: 0 },
+        { name: 'admin', level: 10 },
+        { name: 'leader', level: 50 },
+        { name: 'staff_viewer', level: 100 },
+        { name: 'staf_lain', level: 100 },
+    ]
+
+    test('level 0 melihat semua, selain itu hanya level yang lebih besar', ({ assert }) => {
+        assert.isTrue(canSeeLevel(0, 0))
+        assert.isTrue(canSeeLevel(0, 100))
+        assert.isTrue(canSeeLevel(50, 100))
+        assert.isFalse(canSeeLevel(50, 50))
+        assert.isFalse(canSeeLevel(50, 10))
+        assert.isFalse(canSeeLevel(100, 100))
+        assert.isFalse(canSeeLevel(100, 0))
+    })
+
+    test('level user dengan banyak peran = yang tertinggi; tanpa peran = paling bawah', ({
+        assert,
+    }) => {
+        assert.equal(effectiveLevel([50, 10, 100]), 10)
+        assert.equal(effectiveLevel([]), 100)
+    })
+
+    test('peran yang boleh ditonton dihitung dari level, lalu dipersempit pengaturan peran', ({
+        assert,
+    }) => {
+        assert.isNull(watchableRoleNames(0, roles, null))
+        assert.deepEqual(watchableRoleNames(0, roles, ['leader']), ['leader'])
+        assert.deepEqual(watchableRoleNames(10, roles, null), [
+            'leader',
+            'staff_viewer',
+            'staf_lain',
+        ])
+        assert.deepEqual(watchableRoleNames(50, roles, null), ['staff_viewer', 'staf_lain'])
+        assert.deepEqual(watchableRoleNames(50, roles, ['staff_viewer', 'admin']), ['staff_viewer'])
+        assert.deepEqual(watchableRoleNames(100, roles, null), [])
+    })
+
+    test('level diterima 0-100 bilangan bulat, selain itu ditolak; kosong = tidak diubah', ({
+        assert,
+    }) => {
+        for (const level of [0, 50, 100, '30']) {
+            const result = parseRoleInput({ ...valid, level }, false)
+            assert.isTrue(result.ok, String(level))
+        }
+        for (const level of [-1, 101, 1.5, 'abc', true]) {
+            assert.isFalse(parseRoleInput({ ...valid, level }, false).ok, String(level))
+        }
+        const unchanged = parseRoleInput(valid, false)
+        assert.isTrue(unchanged.ok)
+        if (unchanged.ok) assert.isUndefined(unchanged.data.level)
+    })
+
+    test('pelaku tidak bisa memberi level lebih tinggi dari levelnya sendiri', ({ assert }) => {
+        assert.isTrue(levelExceedsActor(50, 100, 20))
+        assert.isFalse(levelExceedsActor(50, 100, 50))
+        assert.isFalse(levelExceedsActor(50, 100, 80))
+        assert.isFalse(levelExceedsActor(50, 20, 20))
+        assert.isFalse(levelExceedsActor(0, 100, 0))
     })
 })

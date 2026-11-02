@@ -1,6 +1,12 @@
 import db from '@adonisjs/lucid/services/db'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
-import { BUILT_IN_SCOPES, widestScope, type SiteScope } from '#services/RoleRules'
+import {
+    BUILT_IN_SCOPES,
+    effectiveLevel,
+    watchableRoleNames,
+    widestScope,
+    type SiteScope,
+} from '#services/RoleRules'
 
 /**
  * Peran & izin dari tabel spatie/laravel-permission milik backend-api
@@ -60,25 +66,63 @@ export async function siteScopeOf(userId: number): Promise<SiteScope> {
     )
 }
 
-/**
- * Peran penyiar yang boleh ditonton user ini (gabungan roles.watchable_roles semua perannya).
- * null = semua peran: salah satu perannya tidak membatasi (kolom NULL, bawaan).
- */
-export async function watchRolesOf(userId: number): Promise<string[] | null> {
+/** Level user = yang paling tinggi (angka terkecil) dari semua perannya; tanpa peran = paling bawah. */
+export async function levelOf(userId: number): Promise<number> {
     const rows = await db
         .from('roles')
         .join('model_has_roles', 'model_has_roles.role_id', 'roles.id')
         .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
         .where('model_has_roles.model_id', userId)
-        .select('roles.watchable_roles')
+        .select('roles.level')
 
-    if (rows.some((row) => row.watchable_roles === null)) return null
-    return [...new Set(rows.flatMap((row) => parseRoleList(row.watchable_roles)))]
+    return effectiveLevel(rows.map((row) => Number(row.level)))
 }
 
 /**
- * Peran tempat siaran tiap user dicatat: peran pertamanya (urutan id peran).
- * User tanpa peran tidak masuk peta.
+ * Peran penyiar yang boleh ditonton user ini: peran yang levelnya di bawah levelnya (hanya level 0
+ * melihat semua), dipersempit oleh roles.watchable_roles. null = semua peran: level 0 yang tidak
+ * dipersempit perannya mana pun (kolom watchable_roles NULL, bawaan).
+ */
+export async function watchRolesOf(userId: number): Promise<string[] | null> {
+    const [rows, level, roles] = await Promise.all([
+        db
+            .from('roles')
+            .join('model_has_roles', 'model_has_roles.role_id', 'roles.id')
+            .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
+            .where('model_has_roles.model_id', userId)
+            .select('roles.watchable_roles'),
+        levelOf(userId),
+        db.from('roles').where('guard_name', 'web').select('name', 'level'),
+    ])
+
+    const narrowedTo = rows.some((row) => row.watchable_roles === null)
+        ? null
+        : [...new Set(rows.flatMap((row) => parseRoleList(row.watchable_roles)))]
+
+    return watchableRoleNames(
+        level,
+        roles.map((role) => ({ name: role.name as string, level: Number(role.level) })),
+        narrowedTo
+    )
+}
+
+/**
+ * User yang boleh dilihat penonton ber-level ini (selain dirinya sendiri): yang level tertingginya
+ * lebih besar dari levelnya. Subquery id user untuk whereIn; level 0 = tanpa batas, jadi tidak ada.
+ */
+export function visibleUserIdsQuery(viewerLevel: number) {
+    return db
+        .from('model_has_roles')
+        .join('roles', 'roles.id', 'model_has_roles.role_id')
+        .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
+        .groupBy('model_has_roles.model_id')
+        .havingRaw('MIN(roles.level) > ?', [viewerLevel])
+        .select('model_has_roles.model_id')
+}
+
+/**
+ * Peran tempat siaran tiap user dicatat: peran dengan level tertinggi (seri: urutan id peran),
+ * supaya level peran siarannya sama dengan level user. User tanpa peran tidak masuk peta.
  */
 export async function liveRolesOf(userIds: number[]): Promise<Map<number, string>> {
     if (!userIds.length) return new Map()
@@ -87,6 +131,7 @@ export async function liveRolesOf(userIds: number[]): Promise<Map<number, string
         .join('roles', 'roles.id', 'model_has_roles.role_id')
         .where('model_has_roles.model_type', LARAVEL_USER_MORPH)
         .whereIn('model_has_roles.model_id', userIds)
+        .orderBy('roles.level')
         .orderBy('roles.id')
         .select('model_has_roles.model_id', 'roles.name')
 

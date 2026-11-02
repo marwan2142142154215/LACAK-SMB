@@ -1,5 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
+import type { DatabaseQueryBuilderContract } from '@adonisjs/lucid/types/querybuilder'
 import redis from '@adonisjs/redis/services/main'
 import vine from '@vinejs/vine'
 import {
@@ -7,6 +8,7 @@ import {
     can,
     canWatchCentral,
     canWatchRole,
+    levelOfAccess,
     seesOnlySelf,
     type Access,
 } from '#services/Access'
@@ -23,8 +25,8 @@ import {
     viewerToken,
     type LiveRoom,
 } from '#services/Livekit'
-import { liveRolesOf } from '#services/Permissions'
-import { ROLE_NAME_PATTERN } from '#services/RoleRules'
+import { liveRolesOf, visibleUserIdsQuery } from '#services/Permissions'
+import { LEVEL_ROOT, ROLE_NAME_PATTERN } from '#services/RoleRules'
 import {
     authorizedOrganizationId,
     hasCrossOrganizationAccess,
@@ -384,8 +386,9 @@ export default class WorkSessionsController {
             return ctx.response.status(422).send(fail('Rentang log maksimal 31 hari'))
         }
 
-        // Staf biasa hanya melihat log kerjanya sendiri.
+        // Staf biasa hanya melihat log kerjanya sendiri; pengawas melihat dirinya + user di bawah levelnya.
         const ownOnly = seesOnlySelf(access) ? access.userId : null
+        const byLevel = visibleByLevel(access, ownOnly === null)
         const eventColumns = [
             'work_session_events.id',
             'work_session_events.organization_id',
@@ -403,6 +406,7 @@ export default class WorkSessionsController {
                   .if(ownOnly !== null, (query) =>
                       query.where('work_session_events.user_id', ownOnly!)
                   )
+                  .if(byLevel !== null, (query) => byLevel!(query, 'work_session_events.user_id'))
                   .whereBetween('work_session_events.occurred_at', [from, to])
                   .orderBy('work_session_events.occurred_at')
                   .orderBy('work_session_events.id')
@@ -420,6 +424,7 @@ export default class WorkSessionsController {
                           .from('work_session_events')
                           .whereIn('organization_id', siteIds)
                           .if(ownOnly !== null, (query) => query.where('user_id', ownOnly!))
+                          .if(byLevel !== null, (query) => byLevel!(query, 'user_id'))
                           .where('occurred_at', '<', from)
                           .groupBy('user_id')
                           .max('id')
@@ -434,6 +439,7 @@ export default class WorkSessionsController {
                   .from('work_sessions')
                   .whereIn('organization_id', siteIds)
                   .if(ownOnly !== null, (query) => query.where('user_id', ownOnly!))
+                  .if(byLevel !== null, (query) => byLevel!(query, 'user_id'))
                   .whereNotNull('end_note')
                   .whereBetween('ended_at', [from, to])
                   .orderBy('ended_at')
@@ -588,14 +594,15 @@ function connectionDetails(room: LiveRoom, token: string) {
 
 /** Hak tonton per peran: buang siaran & status penyiar dari peran yang tidak boleh ditonton. */
 function byWatchRoles<
-    T extends { live_role?: string | null },
-    R extends { live_role?: string | null },
+    T extends { user_id: number; live_role?: string | null },
+    R extends { user_id: number; live_role?: string | null },
 >(access: Access, live: { items: T[]; roster: R[] }): { items: T[]; roster: R[] } {
-    const allowed = (role: string | null | undefined) =>
-        canWatchRole(access, role ?? UNKNOWN_LIVE_ROLE)
+    // Diri sendiri selalu terlihat; selain itu hanya peran yang levelnya di bawah (dan boleh ditonton).
+    const allowed = (item: { user_id: number; live_role?: string | null }) =>
+        item.user_id === access.userId || canWatchRole(access, item.live_role ?? UNKNOWN_LIVE_ROLE)
     return {
-        items: live.items.filter((item) => allowed(item.live_role)),
-        roster: live.roster.filter((member) => allowed(member.live_role)),
+        items: live.items.filter(allowed),
+        roster: live.roster.filter(allowed),
     }
 }
 
@@ -628,6 +635,19 @@ async function roleOptions(): Promise<Array<{ name: string; label: string }>> {
         .orderBy('id')
         .select('name', 'label')
     return rows.map((row) => ({ name: row.name, label: row.label ?? row.name }))
+}
+
+/**
+ * Batas level untuk query log: hanya dirinya + user yang levelnya di bawahnya. null = tanpa batas
+ * (level 0, atau staf biasa yang sudah dibatasi ke dirinya sendiri).
+ */
+function visibleByLevel(access: Access, applies: boolean) {
+    const level = levelOfAccess(access)
+    if (!applies || level === LEVEL_ROOT) return null
+    return (query: DatabaseQueryBuilderContract, column: string) =>
+        query.where((group) =>
+            group.where(column, access.userId).orWhereIn(column, visibleUserIdsQuery(level))
+        )
 }
 
 /** Staf biasa: daftar siaran & status hanya berisi dirinya sendiri. */

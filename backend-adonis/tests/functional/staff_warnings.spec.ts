@@ -133,4 +133,26 @@ test.group('Peringatan staf', (group) => {
         const staffHistory = await client.get('/api/v1/staff-warnings').bearerToken(staff.bearer)
         staffHistory.assertStatus(403)
     })
+
+    test('hanya bisa memberi peringatan ke user di bawah levelnya', async ({ client }) => {
+        const mine = await site('Site Peringatan Level')
+        const leader = await person('leader', null, [mine])
+        const peer = await person('leader', mine)
+        const above = await person('admin', mine)
+        const staff = await person('staff_viewer', mine)
+
+        for (const target of [peer, above]) {
+            const denied = await client
+                .post('/api/v1/staff-warnings')
+                .json({ user_id: target.id, level: 'teguran', message: 'Sejajar atau di atas' })
+                .bearerToken(leader.bearer)
+            denied.assertStatus(403)
+        }
+
+        const allowed = await client
+            .post('/api/v1/staff-warnings')
+            .json({ user_id: staff.id, level: 'teguran', message: 'Di bawah level' })
+            .bearerToken(leader.bearer)
+        allowed.assertStatus(201)
+    })
 })

@@ -1,7 +1,13 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
-import { permissionNamesOf, roleNamesOf, siteScopeOf, watchRolesOf } from '#services/Permissions'
-import { BUILT_IN_SCOPES, widestScope, type SiteScope } from '#services/RoleRules'
+import {
+    levelOf,
+    permissionNamesOf,
+    roleNamesOf,
+    siteScopeOf,
+    watchRolesOf,
+} from '#services/Permissions'
+import { BUILT_IN_SCOPES, LEVEL_LOWEST, widestScope, type SiteScope } from '#services/RoleRules'
 
 /**
  * Peran, izin, dan akses site user yang sedang login -- dimuat sekali per
@@ -16,9 +22,17 @@ export type Access = {
     grantedOrganizationIds: number[]
     /** Cakupan site terluas dari semua perannya; kosong = turunkan dari nama peran bawaan. */
     siteScope?: SiteScope
-    /** Peran penyiar yang boleh ditonton di Live Kerja; null/undefined = semua, [] = tidak ada. */
+    /**
+     * Peran penyiar yang boleh ditonton di Live Kerja (sudah memperhitungkan level); null/undefined
+     * = semua, [] = tidak ada.
+     */
     watchRoles?: string[] | null
+    /** Level tertinggi dari semua perannya (0 = root ... 100); kosong = paling bawah. */
+    level?: number
 }
+
+/** Level efektif: kosong = paling bawah (hanya melihat dirinya sendiri). */
+export const levelOfAccess = (access: Access): number => access.level ?? LEVEL_LOWEST
 
 /** Cakupan site efektif: dari database kalau ada, kalau tidak dari nama peran bawaan. */
 export function siteScopeOfAccess(access: Access): SiteScope {
@@ -40,12 +54,13 @@ export function accessOf(ctx: HttpContext): Promise<Access> {
 
 async function load(ctx: HttpContext): Promise<Access> {
     const user = ctx.authUser!
-    const [roles, permissions, grants, siteScope, watchRoles] = await Promise.all([
+    const [roles, permissions, grants, siteScope, watchRoles, level] = await Promise.all([
         roleNamesOf(user.id),
         permissionNamesOf(user.id),
         db.from('user_site_access').where('user_id', user.id).select('organization_id'),
         siteScopeOf(user.id),
         watchRolesOf(user.id),
+        levelOf(user.id),
     ])
 
     return {
@@ -56,6 +71,7 @@ async function load(ctx: HttpContext): Promise<Access> {
         grantedOrganizationIds: grants.map((row) => Number(row.organization_id)),
         siteScope,
         watchRoles,
+        level,
     }
 }
 

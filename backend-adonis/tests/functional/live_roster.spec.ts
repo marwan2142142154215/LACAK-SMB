@@ -323,12 +323,20 @@ test.group('Live Kerja: Ruang pusat & semua peran', (group) => {
             })
             .returning(['id'])
         const staff = await staffIn(org.id)
-        // Pengawas site yang hanya boleh menonton peran "operator" (bukan staff_viewer).
+        // Pengawas site (level 40) yang hanya boleh menonton peran "operator" (level 60), bukan staff_viewer.
+        await db.table('roles').insert({
+            name: 'operator',
+            guard_name: 'web',
+            label: 'Operator',
+            site_scope: 'own',
+            level: 60,
+        })
         await db.table('roles').insert({
             name: 'pengawas_operator',
             guard_name: 'web',
             label: 'Pengawas operator',
             site_scope: 'own',
+            level: 40,
             watchable_roles: JSON.stringify(['operator']),
         })
         const permissionIds = await db
@@ -512,5 +520,151 @@ test.group('Live Kerja: Ruang pusat & semua peran', (group) => {
             .qs({ user_id: colleague })
             .bearerToken(bearer)
         recordings.assertStatus(403)
+    })
+})
+
+test.group('Live Kerja: tingkatan peran (level)', (group) => {
+    group.each.setup(() => testUtils.db().withGlobalTransaction())
+
+    async function siteWith(roles: string[]) {
+        const [org] = await db
+            .table('organizations')
+            .insert({
+                name: `Site Level ${randomBytes(3).toString('hex')}`,
+                type: 'company_asset',
+                unique_site_code: `UJI-${randomBytes(4).toString('hex').toUpperCase()}`,
+                is_active: true,
+                created_at: new Date(),
+                updated_at: new Date(),
+            })
+            .returning(['id'])
+        const members: Record<string, number> = {}
+        for (const role of roles) members[role] = await staffIn(org.id, role)
+        return { organizationId: org.id as number, members }
+    }
+
+    test('hanya melihat user di bawah levelnya: level sama dan di atas tidak terlihat', async ({
+        client,
+        assert,
+    }) => {
+        // site_admin = 30, leader = 50, staff_viewer = 100 (nilai awal migrasi).
+        const { organizationId, members } = await siteWith(['site_admin', 'leader', 'staff_viewer'])
+        const peer = await staffIn(organizationId, 'site_admin')
+        const bearer = await loginToken(members.site_admin, DateTime.now().plus({ hours: 2 }))
+
+        const response = await client
+            .get('/api/v1/live/sessions')
+            .qs({ organization_id: organizationId })
+            .bearerToken(bearer)
+
+        response.assertStatus(200)
+        const ids = response.body().data.roster.map((member: { user_id: number }) => member.user_id)
+        assert.include(ids, members.leader)
+        assert.include(ids, members.staff_viewer)
+        assert.include(ids, members.site_admin)
+        assert.notInclude(ids, peer)
+    })
+
+    test('level 100 (staf) hanya melihat dirinya sendiri', async ({ client, assert }) => {
+        const { organizationId, members } = await siteWith(['staff_viewer'])
+        const other = await staffIn(organizationId, 'staff_viewer')
+        const bearer = await loginToken(members.staff_viewer, DateTime.now().plus({ hours: 2 }))
+
+        const response = await client
+            .get('/api/v1/live/sessions')
+            .qs({ organization_id: organizationId })
+            .bearerToken(bearer)
+
+        // Staf tanpa izin tonton ditolak sepenuhnya, atau hanya melihat dirinya sendiri.
+        if (response.status() === 200) {
+            const ids = response
+                .body()
+                .data.roster.map((member: { user_id: number }) => member.user_id)
+            assert.notInclude(ids, other)
+        } else {
+            response.assertStatus(403)
+        }
+    })
+
+    test('token tonton: peran di bawah level boleh, level sama dan di atas ditolak', async ({
+        client,
+        assert,
+    }) => {
+        const { organizationId, members } = await siteWith(['site_admin'])
+        const bearer = await loginToken(members.site_admin, DateTime.now().plus({ hours: 2 }))
+        const watch = (role: string) =>
+            client
+                .post('/api/v1/live/watch-token')
+                .json({ organization_id: organizationId, role })
+                .bearerToken(bearer)
+
+        const below = await watch('staff_viewer')
+        below.assertStatus(200)
+        assert.equal(below.body().data.room, `site-${organizationId}-staff_viewer`)
+        const leaderRoom = await watch('leader')
+        leaderRoom.assertStatus(200)
+        const samePeer = await watch('site_admin')
+        samePeer.assertStatus(403)
+        const above = await watch('admin')
+        above.assertStatus(403)
+        const root = await watch('super_admin')
+        root.assertStatus(403)
+    })
+
+    test('level diatur di menu Peran: mengubah level leader mengubah siapa yang terlihat', async ({
+        client,
+        assert,
+    }) => {
+        const { organizationId, members } = await siteWith(['site_admin', 'leader'])
+        const bearer = await loginToken(members.site_admin, DateTime.now().plus({ hours: 2 }))
+        const roster = async () => {
+            const response = await client
+                .get('/api/v1/live/sessions')
+                .qs({ organization_id: organizationId })
+                .bearerToken(bearer)
+            return response.body().data.roster.map((member: { user_id: number }) => member.user_id)
+        }
+
+        const before = await roster()
+        assert.include(before, members.leader)
+
+        // Leader dinaikkan ke level 20 (di atas site_admin 30): tidak terlihat lagi.
+        await db.from('roles').where({ name: 'leader', guard_name: 'web' }).update({ level: 20 })
+        const after = await roster()
+        assert.notInclude(after, members.leader)
+    })
+
+    test('log kerja hanya berisi user di bawah level penonton', async ({ client, assert }) => {
+        const { organizationId, members } = await siteWith(['site_admin', 'staff_viewer'])
+        const peer = await staffIn(organizationId, 'site_admin')
+        const bearer = await loginToken(members.site_admin, DateTime.now().plus({ hours: 2 }))
+
+        const now = new Date()
+        for (const userId of [members.staff_viewer, peer, members.site_admin]) {
+            await db.table('work_session_events').insert({
+                user_id: userId,
+                organization_id: organizationId,
+                type: 'work_start',
+                status: 'working',
+                occurred_at: now,
+                created_at: now,
+                updated_at: now,
+            })
+        }
+
+        const response = await client
+            .get('/api/v1/live/activity')
+            .qs({
+                organization_id: organizationId,
+                from: new Date(now.getTime() - 3_600_000).toISOString(),
+                to: new Date(now.getTime() + 3_600_000).toISOString(),
+            })
+            .bearerToken(bearer)
+
+        response.assertStatus(200)
+        const ids = response.body().data.events.map((event: { user_id: number }) => event.user_id)
+        assert.include(ids, members.staff_viewer)
+        assert.include(ids, members.site_admin)
+        assert.notInclude(ids, peer)
     })
 })

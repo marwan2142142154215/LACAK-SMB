@@ -1,7 +1,14 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
-import { accessOf, can, hasRole, siteScopeOfAccess, type Access } from '#services/Access'
+import {
+    accessOf,
+    can,
+    hasRole,
+    levelOfAccess,
+    siteScopeOfAccess,
+    type Access,
+} from '#services/Access'
 import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
@@ -9,6 +16,8 @@ import { describePermission, GROUP_ORDER } from '#services/PermissionCatalog'
 import { parseRoleList } from '#services/Permissions'
 import {
     BUILT_IN_SCOPES,
+    LEVEL_LOWEST,
+    levelExceedsActor,
     LOCKED_ROLES,
     parseRoleInput,
     permissionsActorLacks,
@@ -27,6 +36,7 @@ type RoleRow = {
     description: string | null
     site_scope: SiteScope
     is_system: boolean
+    level: number
     /** jsonb array nama peran; NULL = boleh menonton siaran semua peran. */
     watchable_roles: unknown
 }
@@ -38,6 +48,7 @@ const ROLE_COLUMNS: string[] = [
     'description',
     'site_scope',
     'is_system',
+    'level',
     'watchable_roles',
 ]
 
@@ -82,6 +93,7 @@ export default class RolesController {
                 label: row.label ?? row.name,
                 description: row.description,
                 site_scope: scopeOfRow(row),
+                level: Number(row.level),
             }))
         )
     }
@@ -108,6 +120,8 @@ export default class RolesController {
             input.siteScope
         )
         if (!permissionIds) return
+        const level = input.level ?? LEVEL_LOWEST
+        if (!checkLevel(ctx, access, null, level)) return
         if (!(await checkWatchableRoles(ctx, input.watchableRoles ?? null))) return
 
         const roleId = await db.transaction(async (trx) => {
@@ -120,6 +134,7 @@ export default class RolesController {
                     label: input.label,
                     description: input.description,
                     site_scope: input.siteScope,
+                    level,
                     watchable_roles: watchableColumn(input.watchableRoles ?? null),
                     is_system: false,
                     created_at: now,
@@ -143,6 +158,7 @@ export default class RolesController {
                     name,
                     label: input.label,
                     site_scope: input.siteScope,
+                    level,
                     permissions: input.permissions,
                     watchable_roles: input.watchableRoles ?? null,
                 },
@@ -166,6 +182,13 @@ export default class RolesController {
                 .send(fail('Peran yang sedang Anda pegang tidak bisa Anda ubah sendiri'))
         }
 
+        // Peran yang levelnya lebih tinggi dari pelaku tidak boleh diubah (anti naik pangkat).
+        if (Number(role.level) < levelOfAccess(access)) {
+            return ctx.response
+                .status(403)
+                .send(fail('Anda tidak bisa mengubah peran yang levelnya lebih tinggi dari Anda'))
+        }
+
         const parsed = parseRoleInput(ctx.request.all(), false)
         if (!parsed.ok) return invalid(ctx, parsed.errors)
         const input = parsed.data
@@ -187,6 +210,8 @@ export default class RolesController {
             input.siteScope
         )
         if (!permissionIds) return
+        const level = input.level ?? Number(role.level)
+        if (!checkLevel(ctx, access, Number(role.level), level)) return
         if (!(await checkWatchableRoles(ctx, input.watchableRoles ?? null))) return
         const watchable =
             input.watchableRoles === undefined ? watchableOfRow(role) : input.watchableRoles
@@ -199,6 +224,7 @@ export default class RolesController {
                     label: input.label,
                     description: input.description,
                     site_scope: input.siteScope,
+                    level,
                     watchable_roles: watchableColumn(watchable),
                     updated_at: new Date(),
                 })
@@ -215,6 +241,7 @@ export default class RolesController {
             properties: {
                 name: role.name,
                 site_scope: { old: scopeOfRow(role), new: input.siteScope },
+                level: { old: Number(role.level), new: level },
                 watchable_roles: { old: watchableOfRow(role), new: watchable },
                 permissions_added: input.permissions.filter((item) => !before.includes(item)),
                 permissions_removed: before.filter((item) => !input.permissions.includes(item)),
@@ -231,6 +258,11 @@ export default class RolesController {
         const role = await findRole(ctx.params.role)
         if (!role) return notFound(ctx)
         if (role.is_system || LOCKED_ROLES.includes(role.name)) return locked(ctx)
+        if (Number(role.level) < levelOfAccess(access)) {
+            return ctx.response
+                .status(403)
+                .send(fail('Anda tidak bisa menghapus peran yang levelnya lebih tinggi dari Anda'))
+        }
 
         const users = await activeUserCount(role.id)
         if (users > 0) {
@@ -324,6 +356,20 @@ async function checkGrant(
     return rows.map((row) => Number(row.id))
 }
 
+/** Level baru tidak boleh lebih tinggi dari level pelaku. Respons error sudah dikirim kalau gagal. */
+function checkLevel(
+    ctx: HttpContext,
+    access: Access,
+    currentLevel: number | null,
+    requested: number
+): boolean {
+    if (!levelExceedsActor(levelOfAccess(access), currentLevel, requested)) return true
+    ctx.response
+        .status(403)
+        .send(fail('Anda tidak bisa memberikan level yang lebih tinggi dari level Anda sendiri'))
+    return false
+}
+
 async function replacePermissions(
     trx: TransactionClientContract,
     roleId: number,
@@ -407,6 +453,7 @@ function shape(row: RoleRow, permissions: string[], users: number) {
         label: row.label ?? row.name,
         description: row.description,
         site_scope: scopeOfRow(row),
+        level: Number(row.level),
         watchable_roles: watchableOfRow(row),
         is_system: row.is_system,
         locked: LOCKED_ROLES.includes(row.name),

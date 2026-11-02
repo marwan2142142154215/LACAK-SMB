@@ -33,6 +33,45 @@ export const BUILT_IN_SCOPES: Record<string, SiteScope> = {
 }
 
 /**
+ * Tingkatan peran (0 = root, 100 = paling bawah). Seorang user hanya bisa melihat user yang
+ * levelnya LEBIH BESAR dari levelnya sendiri (plus dirinya sendiri); level 0 melihat semua.
+ * Level yang sama tidak saling melihat, jadi level 100 hanya melihat dirinya sendiri.
+ */
+export const LEVEL_ROOT = 0
+export const LEVEL_LOWEST = 100
+
+export const isLevel = (value: unknown): value is number =>
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= LEVEL_ROOT &&
+    value <= LEVEL_LOWEST
+
+/** Level user dengan beberapa peran = yang paling tinggi (angka terkecil); tanpa peran = paling bawah. */
+export const effectiveLevel = (levels: number[]): number =>
+    levels.length === 0 ? LEVEL_LOWEST : Math.min(...levels)
+
+/** Boleh melihat user/peran ber-level ini? Level 0 melihat semuanya; yang lain hanya level di bawahnya. */
+export const canSeeLevel = (viewerLevel: number, targetLevel: number): boolean =>
+    viewerLevel === LEVEL_ROOT || targetLevel > viewerLevel
+
+/**
+ * Peran penyiar yang boleh ditonton: peran yang levelnya di bawah penonton, dipersempit lagi oleh
+ * daftar "peran yang boleh ditonton" di menu Peran (null = tidak dipersempit). Hasil null = semua
+ * peran (hanya level 0 tanpa penyempitan); selain itu daftar nama peran yang pasti.
+ */
+export function watchableRoleNames(
+    viewerLevel: number,
+    roles: Array<{ name: string; level: number }>,
+    narrowedTo: string[] | null
+): string[] | null {
+    if (viewerLevel === LEVEL_ROOT && narrowedTo === null) return null
+    return roles
+        .filter((role) => canSeeLevel(viewerLevel, role.level))
+        .map((role) => role.name)
+        .filter((name) => narrowedTo === null || narrowedTo.includes(name))
+}
+
+/**
  * Peran yang tidak boleh diubah / dihapus / diberikan lewat menu Peran:
  * super_admin (satu-satunya pemegang semua izin, anti-terkunci) dan akun layanan bot.
  */
@@ -57,6 +96,8 @@ export type RoleInput = {
     description: string | null
     siteScope: SiteScope
     permissions: string[]
+    /** Tingkatan peran 0-100; undefined = tidak diubah (peran baru: paling bawah). */
+    level?: number
     /** Peran penyiar yang boleh ditonton di Live Kerja; null = semua peran, undefined = tidak diubah. */
     watchableRoles?: string[] | null
 }
@@ -101,6 +142,13 @@ export function parseRoleInput(raw: Record<string, unknown>, creating: boolean):
 
     if (!isScope(raw.site_scope)) add('site_scope', 'Cakupan site tidak valid.')
 
+    let level: number | undefined
+    if (raw.level !== undefined && raw.level !== null && raw.level !== '') {
+        const parsedLevel = typeof raw.level === 'string' ? Number(raw.level) : raw.level
+        if (!isLevel(parsedLevel)) add('level', 'Level harus bilangan bulat 0 sampai 100.')
+        else level = parsedLevel
+    }
+
     const permissions: string[] = []
     if (!Array.isArray(raw.permissions)) add('permissions', 'Daftar izin harus berupa array.')
     else {
@@ -141,6 +189,7 @@ export function parseRoleInput(raw: Record<string, unknown>, creating: boolean):
             description,
             siteScope: raw.site_scope as SiteScope,
             permissions,
+            level,
             watchableRoles,
         },
     }
@@ -158,6 +207,16 @@ export function permissionsActorLacks(
     return requested.filter(
         (permission) => !current.includes(permission) && !actorPermissions.includes(permission)
     )
+}
+
+/** Level baru tidak boleh lebih tinggi (angka lebih kecil) dari level pelaku, kecuali tidak berubah. */
+export function levelExceedsActor(
+    actorLevel: number,
+    currentLevel: number | null,
+    requested: number
+): boolean {
+    if (currentLevel === requested) return false
+    return requested < actorLevel
 }
 
 /** Cakupan baru tidak boleh lebih luas dari cakupan pelaku (kecuali tidak berubah). */

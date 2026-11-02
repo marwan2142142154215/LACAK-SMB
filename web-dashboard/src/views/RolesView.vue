@@ -43,6 +43,7 @@ const emptyForm = () => ({
     label: '',
     description: '',
     site_scope: 'own',
+    level: 100,
     permissions: [],
     watch_all: true,
     watchable_roles: [],
@@ -105,6 +106,7 @@ function openEdit(role) {
         label: role.label,
         description: role.description ?? '',
         site_scope: role.site_scope,
+        level: role.level ?? 100,
         permissions: [...role.permissions],
         watch_all: role.watchable_roles === null || role.watchable_roles === undefined,
         watchable_roles: [...(role.watchable_roles ?? [])],
@@ -142,6 +144,7 @@ async function submitForm() {
             label: form.value.label,
             description: form.value.description || null,
             site_scope: form.value.site_scope,
+            level: Number(form.value.level),
             permissions: form.value.permissions,
             // null = boleh menonton siaran semua peran.
             watchable_roles: form.value.watch_all ? null : form.value.watchable_roles,
@@ -219,7 +222,11 @@ onMounted(loadRoles)
                     </div>
                 </div>
                 <p v-if="role.description" class="text-sm text-base-300">{{ role.description }}</p>
-                <dl class="grid grid-cols-3 gap-2 text-xs">
+                <dl class="grid grid-cols-4 gap-2 text-xs">
+                    <div>
+                        <dt class="text-base-500">Level</dt>
+                        <dd class="text-base-100">{{ role.level }}</dd>
+                    </div>
                     <div>
                         <dt class="text-base-500">Cakupan</dt>
                         <dd class="text-base-100">{{ SCOPE_LABELS[role.site_scope] }}</dd>
@@ -269,6 +276,19 @@ onMounted(loadRoles)
                 />
                 <BaseInput v-model="form.label" label="Nama peran" required maxlength="100" :disabled="isLocked" />
                 <BaseInput v-model="form.description" label="Deskripsi" maxlength="255" :disabled="isLocked" />
+
+                <BaseInput
+                    v-model="form.level"
+                    type="number"
+                    label="Level (0-100)"
+                    required
+                    min="0"
+                    max="100"
+                    step="1"
+                    inputmode="numeric"
+                    hint="0 = root (melihat semua). Peran hanya melihat peran dengan level LEBIH BESAR dari levelnya; level yang sama tidak saling melihat, dan 100 hanya melihat dirinya sendiri. Tetap dibatasi site yang diberikan."
+                    :disabled="isLocked"
+                />
 
                 <BaseSelect
                     v-model="form.site_scope"

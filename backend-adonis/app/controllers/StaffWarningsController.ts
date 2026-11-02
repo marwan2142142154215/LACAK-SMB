@@ -1,11 +1,12 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import vine from '@vinejs/vine'
-import { accessOf, can } from '#services/Access'
+import { accessOf, can, levelOfAccess } from '#services/Access'
 import { writeActivity } from '#services/ActivityLog'
 import { fail, success } from '#services/ApiResponse'
 import { managedSites, managesSite } from '#services/ManagedSites'
-import { roleNamesOf } from '#services/Permissions'
+import { levelOf, roleNamesOf, visibleUserIdsQuery } from '#services/Permissions'
+import { canSeeLevel, LEVEL_ROOT } from '#services/RoleRules'
 
 export const WARNING_LEVELS = { teguran: 'Teguran', keras: 'Peringatan keras' } as const
 type WarningLevel = keyof typeof WARNING_LEVELS
@@ -98,6 +99,11 @@ export default class StaffWarningsController {
         const query = withNames().orderBy('staff_warnings.id', 'desc').limit(100)
         const sites = managedSites(access)
         if (sites !== 'all') query.whereIn('staff_warnings.organization_id', sites)
+        // Hanya peringatan untuk user di bawah levelnya (level 0 melihat semua).
+        const level = levelOfAccess(access)
+        if (level !== LEVEL_ROOT) {
+            query.whereIn('staff_warnings.user_id', visibleUserIdsQuery(level))
+        }
         const userId = Number(ctx.request.input('user_id'))
         if (Number.isInteger(userId) && userId > 0) query.where('staff_warnings.user_id', userId)
         const rows: WarningRow[] = await query
@@ -134,6 +140,11 @@ export default class StaffWarningsController {
         const targetRoles = await roleNamesOf(target.id)
         if (targetRoles.includes('super_admin')) {
             return ctx.response.status(403).send(fail('Super Admin tidak bisa diberi peringatan'))
+        }
+        if (!canSeeLevel(levelOfAccess(access), await levelOf(target.id))) {
+            return ctx.response
+                .status(403)
+                .send(fail('Peringatan hanya bisa diberikan ke staf di bawah level Anda'))
         }
 
         const now = new Date()
