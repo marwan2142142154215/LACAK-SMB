@@ -88,9 +88,12 @@ export default class DevicesController {
         )
 
         const devices = rows as DeviceRow[]
+        // Lokasi device (koordinat, jarak BLE) hanya untuk pemegang izin radar.view; tanpa itu kuncinya
+        // tidak ikut dikirim sama sekali, jadi tidak bocor lewat API walau halaman Radar disembunyikan.
+        const withLocation = can(access, 'radar.view')
         const [organizations, locations] = await Promise.all([
             organizationNamesOf(devices.map((device) => device.organization_id)),
-            latestLocationsOf(devices.map((device) => device.id)),
+            latestLocationsOf(withLocation ? devices.map((device) => device.id) : []),
         ])
 
         return success('Daftar device', {
@@ -98,7 +101,7 @@ export default class DevicesController {
                 deviceResource(device, {
                     // Site yang sudah di-soft-delete tidak ikut dimuat relasinya.
                     organizationName: organizations.get(device.organization_id) ?? null,
-                    latestLocation: locations.get(device.id) ?? null,
+                    latestLocation: withLocation ? (locations.get(device.id) ?? null) : undefined,
                 })
             ),
             total,
@@ -169,11 +172,14 @@ export default class DevicesController {
             return ctx.response.status(403).send(fail('Anda tidak berwenang melihat device ini'))
         }
 
-        const locations = await latestLocationsOf([device.id])
+        const withLocation = can(access, 'radar.view')
+        const locations = await latestLocationsOf(withLocation ? [device.id] : [])
 
         return success(
             'Detail device',
-            deviceResource(device, { latestLocation: locations.get(device.id) ?? null })
+            deviceResource(device, {
+                latestLocation: withLocation ? (locations.get(device.id) ?? null) : undefined,
+            })
         )
     }
 

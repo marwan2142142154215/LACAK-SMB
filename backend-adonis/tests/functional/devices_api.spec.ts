@@ -20,6 +20,7 @@ const SITE_ADMIN_PERMISSIONS = [
     'devices.unlock',
     'devices.locate',
     'devices.monitor',
+    'radar.view',
 ]
 
 /** Role::firstOrCreate + syncPermissions seperti RolesAndPermissionsSeeder. */
@@ -287,6 +288,47 @@ test.group('Device: CRUD', (group) => {
             .bearerToken(admin.bearer)
         forbidden.assertStatus(403)
         forbidden.assertBodyContains({ message: 'Anda tidak berwenang melihat device site ini' })
+    })
+
+    test('lokasi device hanya untuk pemegang radar.view: tanpa izin kuncinya tidak dikirim', async ({
+        client,
+        assert,
+    }) => {
+        const org = await makeOrganization()
+        const device = await makeDevice(org)
+        await db.table('device_locations').insert({
+            device_id: device.id,
+            source: 'gps',
+            latitude: '-6.2088000',
+            longitude: '106.8456000',
+            ble_distance_meters: '3.50',
+            recorded_at: new Date(),
+            created_at: new Date(),
+        })
+        const staff = await makeUser(org, 'staff_viewer')
+        const admin = await makeUser(org, 'site_admin')
+
+        // Tanpa radar.view (devices.view saja): daftar dan detail tidak memuat lokasi sama sekali.
+        const staffList = await client.get('/api/v1/devices').bearerToken(staff.bearer)
+        staffList.assertStatus(200)
+        assert.lengthOf(staffList.body().data.items, 1)
+        assert.notProperty(staffList.body().data.items[0], 'latest_location')
+        assert.notInclude(JSON.stringify(staffList.body()), '106.8456')
+
+        const staffDetail = await client
+            .get(`/api/v1/devices/${device.id}`)
+            .bearerToken(staff.bearer)
+        staffDetail.assertStatus(200)
+        assert.notProperty(staffDetail.body().data, 'latest_location')
+        assert.notInclude(JSON.stringify(staffDetail.body()), '106.8456')
+
+        // Dengan radar.view: lokasi ikut dikirim.
+        const adminList = await client.get('/api/v1/devices').bearerToken(admin.bearer)
+        assert.equal(adminList.body().data.items[0].latest_location.longitude, '106.8456000')
+        const adminDetail = await client
+            .get(`/api/v1/devices/${device.id}`)
+            .bearerToken(admin.bearer)
+        assert.equal(adminDetail.body().data.latest_location.latitude, '-6.2088000')
     })
 
     test('daftarkan device: status pending_enrollment + log created', async ({

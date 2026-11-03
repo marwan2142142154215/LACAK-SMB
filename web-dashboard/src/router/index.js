@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import { isEmbedded } from '@/lib/embedded'
 import { checkIpAccess } from '@/lib/ipAccess'
+import { canEnter } from '@/lib/pageAccess'
 
 const routes = [
     {
@@ -26,8 +27,8 @@ const routes = [
                 path: '',
                 name: 'radar',
                 component: () => import('@/views/RadarView.vue'),
-                // Radar menampilkan device & pelanggaran: izin Lihat device.
-                meta: { permission: 'devices.view' },
+                // Radar menampilkan lokasi device: wajib Lihat device DAN Lihat radar & lokasi.
+                meta: { permissionAll: ['devices.view', 'radar.view'] },
             },
             {
                 path: 'live',
@@ -175,21 +176,7 @@ export const LOGIN_REDIRECT_KEY = 'lacak_master_login_redirect'
 
 const pageMeta = new Map(routes.find((route) => route.path === '/').children.map((route) => [route.name, route.meta ?? {}]))
 
-/**
- * Boleh membuka halaman dengan meta ini? Satu-satunya aturan akses halaman: dipakai penjaga rute
- * di bawah DAN menu sidebar (AppShell), jadi menu yang tampil selalu bisa dibuka dan sebaliknya.
- * `permission` boleh satu izin atau daftar (cukup salah satu).
- */
-export function canEnter(meta, user) {
-    const roles = user?.roles ?? []
-    const permissions = user?.permissions ?? []
-    const isSuperAdmin = roles.includes('super_admin')
-    if (meta?.requiresSuperAdmin && !isSuperAdmin) return false
-    if (meta?.roles && !meta.roles.some((role) => roles.includes(role))) return false
-    if (meta?.staffAccess && !isSuperAdmin && user?.site_scope !== 'granted') return false
-    if (meta?.permission && ![meta.permission].flat().some((permission) => permissions.includes(permission))) return false
-    return true
-}
+export { canEnter }
 
 /** Boleh membuka halaman bernama ini? */
 export const canOpen = (name, user) => canEnter(pageMeta.get(name), user)

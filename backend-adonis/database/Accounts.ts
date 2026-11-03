@@ -18,6 +18,8 @@ export const PERMISSIONS = [
     'devices.unlock',
     'devices.locate',
     'devices.monitor',
+    // Halaman Radar & lokasi device: sensitif, hanya untuk peran yang ditentukan (bukan staf biasa).
+    'radar.view',
     'geofence-rules.manage',
     'apk-builds.manage',
     'telegram.manage',
@@ -65,6 +67,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         'devices.unlock',
         'devices.locate',
         'devices.monitor',
+        'radar.view',
         'geofence-rules.manage',
         'apk-builds.manage',
         'telegram.manage',
@@ -79,6 +82,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     // hanya untuk site yang dipegang.
     admin: [
         'devices.view',
+        'radar.view',
         'devices.lock',
         'devices.unlock',
         'devices.locate',
@@ -93,6 +97,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     ],
     leader: [
         'devices.view',
+        'radar.view',
         'devices.lock',
         'devices.unlock',
         'devices.locate',

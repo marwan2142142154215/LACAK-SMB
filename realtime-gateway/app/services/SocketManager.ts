@@ -1,4 +1,5 @@
 import type { Server as SocketIoServer, Namespace } from 'socket.io'
+import { RADAR_ALL_ROOM, radarOrganizationRoom } from '#services/RadarAccess'
 
 /**
  * Singleton sederhana untuk menyimpan instance Socket.IO supaya bisa dipakai
@@ -40,8 +41,9 @@ class SocketManager {
      * di start/socket.ts yang men-join super_admin ke room `superadmins`).
      */
     broadcastRadarUpdate(organizationId: number, payload: unknown) {
+        // Berisi koordinat & jarak BLE: hanya ke ruang radar (pemegang izin radar.view), bukan ruang site.
         this.opsNamespace
-            ?.to([`org:${organizationId}`, 'superadmins'])
+            ?.to([radarOrganizationRoom(organizationId), RADAR_ALL_ROOM])
             .emit('radar:update', payload)
     }
 

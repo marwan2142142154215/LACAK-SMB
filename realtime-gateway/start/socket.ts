@@ -20,6 +20,7 @@ import {
 import { chatRoom, fetchChatHistory, fetchChatMessage, postChatMessage } from '#services/ChatRelay'
 import { registerGroupChatHandlers } from '#services/GroupChatHub'
 import { clientIpOf, forgetClientIp, rememberClientIp } from '#services/ClientIp'
+import { RADAR_ROOM_PREFIX, radarRoomsFor } from '#services/RadarAccess'
 
 type DeviceHelloPayload = {
     deviceUuid: string
@@ -474,6 +475,17 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
             socket.join('superadmins')
         }
 
+        // Lokasi device (radar:update) hanya untuk pemegang izin radar.view, lewat ruang radar sendiri.
+        // Dicek ulang tiap izin/cakupan berubah (revalidate di bawah): keluar dari ruang yang tidak lagi boleh.
+        const syncRadarRooms = () => {
+            const wanted = new Set(radarRoomsFor(user))
+            for (const room of socket.rooms) {
+                if (room.startsWith(RADAR_ROOM_PREFIX) && !wanted.has(room)) socket.leave(room)
+            }
+            for (const room of wanted) socket.join(room)
+        }
+        syncRadarRooms()
+
         // Idle timeout (standar 6.4) ditegakkan backend-api lewat expires_at
         // token, tapi socket hanya memverifikasi token sekali saat connect.
         // Cek ulang berkala lewat /auth/session (tidak memperpanjang token),
@@ -498,6 +510,7 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
                 if (fresh) {
                     Object.assign(user, fresh)
                     liveHandlers.recheckWatching()
+                    syncRadarRooms()
                 }
             },
             5 * 60 * 1000

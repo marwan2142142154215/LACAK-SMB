@@ -49,6 +49,12 @@ const CATALOG: Record<string, Entry> = {
         label: 'Minta lokasi device',
         description: 'Meminta lokasi terkini device.',
     },
+    'radar.view': {
+        group: 'Perangkat',
+        label: 'Lihat radar & lokasi',
+        description:
+            'Membuka halaman Radar dan melihat lokasi device (peta, koordinat, jarak BLE). Butuh juga izin Lihat device.',
+    },
     'devices.monitor': {
         group: 'Perangkat',
         label: 'Pantau device',
