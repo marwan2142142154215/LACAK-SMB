@@ -335,7 +335,9 @@ async function checkGrant(
         return null
     }
 
-    const lacking = permissionsActorLacks(access.permissions, currentPermissions, requested)
+    const lacking = hasRole(access, 'super_admin')
+        ? []
+        : permissionsActorLacks(access.permissions, currentPermissions, requested)
     if (lacking.length > 0) {
         ctx.response
             .status(403)
