@@ -79,7 +79,10 @@ func (r *recording) requestStop() {
 }
 
 // run menjalankan rekaman sampai dihentikan atau track berakhir. Hanya dijalankan satu kali.
-func (r *recording) run(track *webrtc.TrackRemote, requestKeyframe func(webrtc.SSRC)) {
+//
+// onCaptured dipanggil begitu pembacaan track selesai, SEBELUM remux dan unggah: unggahan berkas
+// ~1 GB bisa makan menit, dan selama itu track harus sudah bebas untuk rekaman jam berikutnya.
+func (r *recording) run(track *webrtc.TrackRemote, requestKeyframe func(webrtc.SSRC), onCaptured func()) {
 	ran := false
 	r.started.Do(func() { ran = true })
 	if !ran {
@@ -89,6 +92,9 @@ func (r *recording) run(track *webrtc.TrackRemote, requestKeyframe func(webrtc.S
 	defer close(r.done)
 
 	captureErr := r.capture(track, requestKeyframe)
+	if onCaptured != nil {
+		onCaptured()
+	}
 	r.finalize(captureErr)
 }
 

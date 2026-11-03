@@ -8,7 +8,7 @@ import {
     SCHEDULER_HEARTBEAT_KEY,
 } from '#services/Queue'
 import { runBriefingSchedules } from '#services/BriefingSchedule'
-import { pruneRecordings, rotateRecordings } from '#services/Recording'
+import { pruneRecordings, pruneShortSessions, rotateRecordings } from '#services/Recording'
 import { runWorkAlerts } from '#services/WorkAlerts'
 import { closeStaleWorkSessions } from './CloseStaleWorkSessions.js'
 
@@ -85,8 +85,11 @@ export default class SchedulerRun extends BaseCommand {
         try {
             const rotated = await rotateRecordings()
             const pruned = await pruneRecordings()
-            if (rotated || pruned)
-                this.logger.info(`Rekaman: ${rotated} dipotong per jam, ${pruned} dihapus.`)
+            const short = await pruneShortSessions()
+            if (rotated || pruned || short)
+                this.logger.info(
+                    `Rekaman: ${rotated} dipotong per jam, ${pruned} dihapus, ${short} dibuang (sesi < 1 jam).`
+                )
         } catch (error) {
             this.logger.error(`Rekaman Live Kerja gagal diproses: ${String(error)}`)
         }

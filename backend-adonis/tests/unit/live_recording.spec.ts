@@ -1,6 +1,12 @@
 import { createHash, createHmac } from 'node:crypto'
 import { test } from '@japa/runner'
-import { recordingEnabled, recordingPath, verifyWebhook } from '#services/Recording'
+import {
+    recordingEnabled,
+    recordingPath,
+    totalTooShort,
+    verifyWebhook,
+    withinSessionLimit,
+} from '#services/Recording'
 import { spacesKey, spacesPrefix, stripSpacesPrefix } from '#services/Storage'
 
 // Sama dengan LIVEKIT_API_KEY / LIVEKIT_API_SECRET di .env.test.
@@ -67,5 +73,22 @@ test.group('Penyimpanan Spaces: folder khusus proyek', () => {
         const path = 'chat/5/abc.png'
         assert.equal(stripSpacesPrefix(spacesKey(path)), path)
         assert.equal(stripSpacesPrefix(path), path)
+    })
+})
+
+test.group('Batas rekaman Live Kerja', () => {
+    test('rekaman berjalan sampai 14 jam sejak sesi mulai, lewat tengah malam pun', ({
+        assert,
+    }) => {
+        const start = new Date('2026-11-03T20:00:00Z')
+        assert.isTrue(withinSessionLimit(start, new Date('2026-11-04T09:59:00Z')))
+        assert.isFalse(withinSessionLimit(start, new Date('2026-11-04T10:00:00Z')))
+    })
+
+    test('total rekaman sesi < 1 jam dibuang, >= 1 jam disimpan', ({ assert }) => {
+        assert.isTrue(totalTooShort(0))
+        assert.isTrue(totalTooShort(59 * 60 + 59))
+        assert.isFalse(totalTooShort(60 * 60))
+        assert.isFalse(totalTooShort(40 * 60 + 50 * 60))
     })
 })

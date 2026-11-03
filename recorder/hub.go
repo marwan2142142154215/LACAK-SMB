@@ -27,7 +27,7 @@ var (
 const (
 	// Berapa lama langganan track dipertahankan setelah satu rekaman selesai, supaya rekaman jam berikutnya
 	// langsung lanjut tanpa menunggu langganan ulang (pemotongan per jam tanpa celah panjang).
-	lingerAfterStop = 30 * time.Second
+	lingerAfterStop = 3 * time.Minute
 	// Berapa lama menunggu track muncul di room setelah backend memintanya (webhook bisa mendahului sinkronisasi).
 	publicationWait = 15 * time.Second
 	// Batas menunggu aliran track setelah berlangganan.
@@ -195,7 +195,7 @@ func (h *hub) shutdown(timeout time.Duration) {
 
 func (h *hub) runRecording(rc *roomConn, rec *recording, handle *trackHandle) {
 	keyframe := func(ssrc webrtc.SSRC) { handle.rp.WritePLI(ssrc) }
-	rec.run(handle.track, keyframe)
+	rec.run(handle.track, keyframe, func() { h.release(rc, rec) })
 	h.finished(rc, rec)
 }
 
@@ -227,14 +227,14 @@ func (h *hub) forget(rc *roomConn, rec *recording) {
 	delete(h.byID, rec.id)
 }
 
-// finished dipanggil saat satu rekaman selesai: lepas catatan, lalu atur masa tunggu langganan.
-func (h *hub) finished(rc *roomConn, rec *recording) {
+// release membebaskan track begitu pembacaan selesai (sebelum unggah), supaya rekaman jam berikutnya
+// untuk track yang sama bisa langsung mulai dan mendapat egress_id baru, bukan ID rekaman lama.
+func (h *hub) release(rc *roomConn, rec *recording) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if rc.active[rec.trackSID] == rec {
 		delete(rc.active, rec.trackSID)
 	}
-	delete(h.byID, rec.id)
 
 	handle := rc.tracks[rec.trackSID]
 	if handle == nil {
@@ -254,6 +254,14 @@ func (h *hub) finished(rc *roomConn, rec *recording) {
 		}
 		h.maybeLeaveLocked(rc)
 	})
+}
+
+// finished dipanggil setelah unggah selesai: hapus catatan rekaman dari peta ID.
+func (h *hub) finished(rc *roomConn, rec *recording) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.byID, rec.id)
+	h.maybeLeaveLocked(rc)
 }
 
 // maybeLeaveLocked keluar dari room kalau tidak ada lagi yang direkam atau dilanggani (h.mu sudah dipegang).

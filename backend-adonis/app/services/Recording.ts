@@ -22,6 +22,10 @@ import { openSessionOf } from '#services/WorkPresence'
 
 export const RECORDING_RETENTION_HOURS = 72
 export const RECORDING_SEGMENT_MINUTES = 60
+/** Rekaman berhenti setelah sesi kerja berjalan selama ini (lewat tengah malam pun tetap dihitung). */
+export const RECORDING_MAX_SESSION_HOURS = 14
+/** Sesi kerja yang total rekamannya kurang dari ini tidak disimpan (dihapus setelah sesi selesai). */
+export const RECORDING_MIN_KEEP_MINUTES = 60
 export const RECORDING_SOURCES = ['camera', 'screen_share'] as const
 export type RecordingSource = (typeof RECORDING_SOURCES)[number]
 
@@ -36,6 +40,11 @@ export function activeRecordingSources(
     if (!raw || !raw.trim()) return [...RECORDING_SOURCES]
     const wanted = raw.split(',').map((item) => item.trim().toLowerCase())
     return RECORDING_SOURCES.filter((source) => wanted.includes(source))
+}
+
+/** Masih dalam batas 14 jam sejak sesi kerja dimulai? */
+export function withinSessionLimit(sessionStartedAt: Date, now: Date = new Date()): boolean {
+    return now.getTime() - sessionStartedAt.getTime() < RECORDING_MAX_SESSION_HOURS * 3_600_000
 }
 
 export function recordingEnabled(): boolean {
@@ -124,6 +133,7 @@ export async function startTrackRecording(input: {
     if (!session || session.organization_id !== input.organizationId) return null
 
     const now = new Date()
+    if (!withinSessionLimit(new Date(session.started_at), now)) return null
     const filepath = recordingPath(
         input.organizationId,
         input.userId,
@@ -278,6 +288,56 @@ export async function rotateRecordings(now: Date = new Date()): Promise<number> 
         }
     }
     return due.length
+}
+
+/** Total rekaman satu sesi (per sumber) terlalu singkat untuk disimpan? */
+export function totalTooShort(totalSeconds: number): boolean {
+    return totalSeconds < RECORDING_MIN_KEEP_MINUTES * 60
+}
+
+/** Beri waktu unggahan potongan terakhir selesai sebelum sesi dinilai (laporan "selesai" datang sebelum unggah). */
+const SETTLE_MINUTES = 10
+
+/**
+ * Sesi kerja yang sudah selesai dan total rekamannya < 1 jam (per sumber): hapus semua potongan & barisnya.
+ * Dinilai per sesi, jadi staf yang tidak sengaja berhenti lalu lanjut tetap utuh kalau totalnya >= 1 jam.
+ */
+export async function pruneShortSessions(now: Date = new Date()): Promise<number> {
+    const settled = new Date(now.getTime() - SETTLE_MINUTES * 60_000)
+    const oldest = new Date(now.getTime() - RECORDING_RETENTION_HOURS * 3_600_000)
+    const groups = await db
+        .from('live_recordings')
+        .join('work_sessions', 'work_sessions.id', 'live_recordings.work_session_id')
+        .whereNotNull('work_sessions.ended_at')
+        .where('live_recordings.started_at', '>', oldest)
+        .groupBy('live_recordings.work_session_id', 'live_recordings.source')
+        .havingRaw("COUNT(*) FILTER (WHERE live_recordings.status IN ('recording','rotating')) = 0")
+        .havingRaw('MAX(live_recordings.ended_at) <= ?', [settled])
+        .havingRaw(
+            'COALESCE(SUM(EXTRACT(EPOCH FROM (live_recordings.ended_at - live_recordings.started_at))), 0) < ?',
+            [RECORDING_MIN_KEEP_MINUTES * 60]
+        )
+        .select('live_recordings.work_session_id', 'live_recordings.source')
+
+    let removed = 0
+    for (const group of groups) {
+        const rows = await db
+            .from('live_recordings')
+            .where('work_session_id', group.work_session_id)
+            .where('source', group.source)
+        for (const recording of rows) {
+            try {
+                if (recording.file_path && recordingEnabled())
+                    await disk('spaces').delete(recording.file_path)
+            } catch (error) {
+                log.warn({ err: error, id: recording.id }, 'Gagal menghapus rekaman sesi singkat')
+                continue
+            }
+            await db.from('live_recordings').where('id', recording.id).delete()
+            removed++
+        }
+    }
+    return removed
 }
 
 /** Hapus file & baris rekaman yang lebih tua dari masa simpan (72 jam). */
