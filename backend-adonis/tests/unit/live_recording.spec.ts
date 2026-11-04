@@ -3,6 +3,7 @@ import { test } from '@japa/runner'
 import {
     recordingEnabled,
     recordingPath,
+    staffFolderName,
     totalTooShort,
     verifyWebhook,
     withinSessionLimit,
@@ -50,11 +51,32 @@ test.group('Rekaman Live Kerja: webhook LiveKit', () => {
 })
 
 test.group('Rekaman Live Kerja: penyimpanan', () => {
-    test('path file per site, staf, tanggal & sumber', ({ assert }) => {
+    test('path file per tanggal kantor, nama staf & sumber', ({ assert }) => {
         assert.equal(
-            recordingPath(3, 42, 'screen_share', 'TR_abc', new Date('2026-10-25T07:05:09Z')),
-            'recordings/3/42/2026-10-25/screen_share-070509-TR_abc.webm'
+            recordingPath(
+                'Budi Santoso',
+                42,
+                'screen_share',
+                'TR_abc',
+                new Date('2026-10-25T07:05:09Z')
+            ),
+            'recordings/2026-10-25/Budi_Santoso/screen_share-140509-TR_abc.webm'
         )
+    })
+
+    test('tanggal mengikuti waktu kantor, bukan UTC (lewat tengah malam)', ({ assert }) => {
+        assert.equal(
+            recordingPath('Ani', 1, 'camera', 'TR_x', new Date('2026-11-03T17:30:00Z')),
+            'recordings/2026-11-04/Ani/camera-003000-TR_x.webm'
+        )
+    })
+
+    test('nama folder staf dibersihkan dan aman sebagai kunci objek', ({ assert }) => {
+        assert.equal(staffFolderName('  Rizky / Pratama  ', 7), 'Rizky_Pratama')
+        assert.equal(staffFolderName('José Núñez', 7), 'Jose_Nunez')
+        assert.equal(staffFolderName('../..', 7), 'user-7')
+        assert.equal(staffFolderName('', 7), 'user-7')
+        assert.isAtMost(staffFolderName('a'.repeat(100), 1).length, 40)
     })
 
     test('rekaman mati selama Spaces belum diisi', ({ assert }) => {

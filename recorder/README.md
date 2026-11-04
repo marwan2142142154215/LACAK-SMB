@@ -14,7 +14,7 @@ staf ──VP8──> LiveKit ──track_published (webhook)──> backend
 ```
 
 Backend tidak berubah alurnya: ia memanggil `StartTrackEgress` / `StopEgress` seperti ke Egress resmi, hanya ke
-alamat `RECORDER_URL`. Pemotongan per jam, masa simpan 72 jam, dan halaman Rekaman tetap yang lama.
+alamat `RECORDER_URL`. Pemotongan per jam, masa simpan 48 jam, dan halaman Rekaman tetap yang lama.
 
 ## Kebutuhan
 
@@ -91,7 +91,7 @@ Variabel opsional (env atau `.env`): `RECORDER_LISTEN` (harus loopback), `RECORD
 Perkiraan kasar untuk VP8 (aktual bergantung isi layar dan jaringan): kamera 720p ±0,5-1 GB/jam, layar 1080p/15fps ±0,2-0,4 GB/jam
 per staf. Untuk ±130 staf yang siaran bersamaan:
 
-- layar saja: ±25-50 GB per jam siaran, ±2-4 TB untuk masa simpan 72 jam;
+- layar saja: ±25-50 GB per jam siaran, ±2-4 TB untuk masa simpan 48 jam;
 - kamera + layar: beberapa kali lipatnya.
 
 Mulai dari `RECORDING_SOURCES=screen_share`, ukur ukuran file sebenarnya dari uji coba, lalu hitung biaya Spaces dan

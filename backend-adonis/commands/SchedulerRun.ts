@@ -9,6 +9,7 @@ import {
 } from '#services/Queue'
 import { runBriefingSchedules } from '#services/BriefingSchedule'
 import { pruneRecordings, pruneShortSessions, rotateRecordings } from '#services/Recording'
+import { reconcileRecordings } from '#services/RecordingReconcile'
 import { runWorkAlerts } from '#services/WorkAlerts'
 import { closeStaleWorkSessions } from './CloseStaleWorkSessions.js'
 
@@ -86,6 +87,8 @@ export default class SchedulerRun extends BaseCommand {
             const rotated = await rotateRecordings()
             const pruned = await pruneRecordings()
             const short = await pruneShortSessions()
+            const resumed = await reconcileRecordings()
+            if (resumed) this.logger.info(`Rekaman: ${resumed} dilanjutkan oleh pemeriksa.`)
             if (rotated || pruned || short)
                 this.logger.info(
                     `Rekaman: ${rotated} dipotong per jam, ${pruned} dihapus, ${short} dibuang (sesi < 1 jam).`

@@ -171,6 +171,42 @@ export async function listLiveRooms(): Promise<LiveRoomInfo[]> {
     }))
 }
 
+export type RoomTrack = { identity: string; sid: string; source: unknown }
+
+/**
+ * Track yang sedang dipublikasikan di satu room. null = LiveKit tidak bisa dihubungi (jangan disimpulkan
+ * "tidak ada track"); room yang belum ada mengembalikan daftar kosong.
+ */
+export async function listRoomTracks(liveRoom: LiveRoom): Promise<RoomTrack[] | null> {
+    const config = liveKitConfig()
+    const room = roomName(liveRoom)
+    const httpUrl = config.url.replace(/\/+$/, '').replace(/^ws(s?):\/\//, 'http$1://')
+    try {
+        const response = await fetch(`${httpUrl}/twirp/livekit.RoomService/ListParticipants`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${issue('backend-api', 'backend-api', { room, roomAdmin: true }, config)}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ room }),
+            signal: AbortSignal.timeout(10_000),
+        })
+        if (response.status === 404) return []
+        if (!response.ok) return null
+        const data = (await response.json()) as Record<string, any>
+        return (data.participants ?? []).flatMap((participant: Record<string, any>) =>
+            (participant.tracks ?? []).map((track: Record<string, any>) => ({
+                identity: String(participant.identity ?? ''),
+                sid: String(track.sid ?? ''),
+                source: track.source,
+            }))
+        )
+    } catch (error) {
+        log.warn({ room, err: error }, 'Gagal membaca daftar track room LiveKit')
+        return null
+    }
+}
+
 /** Tutup satu room: semua pesertanya terputus (siaran staf menyambung ulang sendiri lewat token baru). */
 export async function deleteLiveRoom(name: string): Promise<void> {
     await roomService('DeleteRoom', { room: name })
