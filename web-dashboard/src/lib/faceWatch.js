@@ -4,7 +4,8 @@ import wasmLoaderPath from '../../node_modules/@mediapipe/tasks-vision/wasm/visi
 import { createFaceState } from './faceState'
 
 /**
- * Cek wajah di kamera staf yang sedang Live Kerja. Deteksi berjalan di
+ * Cek wajah di kamera staf yang sedang Live Kerja (wajah, atau badan orang kalau wajahnya tidak
+ * menghadap kamera -- lihat personPresent). Deteksi berjalan di
  * browser staf sendiri (MediaPipe Face Detector, model di /models) -- tidak
  * ada gambar yang dikirim ke server; yang dilaporkan hanya "wajah hilang"
  * (tidak ada wajah >= FACE_MISSING_AFTER_MS) dan "wajah kembali".
@@ -23,8 +24,16 @@ const UNKNOWN_AFTER_MS = 30_000
 // batas waktu, cek berikutnya tertahan "sibuk" selamanya dan status wajah membeku.
 const GRAB_TIMEOUT_MS = 3000
 const MODEL_PATH = '/models/blaze_face_short_range.tflite'
+const SEGMENTER_MODEL = '/models/selfie_segmenter.tflite'
+// Model wajah bekerja di 128 px dan dibuat untuk wajah dekat yang menghadap kamera. Cadangannya
+// segmentasi orang di 256 px: staf yang menunduk ke keyboard / menoleh ke monitor lain tetap
+// terhitung ADA selama badannya terlihat (dulu dianggap "wajah hilang" padahal masih duduk).
+const SEGMENT_WIDTH = 256
+// Porsi frame minimal yang berisi orang supaya dianggap ada (orang duduk di depan kamera biasanya 20-50%).
+const PERSON_MIN_COVERAGE = 0.08
 
 let detectorPromise = null
+let segmenterPromise = null
 
 function loadDetector() {
     detectorPromise ??= (async () => {
@@ -44,6 +53,63 @@ function loadDetector() {
     return detectorPromise
 }
 
+function loadSegmenter() {
+    segmenterPromise ??= (async () => {
+        const { ImageSegmenter } = await import('@mediapipe/tasks-vision')
+        return ImageSegmenter.createFromOptions(
+            { wasmLoaderPath, wasmBinaryPath },
+            {
+                baseOptions: { modelAssetPath: SEGMENTER_MODEL, delegate: 'CPU' },
+                runningMode: 'IMAGE',
+                outputCategoryMask: false,
+                outputConfidenceMasks: true,
+            },
+        )
+    })().catch((err) => {
+        segmenterPromise = null
+        throw err
+    })
+    return segmenterPromise
+}
+
+/** Gambar ulang [frame] (atau potongannya) ke kanvas kecil. */
+function drawTo(canvas, frame, sx, sy, sw, sh, width, height) {
+    if (canvas.width !== width) canvas.width = width
+    if (canvas.height !== height) canvas.height = height
+    canvas.getContext('2d').drawImage(frame, sx, sy, sw, sh, 0, 0, width, height)
+    return canvas
+}
+
+/**
+ * Ada orang di depan kamera? Urutan dari yang termurah:
+ * 1. wajah di frame utuh;
+ * 2. wajah di potongan persegi tengah -- frame 16:9 yang diperkecil ke 128 px membuat wajah yang
+ *    agak jauh terlalu kecil; potongan tengah membuatnya kira-kira 2x lebih besar;
+ * 3. badan orang (segmentasi) -- menunduk / menoleh tetap terhitung ada.
+ */
+async function personPresent(detector, frame, canvas) {
+    if (detector.detect(frame).detections.length > 0) return true
+
+    const side = Math.min(frame.width, frame.height)
+    const square = drawTo(canvas.square, frame, (frame.width - side) / 2, (frame.height - side) / 2, side, side, 256, 256)
+    if (detector.detect(square).detections.length > 0) return true
+
+    const segmenter = await loadSegmenter().catch(() => null)
+    if (!segmenter) return false
+    const height = Math.round((SEGMENT_WIDTH * frame.height) / frame.width)
+    const small = drawTo(canvas.small, frame, 0, 0, frame.width, frame.height, SEGMENT_WIDTH, height)
+    const result = segmenter.segment(small)
+    try {
+        const values = result.confidenceMasks?.[0]?.getAsFloat32Array()
+        if (!values?.length) return false
+        let person = 0
+        for (const value of values) if (value >= 0.5) person++
+        return person / values.length >= PERSON_MIN_COVERAGE
+    } finally {
+        result.close?.()
+    }
+}
+
 /**
  * @param {(missing: boolean) => void} onChange dipanggil saat status wajah berubah
  */
@@ -53,6 +119,7 @@ export function createFaceWatch(onChange) {
     let getPersonVisible = () => null
     let capture = null
     let busy = false
+    const canvas = { square: new OffscreenCanvas(256, 256), small: new OffscreenCanvas(SEGMENT_WIDTH, 144) }
     let missing = false
     const state = createFaceState({ missingAfterMs: FACE_MISSING_AFTER_MS, unknownAfterMs: UNKNOWN_AFTER_MS })
 
@@ -83,11 +150,15 @@ export function createFaceWatch(onChange) {
             const detector = await loadDetector()
             if (!capture || capture.track !== track) capture = new window.ImageCapture(track)
             const frame = await grabFrame(capture)
-            const faces = detector.detect(frame).detections.length
-            frame.close()
-            // Wajah ada di kamera asli tapi background menutupi orangnya
+            let present = false
+            try {
+                present = await personPresent(detector, frame, canvas)
+            } finally {
+                frame.close()
+            }
+            // Orang ada di kamera asli tapi background menutupinya
             // (penonton hanya melihat background) = tetap dianggap hilang.
-            setMissing(faces > 0 && getPersonVisible() !== false ? state.seen() : state.notSeen())
+            setMissing(present && getPersonVisible() !== false ? state.seen() : state.notSeen())
         } catch {
             // Frame belum siap / macet / model gagal dimuat: jangan tandai hilang; ImageCapture dibuat
             // ulang di cek berikutnya. Gagal terus = status tidak diketahui (lihat faceState.js).

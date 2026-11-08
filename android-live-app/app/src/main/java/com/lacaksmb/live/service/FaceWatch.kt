@@ -1,7 +1,12 @@
 package com.lacaksmb.live.service
 
+import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
+import com.google.mlkit.vision.segmentation.Segmentation
+import com.google.mlkit.vision.segmentation.SegmentationMask
+import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions
+import java.nio.ByteOrder
 import livekit.org.webrtc.VideoFrame
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -15,6 +20,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * background tidak menemukan orang ([personVisible] = false) -- penonton
  * hanya melihat background walau wajah ada di kamera asli.
  *
+ * Wajah tidak ketemu (menunduk ke HP, menoleh) tapi badan orang terlihat di kamera = tetap ADA
+ * (segmentasi orang ML Kit). "Wajah hilang" = orangnya benar-benar tidak ada di depan kamera.
+ *
  * Sama dengan web-dashboard/src/lib/faceWatch.js.
  */
 class FaceWatch(
@@ -24,7 +32,14 @@ class FaceWatch(
     private val detector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
             .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
-            .setMinFaceSize(0.15f)
+            .setMinFaceSize(0.1f)
+            .build(),
+    )
+    private val segmenter = Segmentation.getClient(
+        SelfieSegmenterOptions.Builder()
+            .setDetectorMode(SelfieSegmenterOptions.SINGLE_IMAGE_MODE)
+            // Masker ukuran model (256 px), bukan ukuran frame: cukup untuk menghitung porsi orang.
+            .enableRawSizeMask()
             .build(),
     )
     private val busy = AtomicBoolean(false)
@@ -50,7 +65,17 @@ class FaceWatch(
             return
         }
         detector.process(image)
-            .addOnSuccessListener { faces -> update(faces.isNotEmpty()) }
+            .continueWithTask { faces ->
+                when {
+                    !faces.isSuccessful -> Tasks.forException(faces.exception ?: IllegalStateException("cek wajah gagal"))
+                    faces.result.isNotEmpty() -> Tasks.forResult(true)
+                    // Wajah tidak ketemu: badan orang terlihat? Segmentasi gagal = dianggap tidak ada.
+                    else -> segmenter.process(image).continueWith { mask ->
+                        mask.isSuccessful && personCoverage(mask.result) >= PERSON_MIN_COVERAGE
+                    }
+                }
+            }
+            .addOnSuccessListener { present -> update(present) }
             .addOnFailureListener { checkFailed() }
             .addOnCompleteListener { busy.set(false) }
     }
@@ -69,12 +94,24 @@ class FaceWatch(
         missing = false
     }
 
-    fun close() = detector.close()
+    fun close() {
+        detector.close()
+        segmenter.close()
+    }
 
-    private fun update(faceFound: Boolean) {
+    private fun personCoverage(mask: SegmentationMask): Float {
+        val values = mask.buffer.order(ByteOrder.nativeOrder()).asFloatBuffer()
+        val count = mask.width * mask.height
+        if (count == 0) return 0f
+        var person = 0
+        for (i in 0 until count) if (values.get(i) >= 0.5f) person++
+        return person / count.toFloat()
+    }
+
+    private fun update(present: Boolean) {
         val now = System.currentTimeMillis()
         lastChecked = now
-        if (faceFound && personVisible() != false) {
+        if (present && personVisible() != false) {
             lastSeen = now
             setMissing(false)
         } else if (now - lastSeen >= MISSING_AFTER_MS) {
@@ -101,5 +138,7 @@ class FaceWatch(
         private const val CHECK_INTERVAL_MS = 1_000L
         const val MISSING_AFTER_MS = 30_000L
         private const val UNKNOWN_AFTER_MS = 30_000L
+        // Porsi frame berisi orang supaya dianggap ada (orang duduk di depan kamera biasanya 20-50%).
+        private const val PERSON_MIN_COVERAGE = 0.08f
     }
 }
