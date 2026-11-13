@@ -62,12 +62,12 @@ layar besar). Penonton hanya mengunduh video yang tampil di halaman grid
 
 Cek beban dengan `docker compose logs -f livekit`.
 
-## Rekaman (playback 2 hari)
+## Rekaman (playback 3 hari)
 
 Live Kerja bisa direkam penuh (kamera & layar tiap staf, dipotong per jam)
 lewat **LiveKit Egress** langsung ke **DigitalOcean Spaces**, lalu diputar
 ulang di dashboard menu **Rekaman**. File & datanya dihapus otomatis setelah
-**48 jam** oleh scheduler backend-adonis.
+**72 jam** oleh scheduler backend-adonis.
 
 **Rekaman mati** selama `DO_SPACES_KEY`, `DO_SPACES_SECRET`, dan
 `DO_SPACES_BUCKET` di `backend-adonis/.env` kosong -- webhook tetap diterima

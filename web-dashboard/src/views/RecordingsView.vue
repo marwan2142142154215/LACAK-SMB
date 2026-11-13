@@ -11,7 +11,7 @@ import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
 
 // Rekaman video penuh Live Kerja (LiveKit Egress -> DigitalOcean Spaces),
-// dipotong per jam. Disimpan 3 hari lalu dihapus otomatis oleh server.
+// dipotong per jam. Disimpan 3 hari (72 jam) lalu dihapus otomatis oleh server.
 const RETENTION_DAYS = 3
 
 const toast = useToast()

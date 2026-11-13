@@ -16,12 +16,12 @@ import { localNow } from '#services/LocalTime'
  * - track_published (kamera/layar staf) -> StartTrackEgress + baris live_recordings
  * - egress_ended -> baris ditandai selesai/gagal; kalau dihentikan karena
  *   pergantian jam (rotateRecordings), langsung direkam lagi -> file per jam.
- * Scheduler tiap menit: rotateRecordings() & pruneRecordings() (hapus > 48 jam).
+ * Scheduler tiap menit: rotateRecordings() & pruneRecordings() (hapus > 72 jam).
  *
  * Rekaman MATI kalau Spaces (DO_SPACES_KEY/SECRET/BUCKET) belum diisi.
  */
 
-export const RECORDING_RETENTION_HOURS = 48
+export const RECORDING_RETENTION_HOURS = 72
 export const RECORDING_SEGMENT_MINUTES = 60
 /** Rekaman berhenti setelah sesi kerja berjalan selama ini (lewat tengah malam pun tetap dihitung). */
 export const RECORDING_MAX_SESSION_HOURS = 14
@@ -353,7 +353,7 @@ export async function pruneShortSessions(now: Date = new Date()): Promise<number
     return removed
 }
 
-/** Hapus file & baris rekaman yang lebih tua dari masa simpan (48 jam). */
+/** Hapus file & baris rekaman yang lebih tua dari masa simpan (72 jam). */
 export async function pruneRecordings(now: Date = new Date()): Promise<number> {
     const cutoff = new Date(now.getTime() - RECORDING_RETENTION_HOURS * 3_600_000)
     const old = await db.from('live_recordings').where('started_at', '<', cutoff).limit(500)
