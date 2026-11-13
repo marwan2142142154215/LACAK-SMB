@@ -6,6 +6,7 @@ import {
     DeleteObjectCommand,
     GetObjectCommand,
     HeadObjectCommand,
+    ListObjectsV2Command,
     PutObjectCommand,
     S3Client,
 } from '@aws-sdk/client-s3'
@@ -65,6 +66,9 @@ export function stripSpacesPrefix(key: string): string {
     const prefix = `${spacesPrefix()}/`
     return key.startsWith(prefix) ? key.slice(prefix.length) : key
 }
+
+/** Satu objek di Spaces; path relatif disk (tanpa awalan folder proyek), sama dengan kolom file_path. */
+export type SpacesObject = { path: string; size: number; lastModified: Date | null }
 
 class LocalDisk implements Disk {
     constructor(private readonly root: string) {}
@@ -172,6 +176,32 @@ class SpacesDisk implements Disk {
         )
     }
 
+    /** Semua objek di bawah satu folder (termasuk subfolder), halaman demi halaman. */
+    async list(folder: string): Promise<SpacesObject[]> {
+        const prefix = `${spacesKey(folder).replace(/\/+$/, '')}/`
+        const found: SpacesObject[] = []
+        let token: string | undefined
+        do {
+            const page = await this.client.send(
+                new ListObjectsV2Command({
+                    Bucket: this.bucket,
+                    Prefix: prefix,
+                    ContinuationToken: token,
+                })
+            )
+            for (const item of page.Contents ?? []) {
+                if (!item.Key) continue
+                found.push({
+                    path: stripSpacesPrefix(item.Key),
+                    size: item.Size ?? 0,
+                    lastModified: item.LastModified ?? null,
+                })
+            }
+            token = page.IsTruncated ? page.NextContinuationToken : undefined
+        } while (token)
+        return found
+    }
+
     async temporaryUrl(path: string, options: TemporaryUrlOptions) {
         return getSignedUrl(
             this.client,
@@ -187,6 +217,13 @@ class SpacesDisk implements Disk {
 }
 
 const disks = new Map<DiskName, Disk>()
+
+/** Daftar objek Spaces di bawah satu folder (path relatif disk, mis. "recordings/2026-11-11"). */
+export async function listSpaces(folder: string): Promise<SpacesObject[]> {
+    const spaces = disk('spaces')
+    if (!(spaces instanceof SpacesDisk)) throw new Error('Disk spaces tidak tersedia')
+    return spaces.list(folder)
+}
 
 export function disk(name: DiskName): Disk {
     let instance = disks.get(name)
