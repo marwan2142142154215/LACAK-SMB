@@ -91,6 +91,13 @@ const routes = [
                 meta: { permission: 'devices.view' },
             },
             {
+                // Halaman detail penuh satu perangkat (dibuka dari daftar Device).
+                path: 'devices/:id',
+                name: 'device-detail',
+                component: () => import('@/views/DeviceDetailView.vue'),
+                meta: { permission: 'devices.view' },
+            },
+            {
                 path: 'organizations',
                 name: 'organizations',
                 component: () => import('@/views/OrganizationsView.vue'),

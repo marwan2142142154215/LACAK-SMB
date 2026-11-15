@@ -106,14 +106,14 @@ export default class DeviceCommandsController {
 
         await logDeviceUpdated(ctx, device, updated)
 
-        return ctx.response
-            .status(201)
-            .send(
-                success(
-                    'Perintah berhasil dikirim, menunggu diterima device',
-                    deviceCommandResource(command)
-                )
-            )
+        // Perintah untuk HP yang sedang offline tetap disimpan dan dikirim gateway begitu HP
+        // terhubung lagi (mis. setelah dinyalakan ulang) -- beri tahu admin supaya tidak mengira gagal.
+        const message =
+            device.status === 'offline'
+                ? 'Perintah disimpan. HP sedang offline, perintah terkirim otomatis begitu HP terhubung lagi'
+                : 'Perintah berhasil dikirim, menunggu diterima device'
+
+        return ctx.response.status(201).send(success(message, deviceCommandResource(command)))
     }
 }
 

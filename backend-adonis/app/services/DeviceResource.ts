@@ -26,6 +26,18 @@ export type DeviceRow = {
     battery_level: number | null
     last_ssid: string | null
     last_seen_at: Date | null
+    // Detail perangkat dari APK Pelacak (event device:info di gateway); null sampai HP pertama
+    // kali melapor. Opsional karena baris yang baru dibuat di kode belum memuatnya.
+    manufacturer?: string | null
+    model?: string | null
+    app_version_code?: number | null
+    is_charging?: boolean | null
+    network_type?: string | null
+    carrier_name?: string | null
+    storage_free_mb?: number | null
+    storage_total_mb?: number | null
+    permission_state?: Record<string, boolean> | null
+    info_updated_at?: Date | null
     enrolled_at: Date | null
     is_active: boolean
     secret_hash?: string | null
@@ -44,6 +56,9 @@ export type DeviceLocationRow = {
     longitude: string | number | null
     ble_distance_meters: string | number | null
     ble_rssi: number | null
+    accuracy_meters?: string | number | null
+    location_provider?: string | null
+    fixed_at?: Date | null
     recorded_at: Date | null
 }
 
@@ -54,6 +69,7 @@ export type DeviceLocationRow = {
 type DeviceRelations = {
     organizationName?: string | null
     latestLocation?: DeviceLocationRow | null
+    latestCommand?: Record<string, any> | null
 }
 
 export function deviceResource(device: DeviceRow, relations: DeviceRelations = {}) {
@@ -72,12 +88,29 @@ export function deviceResource(device: DeviceRow, relations: DeviceRelations = {
         battery_level: device.battery_level ?? null,
         last_ssid: device.last_ssid ?? null,
         last_seen_at: laravelDate(device.last_seen_at ?? null),
+        manufacturer: device.manufacturer ?? null,
+        model: device.model ?? null,
+        app_version_code: device.app_version_code ?? null,
+        is_charging: device.is_charging ?? null,
+        network_type: device.network_type ?? null,
+        carrier_name: device.carrier_name ?? null,
+        storage_free_mb: device.storage_free_mb ?? null,
+        storage_total_mb: device.storage_total_mb ?? null,
+        permission_state: device.permission_state ?? null,
+        info_updated_at: laravelDate(device.info_updated_at ?? null),
         enrolled_at: laravelDate(device.enrolled_at ?? null),
         is_active: Boolean(device.is_active),
         ...(relations.latestLocation !== undefined
             ? {
                   latest_location: relations.latestLocation
                       ? deviceLocationResource(relations.latestLocation)
+                      : null,
+              }
+            : {}),
+        ...(relations.latestCommand !== undefined
+            ? {
+                  latest_command: relations.latestCommand
+                      ? deviceCommandResource(relations.latestCommand)
                       : null,
               }
             : {}),
@@ -109,6 +142,9 @@ export function deviceLocationResource(location: DeviceLocationRow) {
         longitude: laravelDecimal(location.longitude, 7),
         ble_distance_meters: laravelDecimal(location.ble_distance_meters, 2),
         ble_rssi: location.ble_rssi ?? null,
+        accuracy_meters: laravelDecimal(location.accuracy_meters ?? null, 2),
+        location_provider: location.location_provider ?? null,
+        fixed_at: laravelDate(location.fixed_at ?? null),
         recorded_at: laravelDate(location.recorded_at ?? null),
     }
 }
@@ -123,6 +159,11 @@ export function deviceCommandResource(command: Record<string, any>) {
         status: command.status,
         reason_note: command.reason_note ?? null,
         acknowledged_at: laravelDate(command.acknowledged_at ?? null),
+        // Jejak pengiriman & hasil dari HP (diisi realtime-gateway, lihat CommandLifecycle di sana).
+        delivered_at: laravelDate(command.delivered_at ?? null),
+        executed_at: laravelDate(command.executed_at ?? null),
+        result_message: command.result_message ?? null,
+        delivery_attempts: Number(command.delivery_attempts ?? 0),
         created_at: laravelDate(command.created_at ?? null),
     }
 }
@@ -232,6 +273,22 @@ export async function latestLocationsOf(deviceIds: number[]) {
         .orderBy('recorded_at', 'desc')
         .select('*')
     for (const row of rows) latest.set(Number(row.device_id), row as DeviceLocationRow)
+    return latest
+}
+
+/** Perintah terakhir per device (untuk kolom "Perintah terakhir" di dashboard). */
+export async function latestCommandsOf(deviceIds: number[]) {
+    const latest = new Map<number, Record<string, any>>()
+    if (!deviceIds.length) return latest
+
+    const rows = await db
+        .from('device_commands')
+        .distinctOn('device_id')
+        .whereIn('device_id', deviceIds)
+        .orderBy('device_id')
+        .orderBy('id', 'desc')
+        .select('*')
+    for (const row of rows) latest.set(Number(row.device_id), row)
     return latest
 }
 

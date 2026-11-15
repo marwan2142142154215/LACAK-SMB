@@ -134,6 +134,9 @@ class GatewaySocketClient(
         ip: String?,
         nearbyBeaconUuid: String? = null,
         nearbyBeaconDistanceMeters: Double? = null,
+        accuracyMeters: Float? = null,
+        provider: String? = null,
+        fixTime: Long? = null,
     ) {
         val payload = JSONObject().apply {
             put("source", source)
@@ -149,13 +152,44 @@ class GatewaySocketClient(
             // BleBeaconScanner.strongestOtherReading().
             if (nearbyBeaconUuid != null) put("nearbyBeaconUuid", nearbyBeaconUuid)
             if (nearbyBeaconDistanceMeters != null) put("nearbyBeaconDistanceMeters", nearbyBeaconDistanceMeters)
+            // Kelengkapan lokasi: radius akurasi (m), sumber fix (gps/network/fused/passive), dan
+            // waktu fix diambil (epoch ms) -- bisa lebih tua dari waktu kirim kalau belum ada fix baru.
+            if (accuracyMeters != null) put("accuracyMeters", accuracyMeters.toDouble())
+            if (provider != null) put("provider", provider)
+            if (fixTime != null) put("fixTime", fixTime)
         }
         socket?.emit("device:location", payload)
     }
 
-    fun acknowledgeCommand(commandId: Int) {
-        val payload = JSONObject().apply { put("commandId", commandId) }
+    /** Detail perangkat (lihat DeviceInfoCollector) -- disimpan gateway ke tabel devices. */
+    fun sendDeviceInfo(info: JSONObject) {
+        socket?.emit("device:info", info)
+    }
+
+    /**
+     * Laporan perintah ke server. result: "received" (diterima), "executed" (berhasil dijalankan),
+     * atau "failed" (gagal; message berisi alasan yang tampil di dashboard). Gateway versi lama
+     * mengabaikan field tambahan dan hanya membaca commandId (= diterima).
+     */
+    fun reportCommand(commandId: Int, result: String, message: String? = null) {
+        val payload = JSONObject().apply {
+            put("commandId", commandId)
+            put("result", result)
+            if (message != null) put("message", message)
+        }
         socket?.emit("command:ack", payload)
+    }
+
+    val isConnected: Boolean
+        get() = socket?.connected() == true
+
+    /**
+     * Sambung ulang SEKARANG (dipanggil saat jaringan HP baru tersedia lagi) tanpa menunggu jeda
+     * reconnect bawaan yang bisa sampai 15 detik.
+     */
+    fun reconnectNow() {
+        val sock = socket ?: return
+        if (!sock.connected()) sock.connect()
     }
 
     fun disconnect() {

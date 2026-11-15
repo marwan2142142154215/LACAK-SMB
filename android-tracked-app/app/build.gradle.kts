@@ -4,6 +4,14 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+/** "1.2.3" -> 10203 (maks 99 per bagian); format lain -> 1. */
+fun versionCodeFromName(name: String): Int {
+    val parts = name.split(".").map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
+    if (parts.isEmpty()) return 1
+    val (major, minor, patch) = (parts + listOf(0, 0, 0)).take(3).map { it.coerceIn(0, 99) }
+    return maxOf(1, major * 10_000 + minor * 100 + patch)
+}
+
 android {
     namespace = "com.lacaksmb.tracker"
     compileSdk = 36
@@ -13,8 +21,12 @@ android {
         // minSdk 26 (Android 8.0) per permintaan: dukungan Android 8 s/d 16.
         minSdk = 26
         targetSdk = 36
-        versionCode = (project.findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 1
         versionName = (project.findProperty("appVersionName") as String?) ?: "1.0.0"
+        // Tanpa -PappVersionCode, versionCode diturunkan dari versionName (1.2.3 -> 10203) supaya
+        // APK versi baru dari menu Build APK bisa dipasang menimpa versi lama, dan dashboard bisa
+        // membandingkan versi app tiap HP (kolom app_version_code).
+        versionCode = (project.findProperty("appVersionCode") as String?)?.toIntOrNull()
+            ?: versionCodeFromName(versionName ?: "1.0.0")
 
         // Konfigurasi per-site ditanam SAAT BUILD lewat Gradle property
         // (-PsiteCode=... -PgatewayUrl=... -PsiteName=...), bukan diketik

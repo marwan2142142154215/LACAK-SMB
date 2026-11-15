@@ -1,13 +1,15 @@
 package com.lacaksmb.tracker.ui
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.admin.DevicePolicyManager
-import android.content.Context
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -18,397 +20,546 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
 import com.lacaksmb.tracker.BuildConfig
+import com.lacaksmb.tracker.R
+import com.lacaksmb.tracker.admin.DeviceOwnerSetup
 import com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver
 import com.lacaksmb.tracker.data.DeviceIdentityStore
 import com.lacaksmb.tracker.data.DeviceLockStore
-import com.lacaksmb.tracker.network.DeviceEnrollmentApi
+import com.lacaksmb.tracker.service.ServiceWatchdogWorker
 import com.lacaksmb.tracker.service.TrackerForegroundService
+import com.lacaksmb.tracker.service.TrackerStatus
+import com.lacaksmb.tracker.setup.SetupChecks
 import com.lacaksmb.tracker.ui.theme.LacakTrackerTheme
 import kotlinx.coroutines.launch
 
 /**
- * Layar ini SENGAJA tidak punya input teks sama sekali (kode site & alamat
- * gateway ditanam saat build lewat BuildConfig — lihat app/build.gradle.kts
- * dan scripts/build-for-site.sh). Staf hanya menekan tombol izin yang
- * muncul; begitu semua langkah selesai, pemantauan mulai otomatis.
+ * Layar panduan pemasangan APK Pelacak. SENGAJA tanpa input teks (kode site, alamat server, dan
+ * identitas device ditanam saat build dari menu Build APK). Pemegang HP / teknisi cukup menekan
+ * "Mulai penyiapan": setiap izin diminta BERURUTAN, masing-masing dengan penjelasan untuk apa
+ * dipakai, lalu otomatis lanjut ke langkah berikutnya setelah kembali dari halaman Setelan.
  *
- * Catatan platform Android (bukan keterbatasan desain): app yang BARU
- * diinstal berada dalam "stopped state" dan tidak akan menerima broadcast
- * apa pun (termasuk BOOT_COMPLETED) sampai dibuka minimal sekali secara
- * manual. Setelah dibuka sekali & langkah izin ini selesai, service akan
- * auto-restart selamanya (termasuk setelah reboot) tanpa perlu dibuka lagi
- * — lihat BootCompletedReceiver.
+ * Semua status dibaca ulang dari sistem setiap kali layar ini tampil, jadi izin yang dicabut
+ * belakangan langsung terlihat sebagai "perlu tindakan" (dan dilaporkan ke dashboard lewat
+ * DeviceInfoCollector). Pemantauan dimulai SEGERA setelah izin lokasi diberikan -- langkah sisanya
+ * menyempurnakan keandalan, tidak menahan HP untuk online.
+ *
+ * Catatan platform Android: app yang BARU diinstal berada dalam "stopped state" dan tidak menerima
+ * broadcast apa pun (termasuk BOOT_COMPLETED) sampai dibuka minimal sekali secara manual.
  */
 class MainActivity : ComponentActivity() {
 
     private lateinit var identityStore: DeviceIdentityStore
 
-    // State step ditaruh di luar Compose supaya tidak hilang saat Activity
-    // di-pause ketika user pergi ke halaman Settings (background location,
-    // battery optimization) lalu kembali.
-    private var pendingStep by mutableStateOf(EnrollmentStep.RUNTIME_PERMISSIONS)
-    private var statusText by mutableStateOf("")
+    private var checks by mutableStateOf<Map<SetupStep, Boolean>>(emptyMap())
+    private var locationServiceOn by mutableStateOf(true)
+    private var deviceOwner by mutableStateOf(false)
+    private var deviceUuid by mutableStateOf("")
+    private var hint by mutableStateOf<String?>(null)
 
-    private val permissionLauncher = registerForActivityResult(
+    // Mode "pandu saya": setelah satu langkah selesai, langsung lanjut ke langkah berikutnya.
+    private var guiding = false
+    private var lastAttempted: SetupStep? = null
+
+    private val locationLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { results ->
-        // Lokasi WAJIB diizinkan — foreground service bertipe "location"
-        // akan SecurityException saat start kalau tidak ada izin lokasi
-        // sama sekali. Bluetooth/notifikasi boleh ditolak (fitur terkait
-        // nonaktif, tapi service tetap bisa jalan untuk heartbeat & command).
-        val locationGranted = results[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            results[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
+    ) { onStepReturned() }
 
-        if (!locationGranted) {
-            statusText = "Izin lokasi wajib diberikan supaya pemantauan bisa jalan. Tekan Mulai untuk coba lagi."
-            pendingStep = EnrollmentStep.RUNTIME_PERMISSIONS
-            return@registerForActivityResult
-        }
+    private val singlePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { onStepReturned() }
 
-        advanceFrom(EnrollmentStep.RUNTIME_PERMISSIONS)
-    }
+    private val multiPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { onStepReturned() }
 
-    private val deviceAdminLauncher = registerForActivityResult(
+    private val settingsLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
-    ) {
-        // Jangan percaya begitu saja hasil intent: verifikasi ke sistem bahwa
-        // komponen Device Admin BENAR-BENAR aktif (user bisa saja membatalkan
-        // dialog "Aktifkan aplikasi admin perangkat").
-        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        if (dpm.isAdminActive(TrackerDeviceAdminReceiver.componentName(this))) {
-            advanceFrom(EnrollmentStep.DEVICE_ADMIN)
-        } else {
-            statusText = "Kemampuan lock jarak jauh belum diaktifkan. Tekan Coba Lagi dan pilih \"Aktifkan\"."
-            canRetry = true
-        }
-    }
-
-    // Menampilkan tombol "Coba Lagi" saat langkah terhenti karena user menolak
-    // atau menutup dialog sistem (alih-alih berlanjut diam-diam seperti
-    // sebelumnya yang membuat fitur lock tidak jalan tanpa disadari).
-    private var canRetry by mutableStateOf(false)
+    ) { onStepReturned() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         identityStore = DeviceIdentityStore(applicationContext)
 
+        // HP aset perusahaan yang dipasang lewat QR (Device Owner): izin diberikan otomatis.
+        DeviceOwnerSetup.applyIfDeviceOwner(applicationContext)
+        lifecycleScope.launch {
+            deviceUuid = identityStore.ensureDeviceUuid()
+            identityStore.ensureDeviceSecretFromBuild()
+        }
+
         setContent {
             LacakTrackerTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    EnrollmentScreen(
-                        identityStore = identityStore,
-                        step = pendingStep,
-                        statusText = statusText,
-                        canRetry = canRetry,
-                        onBegin = { runStep(EnrollmentStep.RUNTIME_PERMISSIONS) },
-                        onRetry = { runStep(pendingStep) },
-                        onAlreadyEnrolled = { TrackerForegroundService.start(applicationContext) },
+                    val status by TrackerStatus.text.collectAsState()
+                    val connected by TrackerStatus.connected.collectAsState()
+                    SetupScreen(
+                        deviceUuid = deviceUuid,
+                        checks = checks,
+                        locationServiceOn = locationServiceOn,
+                        deviceOwner = deviceOwner,
+                        connectionText = status,
+                        connected = connected,
+                        hint = hint,
+                        onGuide = ::startGuide,
+                        onStep = { step ->
+                            guiding = false
+                            runStep(step)
+                        },
+                        onOpenLocationSettings = {
+                            openSettings(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                        },
+                        onOpenAppSettings = { openSettings(appDetailsIntent()) },
                     )
                 }
             }
         }
 
-        // Deteksi kembali dari halaman Settings (background location /
-        // battery optimization) untuk otomatis lanjut ke langkah berikutnya
-        // tanpa staf perlu tap tombol lagi di app ini.
-        val lifecycleOwner = this
-        lifecycleOwner.lifecycle.addObserver(
+        lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_RESUME) {
-                    // Pertahanan kunci: kalau status masih "dikunci admin" dan
-                    // app kebetulan dibuka (mis. via notifikasi), kunci lagi —
-                    // tidak ada jalan pintas lewat app ini sendiri.
+                    // Pertahanan kunci: kalau status masih "dikunci admin" dan app kebetulan dibuka
+                    // (mis. via notifikasi), kunci lagi — tidak ada jalan pintas lewat app ini.
                     lifecycleScope.launch {
                         val lock = DeviceLockStore(applicationContext).snapshot()
                         if (lock.adminLocked) {
                             TrackerDeviceAdminReceiver.lockNow(applicationContext)
                         }
                     }
-
-                    when (pendingStep) {
-                        EnrollmentStep.BACKGROUND_LOCATION -> {
-                            if (backgroundLocationGranted()) {
-                                advanceFrom(EnrollmentStep.BACKGROUND_LOCATION)
-                            } else {
-                                statusText = "Izin lokasi \"selalu\" belum diberikan. Buka Setelan, pilih Lokasi → Izinkan semua waktu, lalu tekan Coba Lagi."
-                                canRetry = true
-                            }
-                        }
-
-                        EnrollmentStep.BATTERY_EXEMPTION -> {
-                            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                            if (pm.isIgnoringBatteryOptimizations(packageName)) {
-                                advanceFrom(EnrollmentStep.BATTERY_EXEMPTION)
-                            } else {
-                                statusText = "Pengecualian baterai belum disetujui. Tekan Coba Lagi lalu pilih \"Izinkan\"."
-                                canRetry = true
-                            }
-                        }
-
-                        EnrollmentStep.DISPLAY_OVER_OTHER_APPS -> {
-                            if (Settings.canDrawOverlays(this@MainActivity)) {
-                                advanceFrom(EnrollmentStep.DISPLAY_OVER_OTHER_APPS)
-                            } else {
-                                statusText = "Lapisan peringatan kunci belum diizinkan. Pilih \"Izinkan\" pada halaman Setelan lalu tekan Coba Lagi."
-                                canRetry = true
-                            }
-                        }
-
-                        else -> Unit
-                    }
+                    refreshChecks()
                 }
             },
         )
     }
 
-    /** Android 10+ mewajibkan izin lokasi latar belakang terpisah; sebelumnya dianggap ikut lokasi foreground. */
-    private fun backgroundLocationGranted(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true
-        return checkSelfPermission(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
+    /** Baca ulang semua izin dari sistem; mulai pemantauan begitu izin lokasi ada. */
+    private fun refreshChecks() {
+        checks = SetupStep.entries.associateWith { it.isDone(this) }
+        locationServiceOn = SetupChecks.isLocationServiceOn(this)
+        deviceOwner = SetupChecks.isDeviceOwner(this)
+        if (checks[SetupStep.LOCATION] == true) activateMonitoring()
     }
 
-    /** Dipanggil begitu staf menekan tombol "Mulai" — merantai semua langkah otomatis. */
-    private fun runStep(step: EnrollmentStep) {
-        pendingStep = step
-        canRetry = false
+    /**
+     * Simpan pendaftaran (identitas sudah tertanam saat build) & jalankan service. Aman dipanggil
+     * berulang: service yang sudah jalan tidak terpengaruh.
+     */
+    private fun activateMonitoring() {
+        lifecycleScope.launch {
+            identityStore.ensureDeviceUuid()
+            identityStore.ensureDeviceSecretFromBuild()
+            identityStore.saveEnrollment(BuildConfig.SITE_CODE, BuildConfig.GATEWAY_URL)
+            ServiceWatchdogWorker.schedule(applicationContext)
+            TrackerForegroundService.startSafely(applicationContext)
+        }
+    }
+
+    private fun startGuide() {
+        guiding = true
+        hint = null
+        lastAttempted = null
+        continueGuide()
+    }
+
+    private fun continueGuide() {
+        val next = SetupStep.entries.firstOrNull { !it.isDone(this) && it.isAvailable(this) }
+        if (next == null) {
+            guiding = false
+            hint = "Semua langkah selesai. HP ini siap dipantau — aplikasi boleh ditutup."
+            return
+        }
+        runStep(next)
+    }
+
+    /** Kembali dari dialog izin / halaman Setelan: periksa ulang lalu lanjut atau beri petunjuk. */
+    private fun onStepReturned() {
+        refreshChecks()
+        val attempted = lastAttempted ?: return
+        if (attempted.isDone(this)) {
+            hint = null
+            if (guiding) continueGuide()
+        } else {
+            // Ditolak/dibatalkan: berhenti dan jelaskan, jangan berputar meminta terus-menerus.
+            guiding = false
+            hint = attempted.retryHint
+        }
+    }
+
+    private fun runStep(step: SetupStep) {
+        lastAttempted = step
         when (step) {
-            EnrollmentStep.RUNTIME_PERMISSIONS -> {
-                statusText = "Meminta izin lokasi, Bluetooth & notifikasi..."
-                val permissions = mutableListOf(
-                    android.Manifest.permission.ACCESS_FINE_LOCATION,
-                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            SetupStep.LOCATION -> {
+                val permissions = arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
                 )
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    permissions += android.Manifest.permission.BLUETOOTH_SCAN
-                    permissions += android.Manifest.permission.BLUETOOTH_CONNECT
-                    permissions += android.Manifest.permission.BLUETOOTH_ADVERTISE
+                if (permanentlyDenied(Manifest.permission.ACCESS_FINE_LOCATION)) {
+                    openSettings(appDetailsIntent())
+                } else {
+                    locationLauncher.launch(permissions)
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    permissions += android.Manifest.permission.POST_NOTIFICATIONS
-                }
-                permissionLauncher.launch(permissions.toTypedArray())
             }
 
-            EnrollmentStep.BACKGROUND_LOCATION -> {
+            SetupStep.BACKGROUND_LOCATION -> {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                    // Sebelum Android 10, lokasi latar belakang ikut lokasi biasa.
-                    advanceFrom(EnrollmentStep.BACKGROUND_LOCATION)
-                    return
+                    onStepReturned()
+                } else if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q ||
+                    !permanentlyDenied(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                ) {
+                    // Android 10: dialog dengan pilihan "Izinkan sepanjang waktu". Android 11+:
+                    // sistem langsung membuka halaman izin lokasi app ini.
+                    singlePermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                } else {
+                    openSettings(appDetailsIntent())
                 }
-                statusText = "Buka Setelan untuk pilih \"Izinkan selalu\" pada lokasi..."
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.fromParts("package", packageName, null)
-                }
-                startActivity(intent)
             }
 
-            EnrollmentStep.DEVICE_ADMIN -> {
-                statusText = "Mengaktifkan kemampuan lock jarak jauh..."
+            SetupStep.NOTIFICATIONS -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    !permanentlyDenied(Manifest.permission.POST_NOTIFICATIONS)
+                ) {
+                    singlePermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    openSettings(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
+                    )
+                }
+            }
+
+            SetupStep.DEVICE_ADMIN -> {
                 val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
                     putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, TrackerDeviceAdminReceiver.componentName(this@MainActivity))
                     putExtra(
                         DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                        "Diperlukan supaya admin bisa mengunci layar device ini dari jarak jauh sesuai persetujuan yang berlaku.",
+                        "Hanya untuk mengunci layar HP ini dari jarak jauh oleh admin kantor, sesuai " +
+                            "persetujuan tertulis. Aplikasi ini tidak bisa menghapus data HP.",
                     )
                 }
-                deviceAdminLauncher.launch(intent)
+                openSettings(intent)
             }
 
-            EnrollmentStep.BATTERY_EXEMPTION -> {
-                statusText = "Mengecualikan dari optimisasi baterai..."
-                requestBatteryOptimizationExemption()
-            }
+            SetupStep.OVERLAY -> openSettings(
+                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:$packageName".toUri()),
+            )
 
-            EnrollmentStep.DISPLAY_OVER_OTHER_APPS -> {
-                if (Settings.canDrawOverlays(this)) {
-                    advanceFrom(EnrollmentStep.DISPLAY_OVER_OTHER_APPS)
-                    return
-                }
-                statusText = "Buka Setelan → Izinkan \"tampil di atas aplikasi lain\"..."
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName"),
-                )
-                startActivity(intent)
-            }
+            SetupStep.BATTERY -> openSettings(batteryExemptionIntent())
 
-            EnrollmentStep.STARTING -> startMonitoring()
-
-            EnrollmentStep.ACTIVE -> Unit
-        }
-    }
-
-    private fun advanceFrom(completedStep: EnrollmentStep) {
-        if (pendingStep != completedStep) return // hasil nyasar dari step lama, abaikan
-        val next = completedStep.next()
-        runStep(next)
-    }
-
-    private fun startMonitoring() {
-        statusText = "Menyimpan konfigurasi & memulai pemantauan..."
-        lifecycleScope.launch {
-            identityStore.saveEnrollment(BuildConfig.SITE_CODE, BuildConfig.GATEWAY_URL)
-            // Klaim rahasia device sekarang supaya staf langsung tahu apakah
-            // admin sudah mendaftarkan ID Device ini. Kalau belum, service
-            // tetap dijalankan dan mengulang klaim sendiri secara berkala.
-            val snapshot = identityStore.snapshot()
-            var claimFailureReason: String? = null
-            if (snapshot.deviceSecret.isBlank()) {
-                val claimResult = DeviceEnrollmentApi.claim(snapshot.deviceUuid)
-                val claimedSecret = claimResult.getOrNull()
-                if (claimedSecret != null) {
-                    identityStore.saveDeviceSecret(claimedSecret)
+            SetupStep.BLUETOOTH -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    multiPermissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.BLUETOOTH_SCAN,
+                            Manifest.permission.BLUETOOTH_CONNECT,
+                            Manifest.permission.BLUETOOTH_ADVERTISE,
+                        ),
+                    )
                 } else {
-                    claimFailureReason = claimResult.exceptionOrNull()?.message ?: "Device belum didaftarkan admin"
+                    onStepReturned()
                 }
             }
-            TrackerForegroundService.start(applicationContext)
-            pendingStep = EnrollmentStep.ACTIVE
-            statusText = if (claimFailureReason == null) {
-                "Aktif memantau untuk site ${BuildConfig.SITE_NAME}."
-            } else {
-                "$claimFailureReason Pemantauan akan aktif otomatis begitu admin mendaftarkan ID Device di atas."
-            }
         }
+    }
+
+    /** Pernah ditolak permanen ("Jangan tanya lagi"): dialog tidak akan muncul, arahkan ke Setelan. */
+    private fun permanentlyDenied(permission: String): Boolean {
+        val asked = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("asked_$permission", false)
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit { putBoolean("asked_$permission", true) }
+        return asked &&
+            checkSelfPermission(permission) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+            !shouldShowRequestPermissionRationale(permission)
     }
 
     @SuppressLint("BatteryLife")
-    private fun requestBatteryOptimizationExemption() {
-        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        if (pm.isIgnoringBatteryOptimizations(packageName)) {
-            advanceFrom(EnrollmentStep.BATTERY_EXEMPTION)
-            return
+    private fun batteryExemptionIntent(): Intent =
+        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, "package:$packageName".toUri())
+
+    private fun appDetailsIntent(): Intent =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+
+    private fun openSettings(intent: Intent) {
+        try {
+            settingsLauncher.launch(intent)
+        } catch (_: ActivityNotFoundException) {
+            // Sebagian OEM menghapus halaman setelan tertentu -- jatuh ke halaman info aplikasi.
+            try {
+                settingsLauncher.launch(appDetailsIntent())
+            } catch (_: ActivityNotFoundException) {
+                hint = "Halaman setelan tidak tersedia di HP ini. Buka Setelan → Aplikasi → ${getString(R.string.app_name)} secara manual."
+            }
         }
-        val intent = Intent(
-            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-            Uri.parse("package:$packageName"),
-        )
-        startActivity(intent)
+    }
+
+    companion object {
+        private const val PREFS = "setup_prompts"
     }
 }
 
-private enum class EnrollmentStep {
-    RUNTIME_PERMISSIONS,
-    BACKGROUND_LOCATION,
-    DEVICE_ADMIN,
-    BATTERY_EXEMPTION,
-    DISPLAY_OVER_OTHER_APPS,
-    STARTING,
-    ACTIVE,
+/**
+ * Langkah penyiapan, urut sesuai yang diminta. Teks penjelasan ditampilkan apa adanya ke pemegang
+ * HP -- harus jujur tentang untuk apa izin dipakai.
+ */
+private enum class SetupStep(
+    val title: String,
+    val explanation: String,
+    val required: Boolean,
+    val retryHint: String,
+) {
+    LOCATION(
+        "Izin lokasi",
+        "Untuk mengirim posisi HP ini ke kantor. Pilih \"Saat aplikasi digunakan\" lalu \"Lokasi akurat\".",
+        true,
+        "Izin lokasi wajib supaya pemantauan berjalan. Tekan \"Izinkan\" pada langkah Izin lokasi.",
+    ),
+    BACKGROUND_LOCATION(
+        "Lokasi \"Izinkan sepanjang waktu\"",
+        "Supaya posisi tetap terkirim saat layar mati atau aplikasi tidak dibuka.",
+        true,
+        "Di halaman izin Lokasi pilih \"Izinkan sepanjang waktu\", lalu kembali ke aplikasi ini.",
+    ),
+    NOTIFICATIONS(
+        "Notifikasi pemantauan",
+        "Notifikasi \"Lacak SMB sedang memantau\" selalu tampil selama pemantauan aktif.",
+        true,
+        "Aktifkan notifikasi untuk aplikasi ini, lalu kembali.",
+    ),
+    DEVICE_ADMIN(
+        "Kunci layar jarak jauh",
+        "Admin kantor bisa mengunci layar HP ini dari dashboard. Tidak bisa menghapus data HP.",
+        true,
+        "Pilih \"Aktifkan\" pada halaman Admin perangkat supaya kunci jarak jauh bisa dipakai.",
+    ),
+    OVERLAY(
+        "Tampil di atas aplikasi lain",
+        "Supaya layar kunci bisa muncul walau aplikasi ini sedang tidak dibuka.",
+        true,
+        "Aktifkan \"Izinkan tampil di atas aplikasi lain\" untuk aplikasi ini, lalu kembali.",
+    ),
+    BATTERY(
+        "Tanpa batasan baterai",
+        "Supaya Android tidak menghentikan pemantauan saat HP lama tidak dipakai, dan perintah dari kantor tetap sampai.",
+        true,
+        "Pilih \"Izinkan\" agar aplikasi tidak dibatasi penghemat baterai.",
+    ),
+    BLUETOOTH(
+        "Perangkat sekitar / Bluetooth (opsional)",
+        "Untuk radar jarak dekat ke titik kantor atau HP admin. Boleh dilewati.",
+        false,
+        "Bluetooth dilewati. Radar jarak dekat tidak aktif, pemantauan lain tetap berjalan.",
+    ),
     ;
 
-    fun next(): EnrollmentStep = entries.getOrElse(ordinal + 1) { ACTIVE }
+    fun isDone(activity: ComponentActivity): Boolean = when (this) {
+        LOCATION -> SetupChecks.hasForegroundLocation(activity)
+        BACKGROUND_LOCATION -> SetupChecks.hasBackgroundLocation(activity)
+        NOTIFICATIONS -> SetupChecks.hasNotifications(activity)
+        DEVICE_ADMIN -> SetupChecks.isDeviceAdmin(activity) || SetupChecks.isDeviceOwner(activity)
+        OVERLAY -> SetupChecks.canShowLockScreen(activity)
+        BATTERY -> SetupChecks.isBatteryUnrestricted(activity)
+        BLUETOOTH -> SetupChecks.hasBluetooth(activity)
+    }
+
+    /** Langkah yang bergantung pada langkah lain baru bisa dijalankan setelah prasyaratnya beres. */
+    fun isAvailable(activity: ComponentActivity): Boolean = when (this) {
+        BACKGROUND_LOCATION -> SetupChecks.hasForegroundLocation(activity)
+        else -> true
+    }
 }
 
-@Composable
-private fun EnrollmentScreen(
-    identityStore: DeviceIdentityStore,
-    step: EnrollmentStep,
-    statusText: String,
-    canRetry: Boolean,
-    onBegin: () -> Unit,
-    onRetry: () -> Unit,
-    onAlreadyEnrolled: () -> Unit,
-) {
-    var deviceUuid by remember { mutableStateOf("") }
-    var alreadyEnrolled by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+/** Merek yang dikenal mematikan aplikasi latar belakang tanpa izin "Mulai otomatis". */
+private val AGGRESSIVE_OEMS = setOf(
+    "xiaomi", "redmi", "poco", "oppo", "realme", "vivo", "iqoo", "huawei", "honor",
+    "oneplus", "infinix", "tecno", "itel", "meizu", "asus",
+)
 
-    DisposableEffect(Unit) {
-        scope.launch {
-            deviceUuid = identityStore.ensureDeviceUuid()
-            identityStore.ensureDeviceSecretFromBuild()
-            val snapshot = identityStore.snapshot()
-            alreadyEnrolled = snapshot.isEnrolled
-            // Jaga-jaga: kalau device sudah pernah di-enroll tapi service
-            // entah kenapa tidak jalan (mis. sempat di-force-stop manual),
-            // pastikan tetap/kembali jalan tiap app dibuka.
-            if (snapshot.isEnrolled) onAlreadyEnrolled()
-        }
-        onDispose {}
-    }
+@Composable
+private fun SetupScreen(
+    deviceUuid: String,
+    checks: Map<SetupStep, Boolean>,
+    locationServiceOn: Boolean,
+    deviceOwner: Boolean,
+    connectionText: String,
+    connected: Boolean,
+    hint: String?,
+    onGuide: () -> Unit,
+    onStep: (SetupStep) -> Unit,
+    onOpenLocationSettings: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+) {
+    val pendingRequired = SetupStep.entries.count { it.required && checks[it] == false }
+    val allRequiredDone = checks.isNotEmpty() && pendingRequired == 0
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("Lacak SMB", style = MaterialTheme.typography.headlineMedium)
-        Text("Site: ${BuildConfig.SITE_NAME}", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Aplikasi pelacak resmi milik kantor untuk device ini.",
-            style = MaterialTheme.typography.bodyMedium,
+        Text("Aplikasi pelacak resmi HP kantor — ${BuildConfig.SITE_NAME}", style = MaterialTheme.typography.titleSmall)
+
+        // Status koneksi langsung dari service.
+        InfoCard(
+            title = if (connected) "Terhubung ke server" else "Status pemantauan",
+            body = connectionText,
+            tone = if (connected) Tone.Good else Tone.Neutral,
         )
 
-        Text("ID Device:", style = MaterialTheme.typography.labelMedium)
-        Text(deviceUuid.ifBlank { "Memuat..." }, style = MaterialTheme.typography.bodySmall)
+        if (deviceOwner) {
+            InfoCard(
+                title = "HP dikelola kantor",
+                body = "HP ini dipasang sebagai perangkat kantor (Device Owner). Sebagian izin sudah diatur otomatis.",
+                tone = Tone.Neutral,
+            )
+        }
 
-        if (alreadyEnrolled && step == EnrollmentStep.RUNTIME_PERMISSIONS) {
-            Text("Device ini sudah terdaftar dan sedang dipantau.", style = MaterialTheme.typography.bodyLarge)
-        } else {
-            StepRow("Lokasi, Bluetooth & notifikasi", step >= EnrollmentStep.BACKGROUND_LOCATION, step == EnrollmentStep.RUNTIME_PERMISSIONS)
-            StepRow("Izin lokasi \"selalu\"", step >= EnrollmentStep.DEVICE_ADMIN, step == EnrollmentStep.BACKGROUND_LOCATION)
-            StepRow("Kemampuan lock jarak jauh", step >= EnrollmentStep.BATTERY_EXEMPTION, step == EnrollmentStep.DEVICE_ADMIN)
-            StepRow("Pengecualian baterai", step >= EnrollmentStep.DISPLAY_OVER_OTHER_APPS, step == EnrollmentStep.BATTERY_EXEMPTION)
-            StepRow("Lapisan peringatan kunci (tampil di atas app lain)", step >= EnrollmentStep.STARTING, step == EnrollmentStep.DISPLAY_OVER_OTHER_APPS)
+        if (!locationServiceOn) {
+            InfoCard(
+                title = "Lokasi HP sedang mati",
+                body = "Nyalakan Lokasi/GPS di pengaturan cepat supaya posisi bisa terkirim.",
+                tone = Tone.Warn,
+                action = "Buka setelan lokasi" to onOpenLocationSettings,
+            )
+        }
 
-            if (statusText.isNotBlank()) {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (step != EnrollmentStep.ACTIVE && step != EnrollmentStep.RUNTIME_PERMISSIONS) {
-                        CircularProgressIndicator(modifier = Modifier.padding(end = 4.dp))
-                    }
-                    Text(statusText, style = MaterialTheme.typography.bodyMedium)
-                }
+        // Ringkasan + tombol utama.
+        Text(
+            when {
+                checks.isEmpty() -> "Memeriksa izin…"
+                allRequiredDone -> "Semua langkah wajib selesai ✓"
+                else -> "$pendingRequired langkah lagi supaya pemantauan andal"
+            },
+            style = MaterialTheme.typography.titleMedium,
+        )
+        if (!allRequiredDone) {
+            Button(onClick = onGuide, modifier = Modifier.fillMaxWidth()) {
+                Text(if (pendingRequired == SetupStep.entries.count { it.required }) "Mulai penyiapan" else "Lanjutkan penyiapan")
             }
+        }
+        hint?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary) }
 
-            if (step == EnrollmentStep.RUNTIME_PERMISSIONS) {
-                androidx.compose.material3.Button(onClick = onBegin, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (statusText.isBlank()) "Mulai" else "Coba Lagi")
-                }
-            } else if (canRetry && step != EnrollmentStep.ACTIVE && step != EnrollmentStep.STARTING) {
-                // Langkah sistem ditolak/dibatalkan user — tawarkan ulang alih-alih
-                // berlanjut diam-diam dengan fitur yang tidak benar-benar aktif.
-                androidx.compose.material3.Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
-                    Text("Coba Lagi")
-                }
+        SetupStep.entries.forEachIndexed { index, step ->
+            StepCard(number = index + 1, step = step, done = checks[step] == true, onAction = { onStep(step) })
+        }
+
+        if (Build.MANUFACTURER.lowercase() in AGGRESSIVE_OEMS) {
+            InfoCard(
+                title = "Khusus HP ${Build.MANUFACTURER}",
+                body = "Buka Info aplikasi lalu aktifkan \"Mulai otomatis\" / \"Autostart\" dan setel baterai ke " +
+                    "\"Tanpa batasan\". Tanpa ini HP merek ini bisa menghentikan pemantauan diam-diam.",
+                tone = Tone.Warn,
+                action = "Buka info aplikasi" to onOpenAppSettings,
+            )
+        }
+
+        DisclosureCard()
+
+        Text("ID Device", style = MaterialTheme.typography.labelMedium)
+        Text(deviceUuid.ifBlank { "Memuat…" }, style = MaterialTheme.typography.bodySmall)
+        Text(
+            "Versi aplikasi ${BuildConfig.VERSION_NAME}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+        )
+    }
+}
+
+@Composable
+private fun StepCard(number: Int, step: SetupStep, done: Boolean, onAction: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                if (done) "✓" else "$number",
+                style = MaterialTheme.typography.titleLarge,
+                color = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                modifier = Modifier.width(28.dp),
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(step.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(step.explanation, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    if (done) "Sudah diizinkan" else if (step.required) "Perlu tindakan" else "Opsional",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error.takeIf { step.required }
+                        ?: MaterialTheme.colorScheme.outline,
+                )
+            }
+            if (!done) {
+                OutlinedButton(onClick = onAction) { Text("Izinkan") }
             }
         }
     }
 }
 
+private enum class Tone { Good, Neutral, Warn }
+
 @Composable
-private fun StepRow(label: String, done: Boolean, inProgress: Boolean) {
-    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-            if (done) "✓" else "○",
-            style = MaterialTheme.typography.titleMedium,
-            color = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-        )
-        Text(
-            label,
-            style = if (inProgress) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
-        )
+private fun InfoCard(title: String, body: String, tone: Tone, action: Pair<String, () -> Unit>? = null) {
+    val container = when (tone) {
+        Tone.Good -> MaterialTheme.colorScheme.primaryContainer
+        Tone.Neutral -> MaterialTheme.colorScheme.surfaceVariant
+        Tone.Warn -> MaterialTheme.colorScheme.errorContainer
+    }
+    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = container)) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(body, style = MaterialTheme.typography.bodySmall)
+            action?.let { (label, onClick) -> OutlinedButton(onClick = onClick) { Text(label) } }
+        }
+    }
+}
+
+/**
+ * Pengungkapan data -- WAJIB sama dengan isi DeviceInfoCollector & heartbeat lokasi. Kalau ada
+ * data baru yang dikirim, kartu ini (dan dokumen consent) harus diperbarui lebih dulu.
+ */
+@Composable
+private fun DisclosureCard() {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Data yang dikirim ke kantor", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(
+                "• Lokasi (GPS/jaringan, akurasi, waktu) berkala dan saat diminta admin\n" +
+                    "• Merek, model, versi Android, versi aplikasi\n" +
+                    "• Baterai & status mengisi daya\n" +
+                    "• Jenis jaringan (WiFi/seluler), nama WiFi, nama operator\n" +
+                    "• Sisa penyimpanan, status izin aplikasi ini\n" +
+                    "• Sinyal Bluetooth ke titik kantor (bila diizinkan)",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "Tidak pernah dikirim: isi pesan, kontak, riwayat panggilan, foto/berkas, atau isi aplikasi lain. " +
+                    "Notifikasi pemantauan selalu tampil selama aplikasi aktif, sesuai persetujuan tertulis.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        }
     }
 }

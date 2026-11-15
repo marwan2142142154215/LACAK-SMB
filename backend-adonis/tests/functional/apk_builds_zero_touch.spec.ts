@@ -238,3 +238,98 @@ test.group('APK build: zero-touch (ApkBuildZeroTouchTest)', (group) => {
         missing.assertStatus(404)
     })
 })
+
+test.group('APK build: QR provisioning Device Owner', (group) => {
+    group.each.setup(() => testUtils.db().withGlobalTransaction())
+
+    async function insertBuild(
+        organizationId: number,
+        builtBy: number,
+        values: Record<string, unknown>
+    ) {
+        const [row] = await db
+            .table('apk_builds')
+            .insert({
+                organization_id: organizationId,
+                built_by: builtBy,
+                apk_type: 'tracker',
+                version: '1.0.0',
+                status: 'success',
+                file_path: `apk-builds/${organizationId}/tracker-uji.apk`,
+                embedded_site_code: 'UJI',
+                checksum_sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+                created_at: new Date(),
+                updated_at: new Date(),
+                ...values,
+            })
+            .returning(['id'])
+        return row.id as number
+    }
+
+    test('APK pelacak berhasil -> payload + QR SVG + tautan unduh bertanda tangan, tercatat di log', async ({
+        client,
+        assert,
+    }) => {
+        const org = await organization()
+        const { bearer, userId } = await siteAdmin(org)
+        const buildId = await insertBuild(org, userId, {})
+
+        const response = await client
+            .get(`/api/v1/apk-builds/${buildId}/provisioning`)
+            .bearerToken(bearer)
+
+        response.assertStatus(200)
+        const data = response.body().data
+        assert.equal(data.package_name, 'com.lacaksmb.tracker.debug')
+        assert.match(data.qr_svg, /^<svg/)
+        assert.equal(
+            data.payload['android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM'],
+            '47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU'
+        )
+        assert.match(
+            data.payload['android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION'],
+            new RegExp(
+                `/api/v1/apk-builds/${buildId}/download\\?expires=\\d+&signature=[0-9a-f]{64}$`
+            )
+        )
+
+        const log = await db
+            .from('activity_log')
+            .where({ log_name: 'apk-builds', event: 'provisioning' })
+            .orderBy('id', 'desc')
+            .first()
+        assert.equal(log.properties.apk_build_id, buildId)
+    })
+
+    test('APK selain pelacak atau yang belum selesai ditolak', async ({ client }) => {
+        const org = await organization()
+        const { bearer, userId } = await siteAdmin(org)
+        const masterBuild = await insertBuild(org, userId, { apk_type: 'master' })
+        const pendingBuild = await insertBuild(org, userId, {
+            status: 'pending',
+            checksum_sha256: null,
+        })
+
+        const master = await client
+            .get(`/api/v1/apk-builds/${masterBuild}/provisioning`)
+            .bearerToken(bearer)
+        master.assertStatus(422)
+
+        const pending = await client
+            .get(`/api/v1/apk-builds/${pendingBuild}/provisioning`)
+            .bearerToken(bearer)
+        pending.assertStatus(422)
+    })
+
+    test('site lain tidak boleh membuat QR', async ({ client }) => {
+        const org = await organization()
+        const other = await organization()
+        const { bearer, userId } = await siteAdmin(org)
+        const buildId = await insertBuild(other, userId, {})
+
+        const response = await client
+            .get(`/api/v1/apk-builds/${buildId}/provisioning`)
+            .bearerToken(bearer)
+        response.assertStatus(403)
+    })
+})

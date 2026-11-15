@@ -1,9 +1,29 @@
 <script setup>
-import { ArrowRightLeft, KeyRound, Lock, MapPin, Pencil, PlayCircle, RefreshCw, Search, Smartphone, StopCircle, Trash2, Unlock, Wifi } from '@lucide/vue'
+import {
+    AlertTriangle,
+    ArrowRightLeft,
+    BatteryCharging,
+    Info,
+    KeyRound,
+    Lock,
+    MapPin,
+    Pencil,
+    PlayCircle,
+    RefreshCw,
+    Search,
+    Signal,
+    Smartphone,
+    StopCircle,
+    Trash2,
+    Unlock,
+    Wifi,
+} from '@lucide/vue'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
+import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -17,8 +37,10 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import Readout from '@/components/ui/Readout.vue'
 import RowMenu from '@/components/ui/RowMenu.vue'
 import StatusDot from '@/components/ui/StatusDot.vue'
+import { useGatewaySocket } from '@/composables/useGatewaySocket'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
+import { COMMAND_TYPE_LABELS, commandStatusMeta, missingPermissions, modelLabel, networkLabel } from '@/lib/deviceInfo'
 import { useAuthStore } from '@/stores/auth'
 
 const devices = ref([])
@@ -43,6 +65,9 @@ const allowed = (permission) => auth.hasPermission(permission)
 const moveTarget = ref(null)
 const moveSiteId = ref(null)
 const moving = ref(false)
+// Detail perangkat: halaman khusus (/devices/:id).
+const router = useRouter()
+const openDetail = (device) => router.push({ name: 'device-detail', params: { id: device.id } })
 const reEnrollTitle = computed(() => (reEnrollTarget.value ? `Daftarkan ulang device "${reEnrollTarget.value.device_name}"?` : ''))
 const deleteTitle = computed(() => (deleteTarget.value ? `Hapus device "${deleteTarget.value.device_name}" dari sistem?` : ''))
 
@@ -82,6 +107,7 @@ function batteryColor(level) {
 function menuItems(device) {
     const busy = actingDeviceId.value === device.id
     return [
+        { label: 'Detail perangkat', icon: Info, onSelect: () => openDetail(device) },
         {
             label: 'Minta lokasi sekarang',
             icon: MapPin,
@@ -184,12 +210,13 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
 async function issueCommand(device, commandType, reasonNote = null) {
     actingDeviceId.value = device.id
     try {
-        await api.post(`/devices/${device.id}/commands`, {
+        const response = await api.post(`/devices/${device.id}/commands`, {
             command_type: commandType,
             issued_via: 'web_dashboard',
             reason_note: reasonNote,
         })
-        toast.success('Perintah terkirim', `${commandType} untuk ${device.device_name}`)
+        // Pesan server membedakan HP online vs offline (perintah tetap menunggu HP terhubung).
+        toast.success(`${COMMAND_TYPE_LABELS[commandType] ?? commandType}: ${device.device_name}`, response.data?.message ?? 'Perintah terkirim')
         await loadDevices()
     } catch (err) {
         toast.error('Gagal mengirim perintah', err.response?.data?.message)
@@ -299,9 +326,50 @@ async function saveMove() {
     }
 }
 
+// Update langsung dari gateway: detail perangkat (device:status) & status perintah (device:command)
+// -- admin melihat kunci benar-benar "Dijalankan" di HP tanpa memuat ulang halaman.
+const { connect } = useGatewaySocket()
+
+function patchDevice(id, changes) {
+    const index = devices.value.findIndex((device) => device.id === id)
+    if (index === -1) return
+    devices.value[index] = { ...devices.value[index], ...changes }
+}
+
+function listenGateway() {
+    const socket = connect(auth.isSuperAdmin ? null : auth.user?.organization_id)
+    socket.on('device:status', (payload) => {
+        // device_name dari gateway bisa basi kalau baru diganti di sini; nama dari REST yang dipakai.
+        const { device_id: rawId, device_name: _name, ...changes } = payload
+        patchDevice(Number(rawId), changes)
+    })
+    socket.on('device:command', (payload) => {
+        const id = Number(payload.device_id)
+        const device = devices.value.find((item) => item.id === id)
+        if (!device) return
+        const current = device.latest_command
+        const commandId = Number(payload.command_id)
+        // Laporan untuk perintah yang lebih lama dari yang tampil tidak menimpa status terbaru.
+        if (current && Number(current.id) > commandId) return
+        patchDevice(id, {
+            latest_command: {
+                ...(current && Number(current.id) === commandId ? current : {}),
+                id: commandId,
+                command_type: payload.command_type,
+                status: payload.status,
+                result_message: payload.result_message ?? current?.result_message ?? null,
+            },
+        })
+        if (payload.status === 'failed') {
+            toast.error(`${COMMAND_TYPE_LABELS[payload.command_type] ?? payload.command_type} gagal: ${device.device_name}`, payload.result_message)
+        }
+    })
+}
+
 onMounted(() => {
     loadDevices()
     loadSites()
+    listenGateway()
 })
 </script>
 
@@ -380,21 +448,38 @@ onMounted(() => {
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>Device</th>
+                                <th class="min-w-52">Device</th>
                                 <th class="hidden lg:table-cell">Site</th>
                                 <th class="hidden sm:table-cell">Status</th>
                                 <th class="hidden sm:table-cell">Baterai</th>
-                                <th class="hidden lg:table-cell">WiFi</th>
+                                <th class="hidden lg:table-cell">Jaringan</th>
                                 <th class="hidden md:table-cell">Terakhir terlihat</th>
+                                <th class="hidden xl:table-cell">Perintah terakhir</th>
                                 <th class="w-0"><span class="sr-only">Aksi</span></th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-for="d in devices" :key="d.id">
                                 <td>
-                                    <p class="font-medium text-base-50">{{ d.device_name }}</p>
+                                    <button
+                                        type="button"
+                                        class="text-left font-medium text-base-50 hover:text-accent-300 focus-visible:outline-2 focus-visible:outline-accent-400"
+                                        @click="openDetail(d)"
+                                    >
+                                        {{ d.device_name }}
+                                    </button>
+                                    <p v-if="modelLabel(d) || d.android_version" class="text-[11px] text-base-400">
+                                        {{ modelLabel(d) ?? 'Android' }}<template v-if="d.android_version"> · Android {{ d.android_version }}</template>
+                                    </p>
                                     <p class="font-mono text-[11px] text-base-500" :title="d.device_uuid">
                                         {{ d.device_uuid?.slice(0, 8) }}
+                                        <span
+                                            v-if="missingPermissions(d.permission_state)?.length"
+                                            class="ml-1 inline-flex items-center gap-1 font-sans text-warning-400"
+                                            :title="`Izin belum lengkap: ${missingPermissions(d.permission_state).join(', ')}`"
+                                        >
+                                            <AlertTriangle class="size-3" /> izin kurang
+                                        </span>
                                     </p>
                                     <div class="mt-1.5 sm:hidden"><StatusDot :status="d.status" /></div>
                                 </td>
@@ -410,13 +495,15 @@ onMounted(() => {
                                             />
                                         </span>
                                         <span class="font-mono text-xs text-base-300 tabular-nums">{{ d.battery_level }}%</span>
+                                        <BatteryCharging v-if="d.is_charging" class="size-3.5 text-accent-300" aria-label="Mengisi daya" />
                                     </div>
                                     <span v-else class="text-base-600">—</span>
                                 </td>
                                 <td class="hidden text-xs lg:table-cell">
-                                    <span v-if="d.last_ssid" class="inline-flex items-center gap-1.5 text-base-300">
-                                        <Wifi class="size-3.5 text-base-500" />
-                                        <span class="max-w-36 truncate" :title="d.last_ssid">{{ d.last_ssid }}</span>
+                                    <span v-if="networkLabel(d)" class="inline-flex items-center gap-1.5 text-base-300">
+                                        <Signal v-if="d.network_type === 'cellular'" class="size-3.5 text-base-500" />
+                                        <Wifi v-else class="size-3.5 text-base-500" />
+                                        <span class="max-w-40 truncate" :title="networkLabel(d)">{{ networkLabel(d) }}</span>
                                     </span>
                                     <span v-else class="text-base-600">—</span>
                                 </td>
@@ -425,6 +512,15 @@ onMounted(() => {
                                         dayjs(d.last_seen_at).fromNow()
                                     }}</span>
                                     <span v-else class="text-base-600">Belum pernah</span>
+                                </td>
+                                <td class="hidden text-xs xl:table-cell">
+                                    <div v-if="d.latest_command" class="flex flex-col items-start gap-1" :title="d.latest_command.result_message ?? ''">
+                                        <span class="text-base-300">{{ COMMAND_TYPE_LABELS[d.latest_command.command_type] ?? d.latest_command.command_type }}</span>
+                                        <BaseBadge :variant="commandStatusMeta(d.latest_command.status).variant">
+                                            {{ commandStatusMeta(d.latest_command.status).label }}
+                                        </BaseBadge>
+                                    </div>
+                                    <span v-else class="text-base-600">—</span>
                                 </td>
                                 <td>
                                     <div class="flex items-center justify-end gap-1">

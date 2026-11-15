@@ -53,6 +53,13 @@ class SocketManager {
             .emit('violation:alert', payload)
     }
 
+    /** Perubahan status perintah lock/unlock/locate_now (terkirim, diterima, dijalankan, gagal). */
+    broadcastCommandStatus(organizationId: number, payload: unknown) {
+        this.opsNamespace
+            ?.to([`org:${organizationId}`, 'superadmins'])
+            .emit('device:command', payload)
+    }
+
     broadcastDeviceStatus(organizationId: number, payload: unknown) {
         this.opsNamespace
             ?.to([`org:${organizationId}`, 'superadmins'])

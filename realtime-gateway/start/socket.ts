@@ -11,7 +11,12 @@ import { extendSession, isSessionStillValid, verifyBearerToken } from '#services
 import { registerLiveHandlers, startLiveSweeper } from '#services/LiveHub'
 import { startSessionSweeper } from '#services/SessionSweeper'
 import { evaluateGeofence } from '#services/GeofenceEvaluator'
-import { markCommandAcknowledged } from '#services/CommandDispatcher'
+import { dispatchPendingCommands, recordCommandReport } from '#services/CommandDispatcher'
+import {
+    cleanCoordinate,
+    sanitizeDeviceInfo,
+    sanitizeLocationExtras,
+} from '#services/DeviceTelemetry'
 import { beaconUuidFor, isDeviceSecretValid } from '#services/DeviceCredentials'
 import {
     registerMasterBeacon,
@@ -43,6 +48,11 @@ type DeviceLocationPayload = {
     // tetap, dicocokkan ke master_anchor_registry oleh geofence_evaluator.
     nearbyBeaconUuid?: string | null
     nearbyBeaconDistanceMeters?: number | null
+    // APK >= rilis telemetri: akurasi fix (meter), sumber fix, dan waktu fix (epoch ms) --
+    // dibersihkan lewat DeviceTelemetry.sanitizeLocationExtras.
+    accuracyMeters?: number | null
+    provider?: string | null
+    fixTime?: number | null
 }
 
 const PIRACY_WARNING = 'silahkan download dari sumber resmi bosku'
@@ -282,6 +292,15 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                 })
 
                 logger.info('device terhubung', { deviceId: device.id })
+
+                // Perintah yang menunggu HP ini online (mis. lock yang dikirim saat HP mati / baru
+                // dinyalakan ulang) dikirim SEKARANG, tidak menunggu tick dispatcher berikutnya.
+                dispatchPendingCommands(device.id).catch((error) => {
+                    logger.error('dispatch perintah saat device terhubung gagal', {
+                        error,
+                        deviceId: device.id,
+                    })
+                })
             } catch (error) {
                 logger.error('device:hello gagal diproses', { error })
                 socket.emit('device:rejected', { message: 'Terjadi kesalahan server' })
@@ -294,6 +313,11 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
 
             try {
                 const deviceId = boundDeviceId
+                const extras = sanitizeLocationExtras(payload)
+                const latitude = cleanCoordinate(payload?.latitude, 90)
+                const longitude = cleanCoordinate(payload?.longitude, 180)
+                // Lintang tanpa bujur (atau sebaliknya) tidak berguna untuk peta.
+                const hasPosition = latitude !== null && longitude !== null
 
                 // Titik lokasi dan last_seen_at/baterai device disimpan bersama supaya
                 // riwayat lokasi tidak pernah maju tanpa status device ikut diperbarui.
@@ -302,10 +326,13 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                         {
                             deviceId,
                             source: payload.source,
-                            latitude: payload.latitude ?? null,
-                            longitude: payload.longitude ?? null,
+                            latitude: hasPosition ? latitude : null,
+                            longitude: hasPosition ? longitude : null,
                             bleDistanceMeters: payload.bleDistanceMeters ?? null,
                             bleRssi: payload.bleRssi ?? null,
+                            accuracyMeters: hasPosition ? extras.accuracyMeters : null,
+                            locationProvider: hasPosition ? extras.provider : null,
+                            fixedAt: hasPosition ? extras.fixedAt : null,
                             recordedAt: DateTime.now(),
                             createdAt: DateTime.now(),
                         },
@@ -337,10 +364,15 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                     device_name: device.deviceName,
                     status: device.status,
                     source: payload.source,
-                    latitude: payload.latitude ?? null,
-                    longitude: payload.longitude ?? null,
+                    latitude: hasPosition ? latitude : null,
+                    longitude: hasPosition ? longitude : null,
+                    accuracy_meters: hasPosition ? extras.accuracyMeters : null,
+                    location_provider: hasPosition ? extras.provider : null,
+                    fixed_at: hasPosition ? (extras.fixedAt?.toISO() ?? null) : null,
                     ble_distance_meters: payload.bleDistanceMeters ?? null,
                     battery_level: device.batteryLevel,
+                    is_charging: device.isCharging,
+                    last_seen_at: device.lastSeenAt?.toISO() ?? null,
                     recorded_at: DateTime.now().toISO(),
                 })
 
@@ -358,20 +390,79 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
             }
         })
 
-        socket.on('command:ack', async (payload: { commandId: number }) => {
+        // Detail perangkat (merek, model, versi, baterai & cas, jaringan, penyimpanan, status izin)
+        // -- dikirim APK saat terhubung, tiap beberapa menit, dan saat diminta (locate_now). Hanya
+        // field yang diungkapkan ke pemegang HP yang disimpan (lihat DeviceTelemetry).
+        socket.on('device:info', async (payload: unknown) => {
             if (boundDeviceId === null) return
 
-            // commandId berasal dari payload socket (tidak tepercaya): nilai
-            // bukan angka membuat query Postgres reject, dan tanpa try/catch
-            // unhandled rejection itu mematikan seluruh proses gateway.
-            if (!Number.isInteger(payload?.commandId)) return
-
             try {
-                await markCommandAcknowledged(payload.commandId, boundDeviceId)
+                const info = sanitizeDeviceInfo(payload)
+                const device = await Device.find(boundDeviceId)
+                if (!device) return
+
+                if (info.manufacturer !== null) device.manufacturer = info.manufacturer
+                if (info.model !== null) device.model = info.model
+                if (info.androidVersion !== null) device.androidVersion = info.androidVersion
+                if (info.appVersionName !== null) device.appBuildVersion = info.appVersionName
+                if (info.appVersionCode !== null) device.appVersionCode = info.appVersionCode
+                if (info.batteryLevel !== null) device.batteryLevel = info.batteryLevel
+                device.isCharging = info.isCharging
+                device.networkType = info.networkType
+                device.carrierName = info.carrierName
+                if (info.storageFreeMb !== null) device.storageFreeMb = info.storageFreeMb
+                if (info.storageTotalMb !== null) device.storageTotalMb = info.storageTotalMb
+                if (info.permissions !== null) device.permissionState = info.permissions
+                const now = DateTime.now()
+                device.infoUpdatedAt = now
+                device.lastSeenAt = now
+                await device.save()
+
+                socketManager.broadcastDeviceStatus(device.organizationId, {
+                    device_id: device.id,
+                    device_name: device.deviceName,
+                    status: device.status,
+                    battery_level: device.batteryLevel,
+                    is_charging: device.isCharging,
+                    manufacturer: device.manufacturer,
+                    model: device.model,
+                    android_version: device.androidVersion,
+                    app_build_version: device.appBuildVersion,
+                    network_type: device.networkType,
+                    carrier_name: device.carrierName,
+                    storage_free_mb: device.storageFreeMb,
+                    storage_total_mb: device.storageTotalMb,
+                    permission_state: device.permissionState,
+                    last_seen_at: now.toISO(),
+                    info_updated_at: now.toISO(),
+                })
             } catch (error) {
-                logger.error('command:ack gagal diproses', { error, deviceId: boundDeviceId })
+                logger.error('device:info gagal diproses', { error, deviceId: boundDeviceId })
             }
         })
+
+        // {commandId} saja = APK lama (diterima). APK baru juga melapor hasil:
+        // {commandId, result: 'received' | 'executed' | 'failed', message}.
+        socket.on(
+            'command:ack',
+            async (payload: { commandId: number; result?: unknown; message?: unknown }) => {
+                if (boundDeviceId === null) return
+
+                // commandId berasal dari payload socket (tidak tepercaya): nilai
+                // bukan angka membuat query Postgres reject, dan tanpa try/catch
+                // unhandled rejection itu mematikan seluruh proses gateway.
+                if (!Number.isInteger(payload?.commandId)) return
+
+                try {
+                    await recordCommandReport(payload.commandId, boundDeviceId, {
+                        result: payload.result,
+                        message: payload.message,
+                    })
+                } catch (error) {
+                    logger.error('command:ack gagal diproses', { error, deviceId: boundDeviceId })
+                }
+            }
+        )
 
         socket.on('disconnect', async () => {
             clearTimeout(helloTimeout)

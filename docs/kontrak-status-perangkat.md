@@ -2,6 +2,11 @@
 
 Sumber kebenaran bersama untuk android-tracked-app, realtime-gateway, backend-api, dan web-dashboard.
 
+> **Catatan (November 2026):** APK Android (`android-tracked-app`) TIDAK memakai kontrak ini. APK
+> mengirim event `device:info` yang lebih sempit -- tanpa riwayat layar dan tanpa penggunaan aplikasi
+> lain (`screenTimeDaily`/`appUsageDaily`) -- lihat [provisioning-device-owner.md](provisioning-device-owner.md)
+> bagian 5. `device:status_report` di bawah baru dikirim agen Windows dan belum ditangani gateway.
+
 ## 1. Event socket `device:status_report` (aplikasi pelacak -> gateway, namespace `/device`)
 
 Dikirim setiap 5 menit dan sesaat setelah `device:accepted`. Hanya diterima dari socket yang sudah lolos autentikasi secret device; `device_id` diambil dari socket, BUKAN dari payload.

@@ -4,24 +4,33 @@ import android.app.admin.DeviceAdminReceiver
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.widget.Toast
 
 /**
- * Jalur resmi Android untuk kemampuan lock-screen jarak jauh. Tahap fondasi
- * ini hanya memakai force-lock (lihat res/xml/device_admin_policies.xml) —
- * tidak minta kemampuan wipe/kamera/dll yang tidak dipakai.
+ * Jalur resmi Android untuk kemampuan lock-screen jarak jauh. Hanya memakai force-lock (lihat
+ * res/xml/device_admin_policies.xml) — tidak minta kemampuan wipe/kamera/dll yang tidak dipakai.
+ *
+ * Receiver yang sama dipakai sebagai komponen Device Owner saat HP aset perusahaan dipasang lewat
+ * QR provisioning (lihat ProvisioningActivities.kt & docs/provisioning-device-owner.md).
  */
 class TrackerDeviceAdminReceiver : DeviceAdminReceiver() {
 
-    override fun onEnabled(context: Context, intent: android.content.Intent) {
+    override fun onEnabled(context: Context, intent: Intent) {
         super.onEnabled(context, intent)
         Toast.makeText(context, "Device Admin aktif — lock jarak jauh bisa dipakai", Toast.LENGTH_SHORT).show()
     }
 
-    override fun onDisabled(context: Context, intent: android.content.Intent) {
+    override fun onDisabled(context: Context, intent: Intent) {
         super.onDisabled(context, intent)
         Toast.makeText(context, "Device Admin dinonaktifkan — lock jarak jauh tidak akan berfungsi", Toast.LENGTH_LONG).show()
+    }
+
+    /** Android 8-9 (dan jalur lama): provisioning Device Owner selesai. */
+    override fun onProfileProvisioningComplete(context: Context, intent: Intent) {
+        super.onProfileProvisioningComplete(context, intent)
+        completeDeviceOwnerSetup(context)
     }
 
     companion object {
@@ -46,9 +55,10 @@ class TrackerDeviceAdminReceiver : DeviceAdminReceiver() {
          * (yang masih bisa keluar lewat kombinasi tombol — karena itu kami
          * juga menyembunyikan tombol navigasi di LockActivity).
          *
-         * Cara jadikan Device Owner (sekali saja, device tanpa akun):
+         * Cara jadikan Device Owner: QR provisioning dari menu Build APK
+         * (HP baru di-reset pabrik), atau lewat adb di HP tanpa akun:
          *   adb shell dpm set-device-owner \
-         *     com.lacaksmb.tracker/.admin.TrackerDeviceAdminReceiver
+         *     com.lacaksmb.tracker.debug/com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver
          */
         fun enableFullLockTaskIfDeviceOwner(context: Context): Boolean {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager

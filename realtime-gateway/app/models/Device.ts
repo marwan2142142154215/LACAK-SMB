@@ -50,6 +50,39 @@ export default class Device extends BaseModel {
     @column.dateTime()
     declare lastSeenAt: DateTime | null
 
+    // --- Detail perangkat dari event device:info (lihat DeviceTelemetry.sanitizeDeviceInfo) ---
+
+    @column()
+    declare manufacturer: string | null
+
+    @column()
+    declare model: string | null
+
+    @column()
+    declare appVersionCode: number | null
+
+    @column()
+    declare isCharging: boolean | null
+
+    @column()
+    declare networkType: string | null
+
+    @column()
+    declare carrierName: string | null
+
+    @column()
+    declare storageFreeMb: number | null
+
+    @column()
+    declare storageTotalMb: number | null
+
+    // jsonb: node-postgres mengembalikan objek; ditulis sebagai string JSON.
+    @column({ prepare: (value: unknown) => (value === null ? null : JSON.stringify(value)) })
+    declare permissionState: Record<string, boolean> | null
+
+    @column.dateTime()
+    declare infoUpdatedAt: DateTime | null
+
     @column()
     declare isActive: boolean
 

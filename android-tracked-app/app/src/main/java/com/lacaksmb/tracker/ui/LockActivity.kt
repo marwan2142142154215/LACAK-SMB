@@ -22,6 +22,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver
@@ -86,6 +87,7 @@ class LockActivity : ComponentActivity() {
         // (API setSoftInputMode terprogram sudah deprecated).
 
         setContentView(buildLockView(currentReason))
+        onBackPressedDispatcher.addCallback(this, blockBack)
         requestLockTask()
         applyImmersiveMode()
         startUnlockWatchdog()
@@ -93,8 +95,14 @@ class LockActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        isShowing = true
         requestLockTask()
         applyImmersiveMode()
+    }
+
+    override fun onPause() {
+        isShowing = false
+        super.onPause()
     }
 
     /** System bar (Back/Home/Recents + status bar) disembunyikan lagi setiap
@@ -106,13 +114,14 @@ class LockActivity : ComponentActivity() {
         if (hasFocus) applyImmersiveMode()
     }
 
-    /** Menahan tombol fisik/keras: Back, Recents (App Switch), Home, Menu,
-     *  Search. Home/Recents sendiri sudah dinonaktifkan SISTEM oleh
-     *  startLockTask(); ini lapisan tambahan untuk perangkat yang tetap
-     *  mengirimkan event tombol ke activity. */
+    /** Menahan tombol fisik/keras: Recents (App Switch), Home, Menu, Search.
+     *  Home/Recents sendiri sudah dinonaktifkan SISTEM oleh startLockTask();
+     *  ini lapisan tambahan untuk perangkat yang tetap mengirimkan event
+     *  tombol ke activity. Tombol/gesture Back ditahan lewat
+     *  OnBackPressedDispatcher (lihat blockBack) -- Android 13+ dengan
+     *  predictive back tidak lagi mengirim KEYCODE_BACK/onBackPressed. */
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         return when (keyCode) {
-            KeyEvent.KEYCODE_BACK,
             KeyEvent.KEYCODE_APP_SWITCH,
             KeyEvent.KEYCODE_HOME,
             KeyEvent.KEYCODE_MENU,
@@ -132,9 +141,10 @@ class LockActivity : ComponentActivity() {
         }
     }
 
-    @Deprecated("Deprecated in Java, tetap dipakai untuk menonaktifkan tombol back")
-    override fun onBackPressed() {
-        // Sengaja kosong — tombol back tidak melakukan apa-apa selama locked.
+    /** Callback Back yang selalu aktif dan sengaja tidak melakukan apa-apa selama locked
+     *  (tombol fisik, tombol navigasi, maupun gesture back). */
+    private val blockBack = object : OnBackPressedCallback(true) {
+        override fun handleOnBackPressed() = Unit
     }
 
     private fun requestLockTask() {
@@ -213,6 +223,7 @@ class LockActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        isShowing = false
         watchdogJob?.cancel()
         super.onDestroy()
     }
@@ -310,6 +321,14 @@ class LockActivity : ComponentActivity() {
     companion object {
         private const val EXTRA_REASON = "reason"
         private const val TAG = "TrackerLockActivity"
+
+        /**
+         * true selama layar kunci benar-benar tampil di depan (onResume..onPause). Dipakai service
+         * untuk melaporkan hasil perintah lock ke dashboard dengan jujur ("layar kunci tampil").
+         */
+        @Volatile
+        var isShowing: Boolean = false
+            private set
 
         /** Dipanggil dari service/receiver manapun — selalu task baru, selalu di luar recents. */
         fun launch(context: Context, reason: String?) {

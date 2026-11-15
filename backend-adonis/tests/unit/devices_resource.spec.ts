@@ -87,6 +87,16 @@ test.group('Device: bentuk resource sama dengan Laravel', () => {
             'battery_level',
             'last_ssid',
             'last_seen_at',
+            'manufacturer',
+            'model',
+            'app_version_code',
+            'is_charging',
+            'network_type',
+            'carrier_name',
+            'storage_free_mb',
+            'storage_total_mb',
+            'permission_state',
+            'info_updated_at',
             'enrolled_at',
             'is_active',
             'created_at',
@@ -95,6 +105,30 @@ test.group('Device: bentuk resource sama dengan Laravel', () => {
         assert.equal(json.last_seen_at, '2026-10-25T03:45:45.000000Z')
         assert.isNull(json.enrolled_at)
         assert.notProperty(json, 'secret_hash')
+        // Detail perangkat belum dilaporkan HP -> null, bukan undefined.
+        assert.isNull(json.model)
+        assert.isNull(json.info_updated_at)
+    })
+
+    test('detail perangkat dari APK ikut dikirim apa adanya', ({ assert }) => {
+        const json = deviceResource(
+            deviceRow({
+                manufacturer: 'samsung',
+                model: 'SM-A155F',
+                app_version_code: 12,
+                is_charging: true,
+                network_type: 'cellular',
+                carrier_name: 'Telkomsel',
+                storage_free_mb: 2048,
+                storage_total_mb: 65536,
+                permission_state: { location: true, backgroundLocation: false },
+                info_updated_at: new Date('2026-11-15T03:00:00Z'),
+            })
+        )
+        assert.equal(json.model, 'SM-A155F')
+        assert.isTrue(json.is_charging)
+        assert.deepEqual(json.permission_state, { location: true, backgroundLocation: false })
+        assert.equal(json.info_updated_at, '2026-11-15T03:00:00.000000Z')
     })
 
     test('relasi yang dimuat (whenLoaded) baru muncul kalau diminta', ({ assert }) => {
@@ -114,6 +148,7 @@ test.group('Device: bentuk resource sama dengan Laravel', () => {
         const keys = Object.keys(json)
         assert.equal(keys[2], 'organization_name')
         assert.equal(keys[keys.length - 3], 'latest_location')
+        assert.notProperty(json, 'latest_command')
         assert.deepEqual((json as any).latest_location, {
             id: 1,
             device_id: 7,
@@ -122,8 +157,17 @@ test.group('Device: bentuk resource sama dengan Laravel', () => {
             longitude: '106.8000000',
             ble_distance_meters: null,
             ble_rssi: null,
+            accuracy_meters: null,
+            location_provider: null,
+            fixed_at: null,
             recorded_at: '2026-10-25T01:00:00.000000Z',
         })
+
+        const withCommand = deviceResource(deviceRow(), {
+            latestCommand: { id: 9, device_id: 7, command_type: 'lock', status: 'executed' },
+        })
+        assert.equal((withCommand as any).latest_command.status, 'executed')
+        assert.equal((withCommand as any).latest_command.delivery_attempts, 0)
 
         const withoutLocation = deviceResource(deviceRow(), { latestLocation: null })
         assert.isNull((withoutLocation as any).latest_location)
@@ -158,9 +202,28 @@ test.group('Device: bentuk resource sama dengan Laravel', () => {
                 status: 'pending',
                 reason_note: null,
                 acknowledged_at: null,
+                delivered_at: null,
+                executed_at: null,
+                result_message: null,
+                delivery_attempts: 0,
                 created_at: '2026-10-25T03:00:00.000000Z',
             }
         )
+
+        const executed = deviceCommandResource({
+            id: 2,
+            device_id: 7,
+            command_type: 'lock',
+            status: 'executed',
+            delivered_at: new Date('2026-10-25T03:00:05Z'),
+            executed_at: new Date('2026-10-25T03:00:06Z'),
+            result_message: 'Layar kunci tampil',
+            delivery_attempts: '2',
+            created_at: new Date('2026-10-25T03:00:00Z'),
+        })
+        assert.equal(executed.executed_at, '2026-10-25T03:00:06.000000Z')
+        assert.equal(executed.result_message, 'Layar kunci tampil')
+        assert.strictEqual(executed.delivery_attempts, 2)
 
         const log = violationLogResource({
             id: 5,

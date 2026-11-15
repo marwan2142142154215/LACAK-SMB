@@ -1,5 +1,5 @@
 <script setup>
-import { MapPin, Radar as RadarIcon, ShieldAlert } from '@lucide/vue'
+import { BatteryCharging, MapPin, Radar as RadarIcon, ShieldAlert } from '@lucide/vue'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import L from 'leaflet'
@@ -15,6 +15,7 @@ import StatusDot from '@/components/ui/StatusDot.vue'
 import { useGatewaySocket } from '@/composables/useGatewaySocket'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
+import { locationQualityLabel } from '@/lib/deviceInfo'
 import { useAuthStore } from '@/stores/auth'
 
 dayjs.extend(relativeTime)
@@ -41,6 +42,8 @@ const selectedDevice = computed(() => (selectedDeviceId.value != null ? devices.
 const mapEl = ref(null)
 let mapInstance = null
 let mapMarker = null
+// Lingkaran radius akurasi fix (meter) -- posisi sebenarnya ada di dalam lingkaran ini.
+let accuracyCircle = null
 
 // Ikon bawaan Leaflet (marker-icon.png) dicari lewat jalur CSS yang rusak setelah dibundel Vite --
 // yang tampil hanya gambar rusak bertuliskan "Marker". Pakai penanda HTML + CSS sendiri.
@@ -68,6 +71,23 @@ function renderMap(device) {
         mapInstance.setView([lat, lng], 16)
         mapMarker.setLatLng([lat, lng])
     }
+    const accuracy = Number(device.accuracy_meters)
+    if (device.accuracy_meters != null && Number.isFinite(accuracy) && accuracy > 0) {
+        if (!accuracyCircle) {
+            accuracyCircle = L.circle([lat, lng], {
+                radius: accuracy,
+                color: '#7dd3c0',
+                weight: 1,
+                fillOpacity: 0.12,
+                interactive: false,
+            }).addTo(mapInstance)
+        } else {
+            accuracyCircle.setLatLng([lat, lng]).setRadius(accuracy)
+        }
+    } else if (accuracyCircle) {
+        accuracyCircle.remove()
+        accuracyCircle = null
+    }
     // Leaflet menulis popup berupa string lewat innerHTML -- nama device
     // diketik admin site, jadi dikirim sebagai node teks agar tidak bisa
     // menyisipkan skrip (stored XSS ke super_admin yang membuka Radar).
@@ -89,6 +109,19 @@ watch(selectedDevice, async (device) => {
 onBeforeUnmount(() => {
     mapInstance?.remove()
     mapInstance = null
+    accuracyCircle = null
+})
+
+// Subjudul peta: umur posisi + kualitas fix (sumber & akurasi), dan peringatan kalau GPS belum
+// dapat posisi baru (waktu fix jauh lebih tua dari waktu laporan).
+const mapSubtitle = computed(() => {
+    const d = selectedDevice.value
+    if (!d?.recorded_at) return null
+    const parts = [`Posisi ${dayjs(d.fixed_at ?? d.recorded_at).fromNow()}`]
+    const quality = locationQualityLabel(d)
+    if (quality) parts.push(quality)
+    if (d.fixed_at && dayjs(d.recorded_at).diff(d.fixed_at, 'minute') >= 2) parts.push('GPS belum dapat posisi baru')
+    return parts.join(' · ')
 })
 
 const RADAR_MAX_METERS = 200
@@ -137,7 +170,12 @@ async function loadInitialDevices() {
                 ble_distance_meters: d.latest_location?.ble_distance_meters ?? null,
                 latitude: d.latest_location?.latitude ?? null,
                 longitude: d.latest_location?.longitude ?? null,
+                accuracy_meters: d.latest_location?.accuracy_meters ?? null,
+                location_provider: d.latest_location?.location_provider ?? null,
+                fixed_at: d.latest_location?.fixed_at ?? null,
                 recorded_at: d.latest_location?.recorded_at ?? null,
+                is_charging: d.is_charging ?? null,
+                last_seen_at: d.last_seen_at ?? null,
             })
         }
         return true
@@ -173,7 +211,17 @@ onMounted(async () => {
         // reload (device_id object itu kebetulan ketimpa ulang jadi number).
         const id = Number(payload.device_id)
         const existing = devices.get(id) ?? {}
-        devices.set(id, { ...existing, ...payload, device_id: id })
+        // Laporan tanpa koordinat (GPS belum fix / izin dicabut) tidak menghapus titik terakhir di
+        // peta -- hanya jarak BLE, baterai & waktu yang diperbarui.
+        const update = payload.latitude == null
+            ? Object.fromEntries(
+                  Object.entries(payload).filter(
+                      ([key]) => !['latitude', 'longitude', 'accuracy_meters', 'location_provider', 'fixed_at', 'recorded_at'].includes(key),
+                  ),
+              )
+            : payload
+        devices.set(id, { ...existing, ...update, device_id: id })
+        if (id === selectedDeviceId.value && payload.latitude != null) renderMap(devices.get(id))
     })
 
     socket.on('device:status', (payload) => {
@@ -252,9 +300,10 @@ onMounted(async () => {
                                         {{ d.ble_distance_meters != null ? `${Number(d.ble_distance_meters).toFixed(1)} m` : '—' }}
                                     </p>
                                     <p
-                                        class="mt-1"
-                                        :class="d.battery_level != null && d.battery_level < 20 ? 'text-danger-400' : 'text-base-500'"
+                                        class="mt-1 inline-flex items-center gap-1"
+                                        :class="d.battery_level != null && d.battery_level < 20 && !d.is_charging ? 'text-danger-400' : 'text-base-500'"
                                     >
+                                        <BatteryCharging v-if="d.is_charging" class="size-3 text-accent-300" aria-label="Mengisi daya" />
                                         {{ d.battery_level != null ? `${d.battery_level}%` : '' }}
                                     </p>
                                 </div>
@@ -267,7 +316,7 @@ onMounted(async () => {
             <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
                 <BaseCard
                     :title="selectedDevice ? `Lokasi · ${selectedDevice.device_name}` : 'Lokasi'"
-                    :subtitle="selectedDevice?.recorded_at ? `Posisi terakhir ${dayjs(selectedDevice.recorded_at).fromNow()}` : null"
+                    :subtitle="mapSubtitle"
                     flush
                 >
                     <EmptyState

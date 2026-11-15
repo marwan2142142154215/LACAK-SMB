@@ -43,24 +43,40 @@ Untuk membangun ulang: coba dulu langsung di Windows/Android Studio
 (`./gradlew.bat clean assembleDebug`) — kalau kena error AF_UNIX yang sama,
 pakai [`scripts/build-in-wsl.sh`](scripts/build-in-wsl.sh) dari WSL2.
 
-## Fitur yang sudah ditulis (fondasi)
-- **Enrollment**: layar Compose untuk isi kode site + alamat gateway,
-  generate & tampilkan `device_uuid` (buat didaftarkan admin lewat
-  dashboard), alur minta izin berurutan (lokasi, Bluetooth, notifikasi,
-  lokasi latar belakang via Settings, Device Admin, pengecualian baterai)
-- **Foreground service selalu hidup** (`TrackerForegroundService`):
-  notifikasi persisten yang jujur ("Lacak SMB sedang memantau" — tidak
-  menyembunyikan diri, sesuai standar android-apk-pro §4), koneksi Socket.IO
-  auto-reconnect ke gateway `/device`, heartbeat baterai tiap 30 detik,
-  restart otomatis via `BootCompletedReceiver` (hanya jika sudah pernah
-  di-enroll)
-- **Device Admin** (`TrackerDeviceAdminReceiver`): kemampuan minimal
-  `force-lock` saja — perintah `lock` dari gateway memanggil
-  `DevicePolicyManager.lockNow()`, balas `command:ack`
-- **Belum ditulis** (iterasi berikutnya, sesuai kesepakatan "fondasi dulu"):
-  scan BLE nyata untuk radar jarak, pelaporan GPS titik koordinat
-  sebenarnya, verifikasi checksum APK anti-duplikasi di sisi device,
-  anti-uninstall, layar OTP self-unlock
+## Fitur
+
+Panduan lengkap pemasangan, QR Device Owner, status perintah, dan daftar data yang dikirim:
+[docs/provisioning-device-owner.md](../docs/provisioning-device-owner.md).
+
+- **Zero-touch**: APK dari menu Build APK membawa `site_code`, alamat server, `device_uuid`, dan
+  rahasia device -- langsung terdaftar ke site yang benar, tanpa pairing.
+- **Layar panduan** (`ui/MainActivity`): checklist izin berurutan dengan penjelasan (lokasi,
+  lokasi sepanjang waktu, notifikasi, Admin perangkat, tampil di atas app lain, baterai, Bluetooth
+  opsional), dibaca ulang dari sistem setiap layar tampil (`setup/SetupChecks`). Pemantauan mulai
+  begitu izin lokasi ada. Kartu pengungkapan data + tips Autostart untuk merek HP agresif.
+- **Device Owner via QR** (`admin/ProvisioningActivities`, `admin/DeviceOwnerSetup`): izin diberi
+  otomatis, lock task penuh.
+- **Foreground service** (`service/TrackerForegroundService`): notifikasi jujur yang selalu tampil,
+  socket.io ke gateway `/device`, sambung ulang saat jaringan kembali, heartbeat lokasi 15 detik
+  (akurasi, sumber, waktu fix -- `service/LocationTracker`), detail perangkat tiap 5 menit
+  (`service/DeviceInfoCollector`), hidup lagi lewat `BootCompletedReceiver` (boot, quickboot,
+  update APK) dan watchdog WorkManager (`service/ServiceWatchdogWorker`).
+- **Perintah dengan laporan hasil**: `lock` / `unlock` / `locate_now` dikonfirmasi diterima lalu
+  dilaporkan dijalankan/gagal beserta alasannya; kiriman ulang dari gateway tidak dijalankan dua
+  kali (`data/CommandLedger`).
+- **Lock jarak jauh**: `LockActivity` layar penuh + screen pinning + OTP self-unlock, status kunci
+  persisten (`data/DeviceLockStore`), Device Admin `force-lock` saja.
+- **BLE**: beacon + scan untuk radar jarak dekat & anchor geofence.
+
+## Build lokal
+
+Checkout Windows memakai CRLF -- build dari salinan di WSL:
+
+```bash
+rsync -a --exclude build --exclude .gradle "/mnt/d/SMB Optimasi Project/lacak-hp/android-tracked-app/" ~/live-build/android-tracked-app/
+cd ~/live-build/android-tracked-app && find . -name gradlew -o -name "*.sh" | xargs sed -i 's/$//'
+ANDROID_HOME=~/android-sdk bash ./gradlew assembleDebug lintDebug -PsiteCode=SITE-UJI -PgatewayUrl=https://contoh.test -PsiteName="Site Uji" -PappVersionName=1.2.0 -PbackendApiUrl=https://contoh.test/api/v1
+```
 
 ## Teknologi
 - Kotlin, Gradle Kotlin DSL + version catalog (`gradle/libs.versions.toml`)

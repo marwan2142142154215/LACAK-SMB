@@ -8,9 +8,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
 import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
@@ -19,42 +20,54 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.lacaksmb.tracker.BuildConfig
 import com.lacaksmb.tracker.R
+import com.lacaksmb.tracker.admin.DeviceOwnerSetup
 import com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver
+import com.lacaksmb.tracker.data.CommandLedger
 import com.lacaksmb.tracker.data.DeviceIdentityStore
 import com.lacaksmb.tracker.data.DeviceLockStore
 import com.lacaksmb.tracker.network.DeviceEnrollmentApi
+import com.lacaksmb.tracker.setup.SetupChecks
 import com.lacaksmb.tracker.ui.LockActivity
 import com.lacaksmb.tracker.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 /**
  * Foreground service yang wajib selalu hidup ("selalu online") selama APK
  * terpasang & sudah di-enroll. Mengerjakan:
- *  - Koneksi persisten ke gateway (auto-reconnect lewat socket.io-client)
+ *  - Koneksi persisten ke gateway (auto-reconnect lewat socket.io-client, plus sambung ulang
+ *    seketika saat jaringan HP tersedia lagi)
  *  - Notifikasi persisten yang JUJUR (standar android-apk-pro bagian 4:
  *    jangan menyembunyikan diri dari pemilik device)
- *  - Menjalankan perintah 'lock': BUKAN mematikan/mem-brick device, tapi
- *    membuka LockActivity layar penuh "SEGERA KEMBALI KE TEMPAT ANDA,
- *    BOSKU" dengan kolom OTP self-unlock. LockActivity memakai
- *    startLockTask() (screen pinning resmi Android) sehingga tombol Home
- *    DAN Recents benar-benar DINONAKTIFKAN oleh sistem selama locked —
- *    bukan cuma ditutupi tampilan. Status kunci disimpan PERSISTEN di
- *    DeviceLockStore, dan watchdog di bawah + LockDefenseReceiver memasang
- *    ulang LockActivity setiap kali ada upaya keluar (anti-skip).
- *  - Heartbeat tiap 30 detik berisi posisi GPS + level baterai + SSID WiFi
- *    supaya radar dashboard & geofence WiFi/IP benar-benar berfungsi
+ *  - Menjalankan perintah dari dashboard dan MELAPORKAN hasilnya (diterima → dijalankan/gagal,
+ *    lihat handleCommand). Perintah yang dikirim ulang gateway tidak dijalankan dua kali
+ *    (CommandLedger).
+ *  - Perintah 'lock': BUKAN mematikan/mem-brick device, tapi membuka LockActivity layar penuh
+ *    "SEGERA KEMBALI KE TEMPAT ANDA, BOSKU" dengan kolom OTP self-unlock. LockActivity memakai
+ *    startLockTask() (screen pinning resmi Android) sehingga tombol Home DAN Recents benar-benar
+ *    DINONAKTIFKAN oleh sistem selama locked. Status kunci disimpan PERSISTEN di DeviceLockStore,
+ *    dan watchdog di bawah + LockDefenseReceiver memasang ulang LockActivity setiap kali ada upaya
+ *    keluar (anti-skip).
+ *  - Heartbeat tiap 15 detik berisi posisi (dengan akurasi, sumber & waktu fix) + baterai + SSID
+ *    WiFi, dan detail perangkat tiap 5 menit (DeviceInfoCollector) supaya Device & Radar di
+ *    dashboard lengkap.
  */
 class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
 
     private lateinit var identityStore: DeviceIdentityStore
     private lateinit var lockStore: DeviceLockStore
+    private lateinit var commandLedger: CommandLedger
+    private lateinit var locationTracker: LocationTracker
     private var socketClient: GatewaySocketClient? = null
     private val bleAdvertiser by lazy { BleBeaconAdvertiser(applicationContext) }
     private val bleScanner by lazy { BleBeaconScanner(applicationContext) }
@@ -68,7 +81,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     // Watchdog kunci: selama status locked, pasang ulang LockActivity tiap
     // beberapa detik (jaring pengaman kalau user berhasil pindah layar
     // walau sudah dipin — mis. OEM yang membatasi screen pinning).
-    // SENGAJA TIDAK memanggil enforceLockNow() di sini — DevicePolicyManager
+    // SENGAJA TIDAK memanggil lockNow() di sini — DevicePolicyManager
     // .lockNow() benar-benar mematikan layar seperti tombol power (lalu
     // minta PIN/pola device kalau ada), yang kalau dipanggil berulang
     // bareng LockActivity (yang men-turnScreenOn lagi) menyebabkan layar
@@ -89,22 +102,8 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(serviceJob)
     private var heartbeatJob: Job? = null
+    private var deviceInfoJob: Job? = null
     private var gatewaySessionJob: Job? = null
-
-    // Lokasi GPS terbaru dari LocationManager. null sampai perangkat pertama
-    // kali melaporkan posisi (atau sampai isi sendiri dari last-known saat
-    // heartbeat pertama) — radar dashboard menampilkan posisi begitu ada.
-    private var latestLocation: Location? = null
-    private var lastKnownSentAt: Long = 0L
-
-    // Penerima lokasi Android 8 s/d 9 (Listener API).
-    @Suppress("DEPRECATION")
-    private val legacyLocationListener = object : LocationListener {
-        override fun onLocationChanged(location: Location) {
-            latestLocation = location
-        }
-    }
-    private var gpsUpdatesStarted = false
 
     // Instance receiver anti-bypass, didaftarkan DINAMIS (bukan manifest —
     // ACTION_SCREEN_ON/ACTION_USER_PRESENT adalah broadcast implisit yang
@@ -113,11 +112,20 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     private val lockDefenseReceiver = LockDefenseReceiver()
     private var lockDefenseRegistered = false
 
+    // Jaringan HP kembali (keluar dari mode pesawat, pindah WiFi → seluler, dll.): sambung ulang ke
+    // gateway SEKARANG supaya perintah yang menunggu (mis. lock) tidak tertahan sampai jeda reconnect.
+    private var networkCallbackRegistered = false
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            socketClient?.reconnectNow()
+        }
+    }
+
     /**
      * Laporan cepat saat jarak BLE melewati radius. Server tetap SATU-SATUNYA
      * pihak yang memutuskan lock/unlock (lihat geofence_evaluator) -- di sini
-     * kita hanya mengirim laporan posisi LEBIH CEPAT daripada heartbeat 30
-     * detik, supaya deteksi keluar/masuk radius jadi nyaris real-time.
+     * kita hanya mengirim laporan posisi LEBIH CEPAT daripada heartbeat, supaya
+     * deteksi keluar/masuk radius jadi nyaris real-time.
      *
      * Jeda antar laporan dibatasi (BIAS_REPORT_MIN_INTERVAL_MS) supaya noise
      * RSSI yang bolak-balik di ambang tidak membanjiri server. Saat jeda ini
@@ -164,7 +172,6 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         pendingCrossingReport = null
         lastCrossingReportAt = now
 
-        val position = currentPosition()
         // SENGAJA TIDAK fallback ke pending.second (jarak di SAAT zona
         // berubah) kalau bleReading sekarang null -- itu bug yang sempat
         // menyebabkan unlock palsu di produksi: pending.second bisa berupa
@@ -174,28 +181,18 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         // hilang lagi). Melaporkan null di sini (bukan nilai basi) membuat
         // server menganggapnya "anchor tidak terdeteksi" -- default aman,
         // bukan bukti palsu "masih dekat".
-        val bleReading = bleScanner.latestReading()
-        val nearbyBeacon = bleScanner.strongestOtherReading(currentAnchorUuid)
-        socketClient?.sendLocation(
-            source = if (bleReading != null) "ble" else "gps",
-            latitude = position.first,
-            longitude = position.second,
-            bleDistanceMeters = bleReading?.second,
-            bleRssi = bleReading?.first,
-            batteryLevel = currentBatteryLevel(),
-            ssid = currentSsid(),
-            ip = null,
-            nearbyBeaconUuid = nearbyBeacon?.first,
-            nearbyBeaconDistanceMeters = nearbyBeacon?.third,
-        )
+        sendHeartbeatOnce()
     }
 
     override fun onCreate() {
         super.onCreate()
         identityStore = DeviceIdentityStore(applicationContext)
         lockStore = DeviceLockStore(applicationContext)
+        commandLedger = CommandLedger(applicationContext)
+        locationTracker = LocationTracker(applicationContext)
         createNotificationChannel()
         registerLockDefenseReceiver()
+        registerNetworkCallback()
     }
 
     private fun registerLockDefenseReceiver() {
@@ -213,8 +210,26 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         lockDefenseRegistered = true
     }
 
+    private fun registerNetworkCallback() {
+        if (networkCallbackRegistered) return
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        try {
+            cm.registerDefaultNetworkCallback(networkCallback)
+            networkCallbackRegistered = true
+        } catch (e: RuntimeException) {
+            // Batas jumlah callback per app (TooManyRequestsException) -- reconnect bawaan tetap jalan.
+            Log.w(TAG, "network callback tidak bisa didaftarkan: ${e.message}")
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, buildNotification(status = "Menghubungkan..."))
+        if (!enterForeground()) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        // HP aset perusahaan (Device Owner): pastikan izin yang dibutuhkan tetap terpasang.
+        DeviceOwnerSetup.applyIfDeviceOwner(applicationContext)
 
         // Dipanggil LockDefenseReceiver saat ada upaya keluar dari LockActivity
         // padahal status masih locked: pasang ulang LockActivity + watchdog.
@@ -222,7 +237,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
             serviceScope.launch {
                 val lock = lockStore.snapshot()
                 if (lock.adminLocked) {
-                    enforceLockAndWatch(lock.reason)
+                    withContext(Dispatchers.Main) { enforceLockAndWatch(lock.reason) }
                 }
             }
         }
@@ -234,7 +249,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
                 return@launch
             }
 
-            // onStartCommand juga dipanggil ulang oleh LockDefenseReceiver;
+            // onStartCommand juga dipanggil ulang oleh LockDefenseReceiver & watchdog WorkManager;
             // jangan membuka sesi/klaim kedua kalau yang lama masih berjalan.
             if (socketClient == null && gatewaySessionJob?.isActive != true) {
                 startGatewaySession(initialDelayMs = 0L)
@@ -245,13 +260,39 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
             // "menghidupkan ulang" sebagai cara menyingkirkan kunci).
             val lock = lockStore.snapshot()
             if (lock.adminLocked) {
-                enforceLockAndWatch(lock.reason)
+                withContext(Dispatchers.Main) { enforceLockAndWatch(lock.reason) }
             }
         }
 
         // START_STICKY: minta sistem restart service kalau di-kill karena
         // tekanan memori — konsisten dengan "wajib selalu online".
         return START_STICKY
+    }
+
+    /**
+     * startForeground bertipe lokasi. Android 14+ menolak (SecurityException) kalau izin lokasi
+     * sudah dicabut pemegang HP -- daripada crash berulang (START_STICKY), service berhenti dan
+     * notifikasi biasa meminta app dibuka untuk memberi izin lagi.
+     */
+    private fun enterForeground(): Boolean {
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        } else {
+            0
+        }
+        return try {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification("Menghubungkan..."), type)
+            true
+        } catch (e: SecurityException) {
+            Log.w(TAG, "foreground service ditolak (izin lokasi?): ${e.message}")
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.notify(
+                NOTIFICATION_ID,
+                buildNotification("Izin lokasi dicabut — buka aplikasi Lacak SMB untuk mengaktifkan lagi"),
+            )
+            TrackerStatus.update("Izin lokasi dicabut", isConnected = false)
+            false
+        }
     }
 
     /**
@@ -275,7 +316,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
                 } else {
                     val reason = claimResult.exceptionOrNull()?.message ?: "Device belum didaftarkan admin"
                     Log.w(TAG, "klaim enrollment belum berhasil: $reason")
-                    updateNotification("Menunggu pendaftaran oleh admin: $reason")
+                    updateNotification("Menunggu pendaftaran oleh admin: $reason", connected = false)
                     delay(ENROLLMENT_RETRY_MS)
                 }
                 snapshot = identityStore.snapshot()
@@ -295,10 +336,11 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     override fun onDestroy() {
         gatewaySessionJob?.cancel()
         heartbeatJob?.cancel()
+        deviceInfoJob?.cancel()
         lockWatchdogHandler.removeCallbacks(lockWatchdogRunnable)
         crossingFlushHandler.removeCallbacks(crossingFlushRunnable)
         pendingCrossingReport = null
-        stopGpsUpdates()
+        locationTracker.stop()
         bleAdvertiser.stop()
         bleScanner.stop()
         socketClient?.disconnect()
@@ -312,6 +354,15 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
             }
             lockDefenseRegistered = false
         }
+        if (networkCallbackRegistered) {
+            try {
+                getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(networkCallback)
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "network callback sudah tidak terdaftar: ${e.message}")
+            }
+            networkCallbackRegistered = false
+        }
+        TrackerStatus.update("Pemantauan berhenti", isConnected = false)
         super.onDestroy()
     }
 
@@ -320,17 +371,22 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     // ---- GatewaySocketClient.Listener ----
 
     override fun onConnected() {
-        updateNotification("Terhubung ke server")
+        updateNotification("Terhubung ke server", connected = true)
     }
 
     override fun onDisconnected() {
-        updateNotification("Terputus, mencoba menyambung ulang...")
+        updateNotification("Terputus, mencoba menyambung ulang...", connected = false)
     }
 
     override fun onAccepted(deviceId: Int, status: String, bleAnchorUuid: String?, bleMaxDistanceMeters: Double?) {
-        updateNotification("Aktif memantau (status: $status)")
+        updateNotification(
+            if (status == "locked") "Aktif — perangkat dalam status terkunci" else "Aktif memantau",
+            connected = true,
+        )
+        // Dipanggil di thread socket.io: urusan LocationManager (Looper) dipindah ke main thread.
+        serviceScope.launch(Dispatchers.Main) { locationTracker.start() }
         startHeartbeat()
-        startGpsUpdates()
+        startDeviceInfoLoop()
         serviceScope.launch {
             bleAdvertiser.start(BeaconUuid.fromDeviceUuid(identityStore.snapshot().deviceUuid))
         }
@@ -359,8 +415,9 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     }
 
     override fun onRejected(message: String) {
-        updateNotification("Ditolak: $message")
+        updateNotification("Ditolak: $message", connected = false)
         heartbeatJob?.cancel()
+        deviceInfoJob?.cancel()
         // Device ditolak server (site code tidak cocok / dinonaktifkan)
         // — hentikan service, jangan terus mencoba diam-diam.
         stopSelf()
@@ -368,11 +425,12 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
 
     override fun onAuthFailed(message: String, isCredentialProblem: Boolean) {
         heartbeatJob?.cancel()
+        deviceInfoJob?.cancel()
         socketClient?.disconnect()
         socketClient = null
 
         if (!isCredentialProblem) {
-            updateNotification("Server sedang bermasalah, mencoba lagi...")
+            updateNotification("Server sedang bermasalah, mencoba lagi...", connected = false)
             startGatewaySession(initialDelayMs = AUTH_RETRY_MS)
             return
         }
@@ -380,7 +438,7 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         // Rahasia lokal sudah tidak diakui server (device lama sebelum
         // pembaruan keamanan, atau admin menekan "daftar ulang") — buang dan
         // klaim ulang; klaim baru berhasil setelah admin membuka pendaftaran.
-        updateNotification("Perlu didaftarkan ulang: $message")
+        updateNotification("Perlu didaftarkan ulang: $message", connected = false)
         serviceScope.launch {
             identityStore.clearDeviceSecret()
             startGatewaySession(initialDelayMs = 0L)
@@ -388,51 +446,134 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     }
 
     override fun onCommandPush(commandId: Int?, commandType: String, reasonNote: String?) {
-        when (commandType) {
-            "lock" -> {
-                // BUKAN mematikan device — kunci disimpan PERSISTEN, LockActivity
-                // layar penuh "SEGERA KEMBALI KE TEMPAT ANDA, BOSKU" dibuka dengan
-                // screen pinning (Home & Recents nonaktif) + kolom OTP, dan
-                // watchdog menjaganya supaya tidak bisa di-skip.
-                serviceScope.launch {
-                    lockStore.setLocked(reasonNote)
-                    enforceLockAndWatch(reasonNote)
-                }
+        serviceScope.launch { handleCommand(commandId, commandType, reasonNote) }
+    }
+
+    // ---- Perintah dari dashboard ----
+
+    /**
+     * Konfirmasi terima → jalankan → laporkan hasil. Gateway mengirim ulang perintah yang belum
+     * dikonfirmasi; perintah yang sudah pernah dijalankan cukup dilaporkan ulang hasilnya.
+     */
+    private suspend fun handleCommand(commandId: Int?, commandType: String, reasonNote: String?) {
+        if (commandId != null) {
+            val done = commandLedger.find(commandId)
+            if (done != null) {
+                socketClient?.reportCommand(commandId, done.result, done.message)
+                return
             }
+            socketClient?.reportCommand(commandId, RESULT_RECEIVED)
+        }
+
+        val (result, message) = try {
+            executeCommand(commandType, reasonNote)
+        } catch (e: Exception) {
+            Log.e(TAG, "perintah $commandType gagal dijalankan", e)
+            RESULT_FAILED to "Kesalahan di HP: ${e.message ?: e.javaClass.simpleName}"
+        }
+        Log.i(TAG, "perintah #$commandId $commandType -> $result ($message)")
+
+        if (commandId != null) {
+            commandLedger.record(CommandLedger.Entry(commandId, result, message))
+            socketClient?.reportCommand(commandId, result, message)
+        }
+    }
+
+    private suspend fun executeCommand(commandType: String, reasonNote: String?): Pair<String, String> =
+        when (commandType) {
+            "lock" -> executeLock(reasonNote)
             "unlock" -> {
                 // Unlock dari ADMIN (dashboard/bot Telegram) — LockActivity yang
                 // sedang tampil otomatis menutup diri lewat watchdog pollingnya
                 // sendiri begitu DeviceLockStore terbaca tidak locked lagi.
-                serviceScope.launch {
-                    lockStore.clear()
-                    lockWatchdogHandler.removeCallbacks(lockWatchdogRunnable)
-                    updateNotification("Perintah unlock diterima — perangkat bisa dipakai")
-                }
+                lockStore.clear()
+                lockWatchdogHandler.removeCallbacks(lockWatchdogRunnable)
+                updateNotification("Perintah buka kunci diterima — perangkat bisa dipakai")
+                RESULT_EXECUTED to "Kunci dibuka, HP bisa dipakai lagi"
             }
-            "locate_now" -> {
-                serviceScope.launch { sendHeartbeatOnce() }
+            "locate_now" -> executeLocateNow()
+            "start_monitor" -> RESULT_EXECUTED to "Pemantauan sudah aktif di HP ini"
+            "stop_monitor" -> RESULT_FAILED to
+                "Menghentikan pemantauan dari jarak jauh belum didukung APK Pelacak (pemantauan aktif selama aplikasi terpasang)"
+            else -> RESULT_FAILED to "Jenis perintah \"$commandType\" tidak dikenal APK versi ini"
+        }
+
+    /**
+     * BUKAN mematikan device — kunci disimpan PERSISTEN, LockActivity layar penuh dibuka dengan
+     * screen pinning (Home & Recents nonaktif) + kolom OTP, dan watchdog menjaganya supaya tidak
+     * bisa di-skip. Hasil yang dilaporkan jujur: apakah layar kunci benar-benar tampil.
+     */
+    private suspend fun executeLock(reasonNote: String?): Pair<String, String> {
+        lockStore.setLocked(reasonNote)
+        withContext(Dispatchers.Main) { enforceLockAndWatch(reasonNote) }
+
+        if (!SetupChecks.canShowLockScreen(applicationContext)) {
+            // Android 10+ memblokir activity dari latar belakang tanpa izin "tampil di atas
+            // aplikasi lain" -- matikan layar lewat Device Admin sebagai pengaman minimum.
+            return if (TrackerDeviceAdminReceiver.lockNow(applicationContext)) {
+                RESULT_EXECUTED to "Layar HP dikunci lewat Device Admin; layar peringatan belum bisa tampil " +
+                    "karena izin \"tampil di atas aplikasi lain\" belum diberikan"
+            } else {
+                RESULT_FAILED to "HP menerima perintah tapi tidak bisa mengunci: Device Admin dan izin " +
+                    "\"tampil di atas aplikasi lain\" belum aktif di HP"
             }
         }
-        commandId?.let { socketClient?.acknowledgeCommand(it) }
+
+        // Tunggu LockActivity benar-benar tampil (onResume) sebelum melapor.
+        val deadline = System.currentTimeMillis() + LOCK_CONFIRM_TIMEOUT_MS
+        while (!LockActivity.isShowing && System.currentTimeMillis() < deadline) delay(250)
+        return if (LockActivity.isShowing) {
+            RESULT_EXECUTED to "Layar kunci tampil di HP"
+        } else {
+            RESULT_EXECUTED to "Status kunci aktif di HP; layar kunci belum terkonfirmasi tampil " +
+                "(dibuka ulang otomatis tiap ${LOCK_WATCHDOG_MS / 1000} detik)"
+        }
+    }
+
+    /** Ambil posisi BARU (sampai 30 detik), kirim, plus detail perangkat terkini. */
+    private suspend fun executeLocateNow(): Pair<String, String> {
+        val fresh = locationTracker.freshFix(LOCATE_TIMEOUT_MS)
+        val location = fresh ?: locationTracker.current()
+        sendHeartbeatOnce(location)
+        socketClient?.sendDeviceInfo(DeviceInfoCollector.collect(applicationContext))
+
+        return when {
+            location == null && !SetupChecks.hasForegroundLocation(applicationContext) ->
+                RESULT_FAILED to "Izin lokasi aplikasi sudah dicabut di HP"
+            location == null && !SetupChecks.isLocationServiceOn(applicationContext) ->
+                RESULT_FAILED to "Lokasi (GPS) HP sedang dimatikan pemegang HP"
+            location == null ->
+                RESULT_FAILED to "Belum ada posisi: GPS & jaringan tidak memberi lokasi dalam ${LOCATE_TIMEOUT_MS / 1000} detik"
+            fresh != null ->
+                RESULT_EXECUTED to "Lokasi baru terkirim (${describe(location)})"
+            else ->
+                RESULT_EXECUTED to "GPS belum dapat posisi baru; dikirim posisi terakhir (${describe(location)}, " +
+                    "${ageText(location)})"
+        }
+    }
+
+    private fun describe(location: Location): String {
+        val provider = when (location.provider) {
+            "gps" -> "GPS"
+            "network" -> "jaringan"
+            "fused" -> "gabungan"
+            else -> location.provider ?: "?"
+        }
+        return if (location.hasAccuracy()) "$provider, akurasi ±${location.accuracy.roundToInt()} m" else provider
+    }
+
+    private fun ageText(location: Location): String {
+        val minutes = ((System.currentTimeMillis() - location.time) / 60_000L).coerceAtLeast(0)
+        return when {
+            minutes < 1 -> "kurang dari 1 menit lalu"
+            minutes < 60 -> "$minutes menit lalu"
+            else -> "${minutes / 60} jam lalu"
+        }
     }
 
     // ---- Lock jarak jauh (anti-skip, dengan self-unlock OTP) ----
 
-    /**
-     * Kunci layar SEKARANG via Device Admin — HANYA dipakai sebagai jaring
-     * pengaman kalau LockActivity sama sekali gagal dibuka (mis. OEM yang
-     * memblokir activity dari background). JANGAN dipanggil rutin/berkala:
-     * dpm.lockNow() benar-benar mematikan layar seperti tombol power (lalu
-     * minta PIN/pola device kalau sudah di-set), jadi kalau dipanggil
-     * berulang bareng LockActivity yang menyalakan layar lagi, hasilnya
-     * layar hidup-mati-hidup-mati — persis bug yang pernah terjadi di sini.
-     */
-    private fun enforceLockNowFallback() {
-        val ok = TrackerDeviceAdminReceiver.lockNow(applicationContext)
-        Log.i(TAG, "enforceLockNowFallback -> $ok")
-    }
-
-    /** Pasang LockActivity (screen pinning) + mulai watchdog pasang-ulang. */
+    /** Pasang LockActivity (screen pinning) + mulai watchdog pasang-ulang. Main thread. */
     private fun enforceLockAndWatch(reason: String?) {
         updateNotification(
             "Terkunci — segera kembali ke lokasi Anda" +
@@ -441,13 +582,17 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         try {
             LockActivity.launch(applicationContext, reason)
         } catch (_: Exception) {
-            enforceLockNowFallback()
+            // JANGAN panggil lockNow() rutin: mematikan layar seperti tombol power, dan bersama
+            // LockActivity (yang menyalakan layar lagi) menyebabkan layar hidup-mati berulang.
+            // Hanya dipakai di sini, saat activity benar-benar gagal dibuka.
+            val ok = TrackerDeviceAdminReceiver.lockNow(applicationContext)
+            Log.i(TAG, "LockActivity gagal dibuka, fallback lockNow -> $ok")
         }
         lockWatchdogHandler.removeCallbacks(lockWatchdogRunnable)
         lockWatchdogHandler.postDelayed(lockWatchdogRunnable, LOCK_WATCHDOG_MS)
     }
 
-    // ---- Heartbeat ----
+    // ---- Heartbeat & detail perangkat ----
 
     private fun startHeartbeat() {
         heartbeatJob?.cancel()
@@ -459,14 +604,23 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         }
     }
 
-    private fun sendHeartbeatOnce() {
-        val position = currentPosition()
+    private fun startDeviceInfoLoop() {
+        deviceInfoJob?.cancel()
+        deviceInfoJob = serviceScope.launch {
+            while (true) {
+                socketClient?.sendDeviceInfo(DeviceInfoCollector.collect(applicationContext))
+                delay(DEVICE_INFO_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun sendHeartbeatOnce(location: Location? = locationTracker.current()) {
         val bleReading = bleScanner.latestReading()
         val nearbyBeacon = bleScanner.strongestOtherReading(currentAnchorUuid)
         socketClient?.sendLocation(
             source = if (bleReading != null) "ble" else "gps",
-            latitude = position.first,
-            longitude = position.second,
+            latitude = location?.latitude,
+            longitude = location?.longitude,
             bleDistanceMeters = bleReading?.second,
             bleRssi = bleReading?.first,
             batteryLevel = currentBatteryLevel(),
@@ -474,72 +628,10 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
             ip = null,
             nearbyBeaconUuid = nearbyBeacon?.first,
             nearbyBeaconDistanceMeters = nearbyBeacon?.third,
+            accuracyMeters = location?.takeIf { it.hasAccuracy() }?.accuracy,
+            provider = location?.provider,
+            fixTime = location?.time,
         )
-    }
-
-    // ---- Lokasi GPS ----
-
-    /**
-     * Mulai mendengarkan pembaruan lokasi. Cadence hemat baterai: 60 detik
-     * / 10 meter (kalau device diam, Android tidak memanggil callback).
-     * Provider GPS + NETWORK (NETWORK sebagai cadangan di dalam ruangan).
-     * Dipakai Listener API lintas versi (deprecated sejak API 30 tapi tetap
-     * didukung penuh di Android 8-16) karena API Consumer/Builder baru tidak
-     * tersedia penuh di compileSdk 36. Dipanggil hanya setelah device
-     * diterima server (device yang ditolak tidak akan diancam lokasinya).
-     */
-    @android.annotation.SuppressLint("MissingPermission")
-    private fun startGpsUpdates() {
-        if (gpsUpdatesStarted) return
-        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        gpsUpdatesStarted = true
-
-        @Suppress("DEPRECATION")
-        lm.requestLocationUpdates(
-            LocationManager.GPS_PROVIDER, 60_000L, 10f,
-            legacyLocationListener, Looper.getMainLooper(),
-        )
-        @Suppress("DEPRECATION")
-        lm.requestLocationUpdates(
-            LocationManager.NETWORK_PROVIDER, 60_000L, 10f,
-            legacyLocationListener, Looper.getMainLooper(),
-        )
-    }
-
-    @Suppress("DEPRECATION")
-    private fun stopGpsUpdates() {
-        if (!gpsUpdatesStarted) return
-        gpsUpdatesStarted = false
-        try {
-            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            lm.removeUpdates(legacyLocationListener)
-        } catch (e: SecurityException) {
-            // Service sudah berhenti dan izin mungkin sudah dicabut — tidak fatal, cukup dicatat.
-            Log.w(TAG, "removeUpdates lokasi gagal: ${e.message}")
-        }
-    }
-
-    /**
-     * Posisi terbaru untuk dikirim: pakai update terakhir, atau sekali per
-     * menit coba ambil last-known (berguna saat pertama kali start supaya
-     * radar langsung dapat titik tanpa menunggu fix GPS pertama).
-     */
-    @android.annotation.SuppressLint("MissingPermission")
-    private fun currentPosition(): Pair<Double?, Double?> {
-        if (latestLocation == null && System.currentTimeMillis() - lastKnownSentAt > 60_000L) {
-            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val last = try {
-                lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                    ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-            } catch (_: SecurityException) {
-                null
-            }
-            if (last != null) {
-                latestLocation = last
-                lastKnownSentAt = System.currentTimeMillis()
-            }
-        }
-        return (latestLocation?.latitude) to (latestLocation?.longitude)
     }
 
     /**
@@ -568,36 +660,36 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     // ---- Notifikasi ----
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.notification_channel_tracking),
-                NotificationManager.IMPORTANCE_LOW,
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
-        }
+        // minSdk 26: channel notifikasi selalu tersedia.
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            getString(R.string.notification_channel_tracking),
+            NotificationManager.IMPORTANCE_LOW,
+        )
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     private fun buildNotification(status: String): Notification {
         val tapIntent = Intent(this, MainActivity::class.java)
-        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_IMMUTABLE
-        } else {
-            0
-        }
-        val pendingIntent = PendingIntent.getActivity(this, 0, tapIntent, pendingFlags)
+        val pendingIntent = PendingIntent.getActivity(this, 0, tapIntent, PendingIntent.FLAG_IMMUTABLE)
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_tracking_title))
             .setContentText(status)
+            .setStyle(
+                NotificationCompat.BigTextStyle().bigText(
+                    "$status\n${getString(R.string.notification_tracking_text)}",
+                ),
+            )
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setOngoing(true)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(pendingIntent)
             .build()
     }
 
-    private fun updateNotification(status: String) {
+    private fun updateNotification(status: String, connected: Boolean? = null) {
+        TrackerStatus.update(status, connected)
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, buildNotification(status))
     }
@@ -613,6 +705,15 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         // 15 detik memangkas itu jadi ~30 detik tanpa mengorbankan konfirmasi
         // berulang (masih bukan auto-unlock dari satu bacaan saja).
         private const val HEARTBEAT_INTERVAL_MS = 15_000L
+
+        /** Detail perangkat (baterai/cas, jaringan, penyimpanan, izin) dikirim tiap 5 menit. */
+        private const val DEVICE_INFO_INTERVAL_MS = 5 * 60_000L
+
+        /** Batas tunggu fix GPS baru untuk perintah locate_now. */
+        private const val LOCATE_TIMEOUT_MS = 30_000L
+
+        /** Batas tunggu konfirmasi LockActivity tampil sebelum melapor hasil lock. */
+        private const val LOCK_CONFIRM_TIMEOUT_MS = 6_000L
 
         /**
          * Jeda minimum antar laporan cepat dari perubahan zona BLE. Melindungi
@@ -631,15 +732,39 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         /** Jeda sambung ulang setelah gateway gagal memproses autentikasi (gangguan server). */
         private const val AUTH_RETRY_MS = 15_000L
 
+        // Harus sama dengan CommandLifecycle.transitionFromReport di realtime-gateway.
+        private const val RESULT_RECEIVED = "received"
+        private const val RESULT_EXECUTED = "executed"
+        private const val RESULT_FAILED = "failed"
+
         /** Aksi start service dari LockDefenseReceiver: pasang ulang LockActivity. */
         const val ACTION_ENSURE_LOCKED = "com.lacaksmb.tracker.action.ENSURE_LOCKED"
 
-        fun start(context: android.content.Context) {
+        fun start(context: Context) {
             val intent = Intent(context, TrackerForegroundService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            ContextCompat.startForegroundService(context, intent)
+        }
+
+        /**
+         * Mulai service tanpa pernah meng-crash pemanggil (receiver boot, WorkManager, layar app).
+         * Tanpa izin lokasi service bertipe lokasi tidak boleh jalan; Android 12+ juga bisa menolak
+         * start dari latar belakang (ForegroundServiceStartNotAllowedException, turunan
+         * IllegalStateException) -- dicoba lagi oleh watchdog WorkManager berikutnya.
+         */
+        fun startSafely(context: Context): Boolean {
+            if (!SetupChecks.hasForegroundLocation(context)) {
+                TrackerStatus.update("Izin lokasi belum diberikan", isConnected = false)
+                return false
+            }
+            return try {
+                start(context)
+                true
+            } catch (e: IllegalStateException) {
+                Log.w(TAG, "service belum boleh dimulai dari latar belakang: ${e.message}")
+                false
+            } catch (e: SecurityException) {
+                Log.w(TAG, "service ditolak sistem: ${e.message}")
+                false
             }
         }
     }

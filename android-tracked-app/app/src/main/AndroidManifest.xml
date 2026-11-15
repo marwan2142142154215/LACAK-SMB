@@ -54,10 +54,11 @@
     <!-- Supaya tracking tetap jalan walau device masuk Doze/App Standby -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!-- Legacy: tidak lagi dipakai oleh layar kunci (LockActivity sekarang
-         memakai startLockTask(), bukan lapisan overlay), tapi tetap diminta
-         di langkah enrollment DISPLAY_OVER_OTHER_APPS sebagai jaring
-         pengaman UI tambahan di perangkat yang tidak mengizinkan pinning. -->
+    <!-- "Tampil di atas aplikasi lain": Android 10+ memblokir activity yang
+         dibuka dari latar belakang kecuali app punya izin ini (atau Device
+         Owner). Tanpa izin ini perintah lock tidak bisa memunculkan
+         LockActivity saat app tidak sedang dibuka (lihat SetupChecks
+         .canShowLockScreen); diminta di layar panduan. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
@@ -106,14 +107,47 @@
                 android:resource="@xml/device_admin_policies" />
             <intent-filter>
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <!-- QR provisioning Device Owner selesai (jalur Android 8-9). -->
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
             </intent-filter>
         </receiver>
 
+        <!-- QR provisioning Device Owner (HP aset perusahaan, lihat
+             docs/provisioning-device-owner.md). Wajib ada sejak Android 12;
+             hanya bisa dipanggil wizard penyiapan sistem (BIND_DEVICE_ADMIN). -->
+        <activity
+            android:name=".admin.ProvisioningModeActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.app.action.GET_PROVISIONING_MODE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".admin.PolicyComplianceActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.app.action.ADMIN_POLICY_COMPLIANCE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Hidupkan lagi pemantauan setelah HP menyala ulang (termasuk "fast boot"
+             sebagian merek) dan setelah APK diperbarui. -->
         <receiver
             android:name=".service.BootCompletedReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

@@ -550,3 +550,111 @@ test.group('Device: pindah site', (group) => {
         res.assertStatus(403)
     })
 })
+
+test.group('Device: detail perangkat & status perintah', (group) => {
+    group.each.setup(() => testUtils.db().withGlobalTransaction())
+
+    test('detail perangkat dari APK & perintah terakhir ikut di daftar dan detail', async ({
+        client,
+        assert,
+    }) => {
+        const org = await makeOrganization()
+        const device = await makeDevice(org, {
+            manufacturer: 'samsung',
+            model: 'SM-A155F',
+            is_charging: true,
+            network_type: 'cellular',
+            carrier_name: 'Telkomsel',
+            storage_free_mb: 2048,
+            storage_total_mb: 65536,
+            permission_state: JSON.stringify({ location: true, backgroundLocation: false }),
+            info_updated_at: new Date(),
+        })
+        const admin = await makeUser(org, 'site_admin')
+        await db.table('device_commands').insert([
+            {
+                device_id: device.id,
+                command_type: 'locate_now',
+                issued_by: admin.id,
+                issued_via: 'web_dashboard',
+                status: 'expired',
+                result_message: 'HP tidak terhubung dalam 10 menit, permintaan lokasi dibatalkan',
+                created_at: new Date(Date.now() - 60_000),
+            },
+            {
+                device_id: device.id,
+                command_type: 'lock',
+                issued_by: admin.id,
+                issued_via: 'web_dashboard',
+                status: 'executed',
+                delivered_at: new Date(),
+                executed_at: new Date(),
+                delivery_attempts: 2,
+                result_message: 'Layar kunci tampil',
+                created_at: new Date(),
+            },
+        ])
+
+        const list = await client.get('/api/v1/devices').bearerToken(admin.bearer)
+        list.assertStatus(200)
+        const item = list.body().data.items[0]
+        assert.equal(item.model, 'SM-A155F')
+        assert.equal(item.carrier_name, 'Telkomsel')
+        assert.deepEqual(item.permission_state, { location: true, backgroundLocation: false })
+        assert.equal(item.latest_command.command_type, 'lock')
+        assert.equal(item.latest_command.status, 'executed')
+        assert.equal(item.latest_command.delivery_attempts, 2)
+        assert.equal(item.latest_command.result_message, 'Layar kunci tampil')
+
+        const detail = await client.get(`/api/v1/devices/${device.id}`).bearerToken(admin.bearer)
+        assert.equal(detail.body().data.latest_command.status, 'executed')
+
+        const history = await client
+            .get(`/api/v1/devices/${device.id}/commands`)
+            .bearerToken(admin.bearer)
+        assert.deepEqual(
+            history.body().data.items.map((command: { status: string }) => command.status),
+            ['executed', 'expired']
+        )
+    })
+
+    test('lokasi membawa akurasi, sumber, dan waktu fix', async ({ client, assert }) => {
+        const org = await makeOrganization()
+        const device = await makeDevice(org)
+        await db.table('device_locations').insert({
+            device_id: device.id,
+            source: 'gps',
+            latitude: '-6.2088000',
+            longitude: '106.8456000',
+            accuracy_meters: '12.50',
+            location_provider: 'gps',
+            fixed_at: new Date('2026-11-15T03:00:00Z'),
+            recorded_at: new Date(),
+            created_at: new Date(),
+        })
+        const admin = await makeUser(org, 'site_admin')
+
+        const detail = await client.get(`/api/v1/devices/${device.id}`).bearerToken(admin.bearer)
+        assert.equal(detail.body().data.latest_location.accuracy_meters, '12.50')
+        assert.equal(detail.body().data.latest_location.location_provider, 'gps')
+        assert.isNotNull(detail.body().data.latest_location.fixed_at)
+    })
+
+    test('perintah ke HP offline tetap disimpan dengan pesan yang jelas', async ({ client }) => {
+        const org = await makeOrganization()
+        const device = await makeDevice(org, { status: 'offline' })
+        const admin = await makeUser(org, 'site_admin')
+
+        const response = await client
+            .post(`/api/v1/devices/${device.id}/commands`)
+            .bearerToken(admin.bearer)
+            .json({ command_type: 'lock', issued_via: 'web_dashboard' })
+
+        response.assertStatus(201)
+        response.assertBodyContains({
+            message:
+                'Perintah disimpan. HP sedang offline, perintah terkirim otomatis begitu HP terhubung lagi',
+            data: { status: 'pending', delivery_attempts: 0, executed_at: null },
+        })
+    })
+})

@@ -25,6 +25,18 @@ export default class DeviceLocation extends BaseModel {
     @column()
     declare bleRssi: number | null
 
+    /** Radius akurasi fix (meter) menurut Android; null = tidak diketahui. */
+    @column()
+    declare accuracyMeters: number | null
+
+    /** Sumber fix: gps / network / fused / passive. */
+    @column()
+    declare locationProvider: string | null
+
+    /** Waktu fix diambil di HP (bisa lebih tua dari recordedAt kalau belum ada fix baru). */
+    @column.dateTime()
+    declare fixedAt: DateTime | null
+
     @column.dateTime()
     declare recordedAt: DateTime
 

@@ -1,9 +1,10 @@
 <script setup>
-import { ChevronDown, Download, Hammer, PackageOpen, Search, Trash2, Upload } from '@lucide/vue'
+import { BookOpen, ChevronDown, Download, Hammer, PackageOpen, Search, Trash2, Upload } from '@lucide/vue'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import TrackerInstallDialog from '@/components/devices/TrackerInstallDialog.vue'
 import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseCard from '@/components/ui/BaseCard.vue'
@@ -36,6 +37,8 @@ const generating = ref(false)
 const submitting = ref(false)
 const deleteTarget = ref(null)
 const deleting = ref(false)
+// Panduan pasang + QR Device Owner untuk APK SMB Pelacak yang sudah berhasil dibuild.
+const installTarget = ref(null)
 let pollTimer = null
 
 const generateForm = ref({
@@ -112,7 +115,15 @@ function buildTarget(build) {
 }
 
 function menuItems(build) {
-    return [{ label: 'Hapus arsip', icon: Trash2, onSelect: () => (deleteTarget.value = build), danger: true }]
+    return [
+        {
+            label: 'Panduan pasang & QR',
+            icon: BookOpen,
+            onSelect: () => (installTarget.value = build),
+            hidden: build.apk_type !== 'tracker' || build.status !== 'success',
+        },
+        { label: 'Hapus arsip', icon: Trash2, onSelect: () => (deleteTarget.value = build), danger: true },
+    ]
 }
 
 async function loadBuilds() {
@@ -498,6 +509,8 @@ onBeforeUnmount(() => {
                 <BaseButton type="submit" form="upload-form" :loading="submitting"><Upload class="size-4" /> Unggah</BaseButton>
             </template>
         </BaseDialog>
+
+        <TrackerInstallDialog :build="installTarget" @close="installTarget = null" />
 
         <ConfirmDialog
             :open="!!deleteTarget"

@@ -26,6 +26,13 @@ router
                     .post('/apk-builds/generate', [ApkBuildsController, 'generate'])
                     .use(middleware.throttle({ max: 6, minutes: 1 }))
                 router.get('/apk-builds/:apk_build', [ApkBuildsController, 'show'])
+                // QR Device Owner untuk HP aset perusahaan (tautan unduh bertanda tangan 2 jam).
+                router
+                    .get('/apk-builds/:apk_build/provisioning', [
+                        ApkBuildsController,
+                        'provisioning',
+                    ])
+                    .use(middleware.throttle({ max: 20, minutes: 1 }))
                 router.delete('/apk-builds/:apk_build', [ApkBuildsController, 'destroy'])
             })
             .use([middleware.auth(), middleware.extendToken()])

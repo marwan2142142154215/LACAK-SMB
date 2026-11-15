@@ -13,6 +13,7 @@ import {
     deviceResource,
     eloquentNow,
     findDeviceOrFail,
+    latestCommandsOf,
     latestLocationsOf,
     logDeviceCreated,
     logDeviceDeleted,
@@ -91,9 +92,12 @@ export default class DevicesController {
         // Lokasi device (koordinat, jarak BLE) hanya untuk pemegang izin radar.view; tanpa itu kuncinya
         // tidak ikut dikirim sama sekali, jadi tidak bocor lewat API walau halaman Radar disembunyikan.
         const withLocation = can(access, 'radar.view')
-        const [organizations, locations] = await Promise.all([
+        const deviceIds = devices.map((device) => device.id)
+        const [organizations, locations, commands] = await Promise.all([
             organizationNamesOf(devices.map((device) => device.organization_id)),
-            latestLocationsOf(withLocation ? devices.map((device) => device.id) : []),
+            latestLocationsOf(withLocation ? deviceIds : []),
+            // Status perintah terakhir (terkirim/diterima/dijalankan/gagal) per device.
+            latestCommandsOf(deviceIds),
         ])
 
         return success('Daftar device', {
@@ -102,6 +106,7 @@ export default class DevicesController {
                     // Site yang sudah di-soft-delete tidak ikut dimuat relasinya.
                     organizationName: organizations.get(device.organization_id) ?? null,
                     latestLocation: withLocation ? (locations.get(device.id) ?? null) : undefined,
+                    latestCommand: commands.get(device.id) ?? null,
                 })
             ),
             total,
@@ -173,12 +178,16 @@ export default class DevicesController {
         }
 
         const withLocation = can(access, 'radar.view')
-        const locations = await latestLocationsOf(withLocation ? [device.id] : [])
+        const [locations, commands] = await Promise.all([
+            latestLocationsOf(withLocation ? [device.id] : []),
+            latestCommandsOf([device.id]),
+        ])
 
         return success(
             'Detail device',
             deviceResource(device, {
                 latestLocation: withLocation ? (locations.get(device.id) ?? null) : undefined,
+                latestCommand: commands.get(device.id) ?? null,
             })
         )
     }

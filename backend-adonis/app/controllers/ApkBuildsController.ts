@@ -7,7 +7,13 @@ import db from '@adonisjs/lucid/services/db'
 import { accessOf, can } from '#services/Access'
 import { fail, success } from '#services/ApiResponse'
 import { escapeLike, searchTermOf } from '#services/SearchTerm'
-import { laravelDate, logModelEvent } from '#services/ActivityLog'
+import { laravelDate, logModelEvent, writeActivity } from '#services/ActivityLog'
+import {
+    PROVISIONING_URL_MINUTES,
+    TRACKER_PACKAGE_NAME,
+    provisioningPayload,
+    provisioningQrSvg,
+} from '#services/DeviceOwnerProvisioning'
 import { laravelUrlSigner } from '#services/laravel/index'
 import { authorizedOrganizationId, organizationFilter } from '#services/OrganizationScope'
 import { serveDocumentsDiskFile } from '#services/Documents'
@@ -446,6 +452,63 @@ export default class ApkBuildsController {
                 : 'APK build dihapus, tetapi berkasnya belum terhapus dari penyimpanan (lihat log server)',
             null
         )
+    }
+
+    /**
+     * QR provisioning Device Owner untuk APK Pelacak yang sudah berhasil dibuild (HP aset perusahaan
+     * yang baru di-reset pabrik). Berisi tautan unduh bertanda tangan berumur pendek + checksum
+     * APK; lihat services/DeviceOwnerProvisioning.ts dan docs/provisioning-device-owner.md.
+     */
+    async provisioning(ctx: HttpContext) {
+        const build = await findBuild(ctx.params.apk_build)
+        if (!build) return notFound(ctx)
+
+        const access = await accessOf(ctx)
+        if (!can(access, 'apk-builds.manage')) return forbidden(ctx)
+
+        if (authorizedOrganizationId(access, build.organization_id) === null) {
+            return ctx.response
+                .status(403)
+                .send(fail('Anda tidak berwenang melihat APK build site ini'))
+        }
+
+        if (build.apk_type !== 'tracker') {
+            return ctx.response
+                .status(422)
+                .send(fail('QR Device Owner hanya untuk APK Pelacak (lacak perangkat)'))
+        }
+        if (build.status !== 'success' || !build.checksum_sha256) {
+            return ctx.response
+                .status(422)
+                .send(fail('APK belum selesai dibuild, tunggu sampai berstatus berhasil'))
+        }
+
+        const expiresAt = new Date(Date.now() + PROVISIONING_URL_MINUTES * 60_000)
+        const payload = provisioningPayload({
+            downloadUrl: laravelUrlSigner.temporarySignedUrl(
+                `/api/v1/apk-builds/${build.id}/download`,
+                expiresAt
+            ),
+            checksumSha256: build.checksum_sha256,
+        })
+
+        // Tautan di QR membuka unduhan APK (berisi rahasia device) tanpa login: catat siapa membuatnya.
+        await writeActivity(ctx, {
+            logName: 'apk-builds',
+            description: `Membuat QR provisioning Device Owner untuk APK build #${build.id}`,
+            event: 'provisioning',
+            subjectType: null,
+            subjectId: null,
+            properties: { apk_build_id: build.id, expires_at: expiresAt.toISOString() },
+            organizationId: build.organization_id,
+        })
+
+        return success('QR provisioning Device Owner', {
+            payload,
+            qr_svg: await provisioningQrSvg(payload),
+            package_name: TRACKER_PACKAGE_NAME,
+            expires_at: expiresAt.toISOString(),
+        })
     }
 
     /** Tautan bertanda tangan dari ApkBuildResource.download_url (tanpa login). */
