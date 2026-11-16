@@ -4,6 +4,7 @@ import {
     cleanCoordinate,
     sanitizeDeviceInfo,
     sanitizeLocationExtras,
+    sanitizeLocationReport,
 } from '#services/DeviceTelemetry'
 
 test.group('Telemetri device: device:info', () => {
@@ -111,5 +112,73 @@ test.group('Telemetri device: lokasi', () => {
         assert.equal(cleanCoordinate(-6.2, 90), -6.2)
         assert.isNull(cleanCoordinate(91, 90))
         assert.isNull(cleanCoordinate('106.8', 180))
+    })
+})
+
+test.group('Telemetri device: device:location (selain koordinat)', () => {
+    test('nilai normal dari APK lolos apa adanya', ({ assert }) => {
+        assert.deepEqual(
+            sanitizeLocationReport({
+                source: 'ble',
+                bleDistanceMeters: 3.5,
+                bleRssi: -67,
+                batteryLevel: 81,
+                ssid: 'Kantor 5G',
+                ip: '192.168.1.20',
+                nearbyBeaconUuid: 'abc-123',
+                nearbyBeaconDistanceMeters: 2,
+            }),
+            {
+                source: 'ble',
+                bleDistanceMeters: 3.5,
+                bleRssi: -67,
+                batteryLevel: 81,
+                ssid: 'Kantor 5G',
+                ip: '192.168.1.20',
+                nearbyBeaconUuid: 'abc-123',
+                nearbyBeaconDistanceMeters: 2,
+            }
+        )
+    })
+
+    test('sumber di luar daftar jadi null (laporan dibuang pemanggil)', ({ assert }) => {
+        assert.isNull(sanitizeLocationReport({ source: 'drop table' }).source)
+        assert.isNull(sanitizeLocationReport({}).source)
+        assert.isNull(sanitizeLocationReport(null).source)
+        assert.equal(sanitizeLocationReport({ source: 'gps' }).source, 'gps')
+        assert.equal(sanitizeLocationReport({ source: 'ble_estimated' }).source, 'ble_estimated')
+    })
+
+    test('angka di luar rentang kolom atau bukan angka dibuang jadi null', ({ assert }) => {
+        const report = sanitizeLocationReport({
+            source: 'gps',
+            bleDistanceMeters: 1_000_000,
+            bleRssi: '-60',
+            batteryLevel: 250,
+        })
+        assert.isNull(report.bleDistanceMeters)
+        assert.isNull(report.bleRssi)
+        assert.isNull(report.batteryLevel)
+        assert.isNull(sanitizeLocationReport({ batteryLevel: Number.NaN }).batteryLevel)
+        assert.equal(sanitizeLocationReport({ batteryLevel: 0 }).batteryLevel, 0)
+    })
+
+    test('ssid: tidak ada = dipertahankan (undefined), bukan teks diabaikan, teks panjang dipotong', ({
+        assert,
+    }) => {
+        assert.isUndefined(sanitizeLocationReport({}).ssid)
+        assert.isUndefined(sanitizeLocationReport({ ssid: 123 }).ssid)
+        assert.isUndefined(sanitizeLocationReport({ ssid: { trim: 1 } }).ssid)
+        assert.isNull(sanitizeLocationReport({ ssid: null }).ssid)
+        assert.equal(sanitizeLocationReport({ ssid: 'x'.repeat(400) }).ssid?.length, 255)
+        // Tidak di-trim: dicocokkan apa adanya oleh geofence.
+        assert.equal(sanitizeLocationReport({ ssid: ' Kantor ' }).ssid, ' Kantor ')
+    })
+
+    test('ip dan uuid beacon: bukan teks jadi null, teks panjang dipotong', ({ assert }) => {
+        const report = sanitizeLocationReport({ ip: 42, nearbyBeaconUuid: ['x'] })
+        assert.isNull(report.ip)
+        assert.isNull(report.nearbyBeaconUuid)
+        assert.equal(sanitizeLocationReport({ ip: '1'.repeat(100) }).ip?.length, 45)
     })
 })

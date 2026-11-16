@@ -12,6 +12,8 @@
  * belum dikonfirmasi HP dikirim ulang; APK mengabaikan command_id yang sudah pernah dijalankan.
  */
 
+import { cleanText } from '#services/DeviceTelemetry'
+
 export type CommandType = 'lock' | 'unlock' | 'start_monitor' | 'stop_monitor' | 'locate_now'
 export type CommandStatus =
     'pending' | 'delivered' | 'acknowledged' | 'executed' | 'failed' | 'expired'
@@ -131,10 +133,8 @@ export function transitionFromReport(
     report: CommandReport
 ): CommandTransition | null {
     const result = typeof report.result === 'string' ? report.result : 'received'
-    const message =
-        typeof report.message === 'string' && report.message.trim() !== ''
-            ? Array.from(report.message.trim()).slice(0, 255).join('')
-            : null
+    // Pesan dari HP disimpan & disiarkan ke dashboard: karakter kontrol (baris baru, ANSI) dibuang.
+    const message = cleanText(report.message, 255)
 
     if (result === 'received') {
         return current === 'delivered' ? { status: 'acknowledged', message: null } : null

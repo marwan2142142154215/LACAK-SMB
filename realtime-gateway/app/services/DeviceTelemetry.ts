@@ -150,6 +150,59 @@ export function sanitizeLocationExtras(
     }
 }
 
+/** Sumber lokasi yang diterima kolom device_locations.source (CHECK di database). */
+export const LOCATION_SOURCES = ['ble', 'gps', 'ble_estimated'] as const
+
+export type LocationReport = {
+    /** null = sumber tidak dikenal; laporan seperti itu harus dibuang (database menolaknya). */
+    source: (typeof LOCATION_SOURCES)[number] | null
+    bleDistanceMeters: number | null
+    bleRssi: number | null
+    batteryLevel: number | null
+    /** undefined = payload tidak membawa ssid (nama terakhir dipertahankan); null/'' = tidak terhubung WiFi. */
+    ssid: string | null | undefined
+    ip: string | null
+    nearbyBeaconUuid: string | null
+    nearbyBeaconDistanceMeters: number | null
+}
+
+/**
+ * Teks apa adanya (tanpa trim) dipotong ke panjang batas; bukan teks = null. Dipakai untuk SSID/IP yang
+ * dicocokkan geofence, jadi isinya tidak boleh berubah selain dipotong.
+ */
+function plainText(value: unknown, maxLength: number): string | null {
+    return typeof value === 'string' ? Array.from(value).slice(0, maxLength).join('') : null
+}
+
+/**
+ * Bagian payload `device:location` selain koordinat: tiap nilai dibatasi ke tipe & rentang kolom
+ * databasenya, supaya satu nilai ngawur dari APK tidak membatalkan seluruh fix lokasi (transaksi
+ * simpan gagal) dan tidak ikut disiarkan ke dashboard.
+ */
+export function sanitizeLocationReport(payload: unknown): LocationReport {
+    const data = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>
+    const source = (LOCATION_SOURCES as readonly string[]).includes(String(data.source))
+        ? (data.source as LocationReport['source'])
+        : null
+    return {
+        source,
+        // numeric(6,2): maksimum 9999.99 meter.
+        bleDistanceMeters: cleanNumber(data.bleDistanceMeters, 0, 9999.99),
+        // smallint; RSSI BLE nyata berkisar sekitar -100..0.
+        bleRssi: cleanInt(data.bleRssi, -200, 0),
+        batteryLevel: cleanInt(data.batteryLevel, 0, 100),
+        ssid:
+            data.ssid === undefined
+                ? undefined
+                : typeof data.ssid === 'string' || data.ssid === null
+                  ? plainText(data.ssid, 255)
+                  : undefined,
+        ip: plainText(data.ip, 45),
+        nearbyBeaconUuid: plainText(data.nearbyBeaconUuid, 64),
+        nearbyBeaconDistanceMeters: cleanNumber(data.nearbyBeaconDistanceMeters, 0, 1_000_000),
+    }
+}
+
 /** Koordinat valid (lintang -90..90, bujur -180..180); selain itu dibuang jadi null. */
 export function cleanCoordinate(value: unknown, limit: 90 | 180): number | null {
     return cleanNumber(value, -limit, limit)

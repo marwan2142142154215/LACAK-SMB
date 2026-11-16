@@ -142,7 +142,9 @@ export function buildCommand(options: {
 }): string[] {
     const { config } = options
     const runner =
-        config.runner === 'wsl' ? ['wsl', '-d', config.wslDistro, '--exec', 'bash'] : ['bash']
+        config.runner === 'wsl'
+            ? ['wsl', '-d', config.wslDistro, '--exec', 'bash']
+            : ['nice', '-n', '19', 'bash']
     return [
         ...runner,
         options.scriptPath,
@@ -186,18 +188,33 @@ export function runProcess(
         // cwd eksplisit: tanpa ini proses anak mewarisi folder kerja worker. Setelah deploy ulang
         // (`node ace build` menghapus & membuat ulang folder build), folder kerja worker yang belum
         // di-restart menunjuk ke folder yang sudah terhapus -> "shell-init: error retrieving current directory".
+        // Di Linux proses anak memimpin grup prosesnya sendiri (detached), supaya saat timeout seluruh
+        // pohonnya (bash -> Gradle -> kompiler) bisa dimatikan sekaligus.
+        const ownGroup = process.platform !== 'win32'
         const child = spawn(executable, args, {
             shell: false,
             windowsHide: true,
             cwd: options.cwd,
+            detached: ownGroup,
         })
         const stdout: Buffer[] = []
         const stderr: Buffer[] = []
         let timedOut = false
 
+        const killTree = () => {
+            // Mematikan `bash` saja membiarkan Gradle dan kompiler Kotlin (cucunya) jalan terus dan
+            // memakan CPU berjam-jam; -pid = seluruh grup proses.
+            try {
+                if (ownGroup && child.pid !== undefined) process.kill(-child.pid, 'SIGKILL')
+                else child.kill('SIGKILL')
+            } catch {
+                child.kill('SIGKILL')
+            }
+        }
+
         const timer = setTimeout(() => {
             timedOut = true
-            child.kill('SIGKILL')
+            killTree()
         }, timeoutSeconds * 1000)
 
         child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk))
