@@ -16,6 +16,7 @@ import {
     cleanCoordinate,
     sanitizeDeviceInfo,
     sanitizeLocationExtras,
+    sanitizeLocationReport,
 } from '#services/DeviceTelemetry'
 import { beaconUuidFor, isDeviceSecretValid } from '#services/DeviceCredentials'
 import {
@@ -313,6 +314,11 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
 
             try {
                 const deviceId = boundDeviceId
+                const report = sanitizeLocationReport(payload)
+                // Sumber di luar daftar ditolak database (CHECK) dan membatalkan seluruh simpanan;
+                // laporan seperti itu tidak berguna, jadi dibuang.
+                const source = report.source
+                if (source === null) return
                 const extras = sanitizeLocationExtras(payload)
                 const latitude = cleanCoordinate(payload?.latitude, 90)
                 const longitude = cleanCoordinate(payload?.longitude, 180)
@@ -325,11 +331,11 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                     await DeviceLocation.create(
                         {
                             deviceId,
-                            source: payload.source,
+                            source,
                             latitude: hasPosition ? latitude : null,
                             longitude: hasPosition ? longitude : null,
-                            bleDistanceMeters: payload.bleDistanceMeters ?? null,
-                            bleRssi: payload.bleRssi ?? null,
+                            bleDistanceMeters: report.bleDistanceMeters,
+                            bleRssi: report.bleRssi,
                             accuracyMeters: hasPosition ? extras.accuracyMeters : null,
                             locationProvider: hasPosition ? extras.provider : null,
                             fixedAt: hasPosition ? extras.fixedAt : null,
@@ -343,15 +349,15 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                     if (!reportingDevice) return null
 
                     reportingDevice.lastSeenAt = DateTime.now()
-                    if (payload.batteryLevel !== undefined && payload.batteryLevel !== null) {
-                        reportingDevice.batteryLevel = payload.batteryLevel
+                    if (report.batteryLevel !== null) {
+                        reportingDevice.batteryLevel = report.batteryLevel
                     }
                     // SSID yang dikirim APK Pelacak (nama jaringan WiFi, bukan
                     // password). null = tidak terhubung WiFi; string kosong
                     // diabaikan supaya nama terakhir tidak terhapus tanpa data.
-                    if (payload.ssid !== undefined) {
+                    if (report.ssid !== undefined) {
                         reportingDevice.lastSsid =
-                            payload.ssid && payload.ssid.trim() !== '' ? payload.ssid : null
+                            report.ssid && report.ssid.trim() !== '' ? report.ssid : null
                     }
                     await reportingDevice.save()
 
@@ -363,13 +369,13 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                     device_id: device.id,
                     device_name: device.deviceName,
                     status: device.status,
-                    source: payload.source,
+                    source,
                     latitude: hasPosition ? latitude : null,
                     longitude: hasPosition ? longitude : null,
                     accuracy_meters: hasPosition ? extras.accuracyMeters : null,
                     location_provider: hasPosition ? extras.provider : null,
                     fixed_at: hasPosition ? (extras.fixedAt?.toISO() ?? null) : null,
-                    ble_distance_meters: payload.bleDistanceMeters ?? null,
+                    ble_distance_meters: report.bleDistanceMeters,
                     battery_level: device.batteryLevel,
                     is_charging: device.isCharging,
                     last_seen_at: device.lastSeenAt?.toISO() ?? null,
@@ -377,13 +383,13 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                 })
 
                 await evaluateGeofence(device, {
-                    ssid: payload.ssid,
-                    ip: payload.ip,
-                    bleDistanceMeters: payload.bleDistanceMeters,
-                    latitude: payload.latitude,
-                    longitude: payload.longitude,
-                    nearbyBeaconUuid: payload.nearbyBeaconUuid,
-                    nearbyBeaconDistanceMeters: payload.nearbyBeaconDistanceMeters,
+                    ssid: report.ssid,
+                    ip: report.ip,
+                    bleDistanceMeters: report.bleDistanceMeters,
+                    latitude: hasPosition ? latitude : null,
+                    longitude: hasPosition ? longitude : null,
+                    nearbyBeaconUuid: report.nearbyBeaconUuid,
+                    nearbyBeaconDistanceMeters: report.nearbyBeaconDistanceMeters,
                 })
             } catch (error) {
                 logger.error('device:location gagal diproses', { error })

@@ -132,9 +132,17 @@ function affectedRows(result: unknown): number {
 }
 
 async function closeCommand(command: DeviceCommand, status: 'expired' | 'failed', message: string) {
+    const updated = await DeviceCommand.query()
+        .where('id', command.id)
+        .whereIn('status', ['pending', 'delivered'])
+        .update({
+            status,
+            result_message: message,
+            updated_at: DateTime.now().toSQL({ includeOffset: false }),
+        })
+    if (!affectedRows(updated)) return
     command.status = status
     command.resultMessage = message
-    await command.save()
     logger.warn('perintah device ditutup tanpa dijalankan', {
         commandId: command.id,
         deviceId: command.deviceId,
@@ -184,17 +192,26 @@ export async function recordCommandReport(
     const transition = transitionFromReport(command.status, report)
     if (!transition) return
 
-    command.status = transition.status
+    const now = DateTime.now()
+    const sqlNow = now.toSQL({ includeOffset: false })
+    const values: Record<string, unknown> = { status: transition.status, updated_at: sqlNow }
     if (transition.status === 'acknowledged') {
-        command.acknowledgedAt = DateTime.now()
+        values.acknowledged_at = sqlNow
     } else {
         // HP bisa langsung melapor hasil tanpa 'received' lebih dulu -- berarti juga sudah diterima.
-        command.acknowledgedAt = command.acknowledgedAt ?? DateTime.now()
-        command.executedAt = DateTime.now()
-        command.resultMessage = transition.message
+        values.acknowledged_at = (command.acknowledgedAt ?? now).toSQL({ includeOffset: false })
+        values.executed_at = sqlNow
+        values.result_message = transition.message
     }
-    await command.save()
+    // Bersyarat pada status yang tadi dibaca: dua laporan HP yang datang berdekatan ('received' lalu
+    // 'executed') ditangani bersamaan, dan yang kalah cepat tidak boleh menimpa status yang lebih maju.
+    const updated = await DeviceCommand.query()
+        .where('id', command.id)
+        .where('status', command.status)
+        .update(values)
+    if (!affectedRows(updated)) return
 
+    command.status = transition.status
     await broadcastCommandStatus(command, transition.status, transition.message)
 }
 

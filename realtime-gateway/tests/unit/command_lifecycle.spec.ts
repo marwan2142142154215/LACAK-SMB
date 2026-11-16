@@ -130,3 +130,21 @@ test.group('Perintah device: laporan HP', () => {
         assert.equal(result?.message?.length, 255)
     })
 })
+
+test.group('Perintah device: pesan hasil dari HP', () => {
+    test('karakter kontrol (baris baru, ANSI) dibuang dari pesan', ({ assert }) => {
+        const result = transitionFromReport('acknowledged', {
+            result: 'failed',
+            message: 'Gagal\r\n\u001b[31mmerah\u0000',
+        })
+        assert.equal(result?.message, 'Gagal[31mmerah')
+    })
+
+    test('pesan yang isinya hanya karakter kontrol dianggap kosong', ({ assert }) => {
+        const result = transitionFromReport('acknowledged', {
+            result: 'executed',
+            message: ' \n\t ',
+        })
+        assert.isNull(result?.message)
+    })
+})

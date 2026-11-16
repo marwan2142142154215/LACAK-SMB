@@ -12,6 +12,7 @@ import {
     buildCommand,
     buildScriptPath,
     projectPathFor,
+    runProcess,
     siteIdentityFor,
     tail,
     toWslPath,
@@ -124,14 +125,25 @@ test.group('APK builder: perintah build sama dengan ApkBuilder Laravel', () => {
             deviceUuid: null,
             deviceSecret: null,
         })
-        assert.deepEqual(command.slice(0, 4), [
+        // Prioritas CPU terendah: build berjalan di server yang sama dengan API & gateway.
+        assert.deepEqual(command.slice(0, 7), [
+            'nice',
+            '-n',
+            '19',
             'bash',
             scriptPath,
             'SITE-01',
             'https://ws.example.test',
         ])
-        assert.equal(command[4], 'Site $(rm -rf /)')
+        assert.equal(command[7], 'Site $(rm -rf /)')
         assert.notInclude(command, 'wsl')
+    })
+
+    test('proses yang melewati batas waktu dimatikan dan dilaporkan', async ({ assert }) => {
+        await assert.rejects(
+            () => runProcess([process.execPath, '-e', 'setTimeout(() => {}, 30000)'], 1),
+            /exceeded the timeout of 1 seconds/
+        )
     })
 
     test('build_log hanya ekor 5000 karakter (mb_substr)', ({ assert }) => {
