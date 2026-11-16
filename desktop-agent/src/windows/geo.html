@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="id">
+    <head>
+        <meta charset="utf-8" />
+        <title>Lokasi</title>
+    </head>
+    <body>
+        <!--
+      Jendela tersembunyi: satu-satunya tempat navigator.geolocation tersedia
+      (renderer/Chromium). Di Windows, Chromium memakai Windows Location Service
+      (WiFi/GPS), BUKAN IP -> tahan-VPN. Fix dikirim ke main lewat preload.
+    -->
+        <script>
+            const OPTS = { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
+            const SEND_INTERVAL_MS = 25000
+            let lastSent = 0
+
+            function onPosition(pos) {
+                const now = Date.now()
+                if (now - lastSent < SEND_INTERVAL_MS) return
+                lastSent = now
+                window.agent.reportFix({
+                    latitude: pos.coords.latitude,
+                    longitude: pos.coords.longitude,
+                    accuracy: pos.coords.accuracy,
+                })
+            }
+
+            function onError(err) {
+                const messages = {
+                    1: 'Izin lokasi ditolak',
+                    2: 'Lokasi tidak tersedia (layanan lokasi Windows mati?)',
+                    3: 'Lokasi timeout, mencoba lagi',
+                }
+                window.agent.reportError({ code: err.code, message: messages[err.code] || err.message })
+            }
+
+            if (!navigator.geolocation) {
+                window.agent.reportError({ code: 0, message: 'Perangkat tidak mendukung geolokasi' })
+            } else {
+                // Fix awal cepat (memicu prompt izin), lalu pantau terus.
+                navigator.geolocation.getCurrentPosition(onPosition, onError, OPTS)
+                navigator.geolocation.watchPosition(onPosition, onError, OPTS)
+            }
+        </script>
+    </body>
+</html>
