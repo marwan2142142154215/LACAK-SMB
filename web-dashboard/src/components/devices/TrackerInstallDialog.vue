@@ -71,7 +71,7 @@ const OWNER_STEPS = [
     <BaseDialog
         :open="!!build"
         title="Panduan pasang SMB Pelacak"
-        :description="build ? `Versi ${build.version} · ${build.organization_name ?? build.embedded_site_code}` : ''"
+        :description="build ? [build.device_name, `Versi ${build.version}`, build.organization_name ?? build.embedded_site_code].filter(Boolean).join(' · ') : ''"
         size="lg"
         @update:open="(v) => !v && emit('close')"
     >

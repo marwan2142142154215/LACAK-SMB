@@ -46,6 +46,9 @@ type ApkBuildRow = {
     id: number
     organization_id: number
     organization_name?: string | null
+    // Nama perangkat yang diketik admin saat build tracker zero-touch (dari devices.device_name
+    // lewat device_id). null untuk APK master/live/server & build lama tanpa device tertaut.
+    device_name?: string | null
     apk_type: string | null
     version: string
     status: string | null
@@ -536,14 +539,24 @@ export default class ApkBuildsController {
 
 function buildsQuery() {
     // with('organization'): relasi belongsTo mengabaikan site yang di-soft-delete.
-    return db
-        .from('apk_builds')
-        .leftJoin('organizations', (join) => {
-            join.on('organizations.id', 'apk_builds.organization_id').andOnNull(
-                'organizations.deleted_at'
+    return (
+        db
+            .from('apk_builds')
+            .leftJoin('organizations', (join) => {
+                join.on('organizations.id', 'apk_builds.organization_id').andOnNull(
+                    'organizations.deleted_at'
+                )
+            })
+            // Nama perangkat yang diketik admin ikut dibawa supaya tiap baris SMB Pelacak bisa
+            // dibedakan & nama file unduhannya memakai nama itu. Device yang di-soft-delete TETAP
+            // diikutkan (tanpa filter deleted_at) agar labelnya tidak hilang dari riwayat build.
+            .leftJoin('devices', 'devices.id', 'apk_builds.device_id')
+            .select(
+                'apk_builds.*',
+                'organizations.name as organization_name',
+                'devices.device_name as device_name'
             )
-        })
-        .select('apk_builds.*', 'organizations.name as organization_name')
+    )
 }
 
 async function findBuild(id: unknown): Promise<ApkBuildRow | null> {
@@ -570,6 +583,7 @@ export function apkBuildResource(build: ApkBuildRow, now: Date = new Date()) {
         id: build.id,
         organization_id: build.organization_id,
         organization_name: build.organization_name ?? null,
+        device_name: build.device_name ?? null,
         apk_type: build.apk_type,
         version: build.version,
         status: build.status,
@@ -595,13 +609,21 @@ export function downloadFilename(build: {
     apk_type: string | null
     version: string
     organization_name?: string | null
+    device_name?: string | null
 }): string {
     // Nama file = nama aplikasinya di HP (SMB Admin, SMB Live Kerja, SMB Pelacak).
     if (build.apk_type === 'master') return `smb-admin-v${build.version}.apk`
     if (build.apk_type === 'live') return `smb-live-kerja-v${build.version}.apk`
     const isServer = build.apk_type === 'server'
     const typeLabel = isServer ? 'lacak-server' : 'smb-pelacak'
-    const slugName = laravelSlug(build.organization_name ?? 'site')
+    // SMB Pelacak terikat satu HP: pakai nama perangkat yang diketik admin supaya tiap unduhan
+    // punya nama berbeda. Server, atau build lama tanpa device tertaut, tetap pakai nama site.
+    const labelSource =
+        !isServer && build.device_name && build.device_name.trim() !== ''
+            ? build.device_name
+            : (build.organization_name ?? 'site')
+    const slugName =
+        laravelSlug(labelSource) || laravelSlug(build.organization_name ?? '') || 'site'
     return `${typeLabel}-${slugName}-v${build.version}${isServer ? '.exe' : '.apk'}`
 }
 

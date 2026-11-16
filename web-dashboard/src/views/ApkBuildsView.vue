@@ -364,6 +364,10 @@ onBeforeUnmount(() => {
                                         <BaseBadge :variant="TYPE_BADGE[build.apk_type]">{{ typeLabel(build) }}</BaseBadge>
                                         <span class="font-mono text-sm text-base-50">v{{ build.version }}</span>
                                     </div>
+                                    <!-- Nama perangkat yang diketik admin saat build: membedakan tiap SMB Pelacak. -->
+                                    <p v-if="build.device_name" class="mt-1 max-w-56 truncate text-xs text-base-300" :title="build.device_name">
+                                        {{ build.device_name }}
+                                    </p>
                                 </td>
                                 <td class="hidden text-base-300 sm:table-cell">{{ buildTarget(build) }}</td>
                                 <td class="max-w-xs">

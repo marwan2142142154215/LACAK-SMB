@@ -142,6 +142,11 @@ test.group('APK build: zero-touch (ApkBuildZeroTouchTest)', (group) => {
         const secret = decodeDeviceSecret(payload!)
         assert.isNotNull(secret)
         assert.equal(createHash('sha256').update(secret!).digest('hex'), device.secret_hash)
+
+        // Nama perangkat yang diketik admin ikut di daftar build supaya tiap SMB Pelacak bisa dibedakan.
+        const list = await client.get('/api/v1/apk-builds').bearerToken(bearer)
+        const item = list.body().data.items.find((b: { id: number }) => b.id === buildId)
+        assert.equal(item.device_name, 'HP Test Zero-Touch')
     })
 
     test('build APK master TIDAK membuat device sama sekali', async ({ client, assert }) => {

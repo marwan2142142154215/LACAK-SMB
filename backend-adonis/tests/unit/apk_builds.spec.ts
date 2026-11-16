@@ -168,6 +168,7 @@ test.group('APK build: resource & unduhan', () => {
             'id',
             'organization_id',
             'organization_name',
+            'device_name',
             'apk_type',
             'version',
             'status',
@@ -198,6 +199,7 @@ test.group('APK build: resource & unduhan', () => {
             downloadFilename({ apk_type: 'live', version: '2.0.0', organization_name: null }),
             'smb-live-kerja-v2.0.0.apk'
         )
+        // Tracker tanpa device tertaut (build lama): pakai nama site.
         assert.equal(
             downloadFilename({
                 apk_type: 'tracker',
@@ -205,6 +207,26 @@ test.group('APK build: resource & unduhan', () => {
                 organization_name: 'Gudang Utama',
             }),
             'smb-pelacak-gudang-utama-v1.0.1.apk'
+        )
+        // Tracker dengan nama perangkat yang diketik admin: nama file memakai nama itu, bukan site.
+        assert.equal(
+            downloadFilename({
+                apk_type: 'tracker',
+                version: '1.0.1',
+                organization_name: 'Gudang Utama',
+                device_name: 'HP CS Line — Asep',
+            }),
+            'smb-pelacak-hp-cs-line-asep-v1.0.1.apk'
+        )
+        // Nama perangkat yang jadi kosong setelah di-slug jatuh kembali ke nama site.
+        assert.equal(
+            downloadFilename({
+                apk_type: 'tracker',
+                version: '2.0.0',
+                organization_name: 'Gudang Utama',
+                device_name: '—',
+            }),
+            'smb-pelacak-gudang-utama-v2.0.0.apk'
         )
         assert.equal(
             downloadFilename({ apk_type: 'server', version: '1.0.0', organization_name: null }),
