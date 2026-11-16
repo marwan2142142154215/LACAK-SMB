@@ -26,6 +26,14 @@ router
             .post('/device-otp/verify', [DeviceOtpController, 'verify'])
             .use(middleware.throttle({ max: 10, minutes: 1 }))
 
+        // Dipanggil APK pelacak saat staf memasukkan "kode lepas perangkat" dari admin: memverifikasi
+        // kode purpose 'release', menandai device dilepas (is_active=false, released_at). Setelah ini
+        // APK mencabut kunci lokasi & blokir uninstall dan melepas Device Owner/Admin. Tanpa login
+        // (sama seperti verify) -- diamankan device_uuid + kode + rate limit.
+        router
+            .post('/device-otp/release', [DeviceOtpController, 'release'])
+            .use(middleware.throttle({ max: 10, minutes: 1 }))
+
         // Dipanggil APK pelacak untuk mengambil rahasia device (sekali per
         // pendaftaran) — belum punya kredensial apa pun, jadi tanpa login;
         // dibatasi rate limit dan hanya berlaku untuk device pending_enrollment.

@@ -68,9 +68,46 @@ Detail teknis:
   publik yang bisa diakses HP saat penyiapan.
 - Alternatif untuk HP tanpa akun Google (uji/teknisi):
   `adb shell dpm set-device-owner com.lacaksmb.tracker.debug/com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver`
-- Melepas Device Owner hanya lewat reset pabrik (disengaja untuk aset perusahaan).
+- Melepas Device Owner: lewat alur **Lepas perangkat** (bagian 4, butuh kode dari admin) atau reset pabrik.
 
-## 4. Perintah jarak jauh (lock / unlock / locate_now)
+## 4. Kunci lokasi & anti-hapus (Device Owner), dan melepas perangkat
+
+Begitu HP menjadi **Device Owner**, `DeviceOwnerSetup.applyIfDeviceOwner` menerapkan (dan memasang
+ulang tiap service start) kebijakan resmi Android — hanya hal yang dijelaskan di layar APK dan
+dokumen consent:
+
+- **Lokasi/GPS dikunci menyala**: `DISALLOW_CONFIG_LOCATION` (Android 9+) + `setLocationEnabled(true)`
+  (Android 11+). Selama aplikasi aktif, pemegang HP tidak bisa mematikan lokasi.
+- **Aplikasi tidak bisa dihapus**: `setUninstallBlocked(true)` — uninstall butuh kode lepas dari admin.
+
+**HP non-Device-Owner** (hanya Device Admin / sideload biasa): kebijakan di atas tidak bisa
+dipaksakan. Sebagai gantinya HP **melaporkan** status GPS; saat lokasi dimatikan, dashboard menandai
+"Lokasi/GPS dimatikan" (kartu Kontrol perusahaan + banner) dan HP menampilkan notifikasi meminta
+staf menyalakannya lagi. Lihat kolom `devices.location_service_on`.
+
+Status ini tampil di **menu Device → detail perangkat → kartu "Kontrol perusahaan"**: mode
+pengelolaan (Device Owner / Device Admin / biasa), "Lokasi/GPS dikunci menyala", dan "Aplikasi
+dikunci (anti-hapus)". Dilaporkan lewat `device:info`
+(`locationPolicyLocked`/`uninstallLocked`/`locationServiceOn`).
+
+### Melepas perangkat (HP dikembalikan / diganti / rusak)
+
+1. Dashboard → detail perangkat → **Buat kode lepas perangkat** (izin `devices.manage`; dicatat di
+   log aktivitas sebagai `release_code_issued`). Kode 6 digit berlaku **15 menit**.
+2. Berikan kode ke staf pemegang HP. Di aplikasi SMB Pelacak → kartu **"Perangkat dikunci
+   perusahaan"** → **Lepas perangkat** → masukkan kode.
+3. APK memverifikasi kode ke `POST /api/v1/device-otp/release`. Server menandai device **dilepas**
+   (`is_active=false`, `released_at`), sehingga gateway tidak lagi menerimanya. HP lalu: hentikan
+   pemantauan, cabut blokir uninstall + kunci lokasi, dan lepas status Device Owner/Admin
+   (`DevicePolicyRelease`). Setelah itu aplikasi bisa dihapus seperti aplikasi biasa.
+4. **Device Admin saja** (bukan Owner): `onDisableRequested` hanya bisa menampilkan peringatan — kode
+   lepas tetap dipakai untuk melepas status admin secara bersih dan menandai device dilepas, lalu
+   staf menghapus aplikasi manual.
+
+Kalau HP rusak/hilang sebelum sempat dilepas, device bisa dinonaktifkan dari dashboard (hapus/arsip)
+tanpa kode — gateway menolaknya saat mencoba terhubung.
+
+## 5. Perintah jarak jauh (lock / unlock / locate_now)
 
 Alur: dashboard → `device_commands` (status `pending`) → `realtime-gateway` CommandDispatcher →
 `command:push` ke socket HP → HP melapor lewat `command:ack`.
@@ -99,7 +136,7 @@ Alur: dashboard → `device_commands` (status `pending`) → `realtime-gateway` 
   menunggu di server. Menambah FCM butuh proyek Firebase + `google-services.json` (keputusan
   terpisah).
 
-## 5. Data yang dikirim HP (dan yang tidak)
+## 6. Data yang dikirim HP (dan yang tidak)
 
 Diungkapkan di layar APK (kartu "Data yang dikirim ke kantor") dan disaring ulang di gateway
 (`realtime-gateway/app/services/DeviceTelemetry.ts` — field lain di payload diabaikan):
@@ -108,7 +145,8 @@ Diungkapkan di layar APK (kartu "Data yang dikirim ke kantor") dan disaring ulan
   (`gps`/`network`/`fused`/`passive`), waktu fix, baterai %, nama WiFi, jarak BLE.
 - `device:info` saat terhubung, tiap 5 menit, dan saat `locate_now`: merek, model, versi Android,
   versi app (`versionName`/`versionCode`), baterai & status cas, jenis jaringan + nama operator,
-  sisa/total penyimpanan, status izin aplikasi ini.
+  sisa/total penyimpanan, status izin aplikasi ini, serta status kebijakan kunci (lokasi dikunci
+  menyala, aplikasi dikunci anti-hapus) dan status GPS saat ini.
 
 **Tidak dikumpulkan:** isi pesan, kontak, riwayat panggilan, foto/berkas, daftar atau isi/penggunaan
 aplikasi lain, nomor telepon, IMEI. APK tidak meminta izin untuk data tersebut, dan notifikasi
@@ -119,3 +157,7 @@ Kolom baru (migrasi `backend-adonis/database/migrations/0018_device_telemetry_an
 storage_free_mb/storage_total_mb/permission_state/info_updated_at`,
 `device_locations.accuracy_meters/location_provider/fixed_at`,
 `device_commands.delivered_at/executed_at/result_message/delivery_attempts` + status `executed`, `expired`.
+
+Kunci & pelepasan (migrasi `0019_device_policy_lock_and_release.ts`):
+`devices.location_policy_locked/uninstall_locked/location_service_on/released_at`. Kode lepas memakai
+`device_otps.purpose = 'release'` (verifikasi tanpa login di `POST /api/v1/device-otp/release`).

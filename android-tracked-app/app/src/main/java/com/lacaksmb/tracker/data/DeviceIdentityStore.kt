@@ -109,6 +109,15 @@ class DeviceIdentityStore(private val context: Context) {
         context.dataStore.edit { prefs -> prefs.remove(Keys.DEVICE_SECRET) }
     }
 
+    /**
+     * Perangkat dilepas lewat kode lepas: hentikan pendaftaran supaya service berhenti sendiri
+     * (onStartCommand memeriksa isEnrolled) dan watchdog tidak menyalakannya lagi. Dipakai bersama
+     * ServiceWatchdogWorker.cancel() + stopService() + DevicePolicyRelease (lihat MainActivity).
+     */
+    suspend fun markReleased() {
+        context.dataStore.edit { prefs -> prefs[Keys.IS_ENROLLED] = false }
+    }
+
     suspend fun snapshot(): DeviceIdentitySnapshot {
         val prefs = context.dataStore.data.first()
         return DeviceIdentitySnapshot(

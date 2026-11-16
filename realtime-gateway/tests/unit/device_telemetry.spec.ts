@@ -22,6 +22,9 @@ test.group('Telemetri device: device:info', () => {
             storageFreeMb: 20480,
             storageTotalMb: 131072,
             permissions: { location: true, backgroundLocation: false, rahasia: true },
+            locationPolicyLocked: true,
+            uninstallLocked: true,
+            locationServiceOn: true,
             // Data yang TIDAK boleh disimpan walau dikirim APK yang dimodifikasi:
             contacts: ['Budi'],
             smsInbox: ['halo'],
@@ -39,6 +42,9 @@ test.group('Telemetri device: device:info', () => {
             storageFreeMb: 20480,
             storageTotalMb: 131072,
             permissions: { location: true, backgroundLocation: false },
+            locationPolicyLocked: true,
+            uninstallLocked: true,
+            locationServiceOn: true,
         })
         assert.notProperty(info, 'contacts')
         assert.notProperty(info, 'smsInbox')
@@ -55,6 +61,8 @@ test.group('Telemetri device: device:info', () => {
             carrierName: '\u0000\u0007',
             storageFreeMb: -5,
             permissions: ['location'],
+            locationPolicyLocked: 'ya',
+            uninstallLocked: 1,
         })
         assert.isNull(info.batteryLevel)
         assert.isNull(info.isCharging)
@@ -63,6 +71,10 @@ test.group('Telemetri device: device:info', () => {
         assert.isNull(info.carrierName)
         assert.isNull(info.storageFreeMb)
         assert.isNull(info.permissions)
+        // Status kunci bukan boolean (APK dimodifikasi) -> null, tidak dipaksa jadi true/false.
+        assert.isNull(info.locationPolicyLocked)
+        assert.isNull(info.uninstallLocked)
+        assert.isNull(info.locationServiceOn)
         assert.isNull(sanitizeDeviceInfo(null).model)
     })
 })

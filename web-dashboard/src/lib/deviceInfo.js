@@ -111,6 +111,55 @@ export function isStorageLow(device) {
     return free < 1024 || (Number.isFinite(total) && total > 0 && free / total < 0.1)
 }
 
+/**
+ * Mode pengelolaan HP dari permission_state yang dilaporkan APK:
+ * - 'owner'  : Device Owner (HP aset perusahaan penuh) — lokasi & uninstall bisa dikunci.
+ * - 'admin'  : Device Admin saja — hanya kunci layar jarak jauh.
+ * - 'biasa'  : terpasang seperti aplikasi biasa.
+ * null = APK belum pernah melaporkan status izin.
+ */
+export function managementMode(state) {
+    if (!state || typeof state !== 'object') return null
+    if (state.deviceOwner === true) return 'owner'
+    if (state.deviceAdmin === true) return 'admin'
+    return 'biasa'
+}
+
+const MANAGEMENT_LABELS = {
+    owner: 'Device Owner (aset perusahaan)',
+    admin: 'Device Admin (kunci layar saja)',
+    biasa: 'Aplikasi biasa',
+}
+
+export function managementModeLabel(state) {
+    const mode = managementMode(state)
+    return mode ? MANAGEMENT_LABELS[mode] : null
+}
+
+/**
+ * Baris status kebijakan kunci perusahaan untuk kartu "Kontrol perusahaan" di detail perangkat.
+ * value true/false kalau dilaporkan HP, null = belum dilaporkan (APK versi lama / belum terhubung).
+ * tone 'ok' saat terkunci (sesuai tujuan aset perusahaan), 'warn' saat tidak terkunci.
+ */
+export function policyLockRows(device) {
+    if (!device) return []
+    const lockRow = (label, value) => ({
+        label,
+        value: value == null ? null : value === true,
+        text: value == null ? 'Belum dilaporkan' : value === true ? 'Terkunci' : 'Tidak terkunci',
+        tone: value == null ? 'muted' : value === true ? 'ok' : 'warn',
+    })
+    return [
+        lockRow('Lokasi/GPS dikunci menyala', device.location_policy_locked),
+        lockRow('Aplikasi dikunci (anti-hapus)', device.uninstall_locked),
+    ]
+}
+
+/** HP non-Device-Owner yang lokasinya sedang dimatikan pemegang HP (perlu dinyalakan lagi). */
+export function isLocationServiceOff(device) {
+    return device?.location_service_on === false
+}
+
 const PROVIDER_LABELS = { gps: 'GPS', network: 'Jaringan', fused: 'Gabungan', passive: 'Pasif' }
 
 /** "GPS · ±12 m" / "Jaringan · ±850 m" / null. */

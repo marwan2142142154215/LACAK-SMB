@@ -36,6 +36,10 @@ export type DeviceInfo = {
     storageFreeMb: number | null
     storageTotalMb: number | null
     permissions: PermissionState | null
+    // Kebijakan kunci HP aset perusahaan (Device Owner) -- true/false bila dilaporkan, null bila tidak.
+    locationPolicyLocked: boolean | null
+    uninstallLocked: boolean | null
+    locationServiceOn: boolean | null
 }
 
 /** Teks bebas: dipangkas, karakter kontrol dibuang, dipotong ke panjang kolom; kosong = null. */
@@ -98,6 +102,9 @@ export function sanitizeDeviceInfo(payload: unknown): DeviceInfo {
         storageFreeMb: cleanInt(data.storageFreeMb, 0, 100_000_000),
         storageTotalMb: cleanInt(data.storageTotalMb, 0, 100_000_000),
         permissions: cleanPermissions(data.permissions),
+        locationPolicyLocked: cleanBoolean(data.locationPolicyLocked),
+        uninstallLocked: cleanBoolean(data.uninstallLocked),
+        locationServiceOn: cleanBoolean(data.locationServiceOn),
     }
 }
 

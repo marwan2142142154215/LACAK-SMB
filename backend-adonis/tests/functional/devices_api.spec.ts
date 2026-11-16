@@ -446,6 +446,85 @@ test.group('Device: OTP & pendaftaran', (group) => {
         assert.equal(await statusOf(device.id), 'online')
     })
 
+    test('kode lepas: admin buat, APK verifikasi -> device dilepas (is_active false, released_at)', async ({
+        client,
+        assert,
+    }) => {
+        const org = await makeOrganization()
+        const device = await makeDevice(org)
+        const admin = await makeUser(org, 'site_admin')
+
+        const generated = await client
+            .post(`/api/v1/devices/${device.id}/otp`)
+            .bearerToken(admin.bearer)
+            .json({ purpose: 'release' })
+        generated.assertStatus(201)
+        generated.assertBodyContains({ success: true, data: { purpose: 'release' } })
+        assert.match(generated.body().message, /^Kode lepas perangkat dibuat/)
+        const { code } = generated.body().data
+        assert.match(code, /^\d{6}$/)
+
+        const otp = await db
+            .from('device_otps')
+            .where({ device_id: device.id, purpose: 'release' })
+            .first()
+        assert.isNotNull(otp)
+
+        // Pembuatan kode lepas tercatat (membuka jalan menghapus aplikasi).
+        const issuedLog = await db
+            .from('activity_log')
+            .where({
+                subject_type: DEVICE_MORPH,
+                subject_id: device.id,
+                event: 'release_code_issued',
+            })
+            .first()
+        assert.isNotNull(issuedLog)
+
+        // Kode lepas tidak bisa dipakai di endpoint buka kunci biasa (purpose beda).
+        const wrongEndpoint = await client
+            .post('/api/v1/device-otp/verify')
+            .json({ device_uuid: device.device_uuid, code })
+        wrongEndpoint.assertStatus(422)
+
+        const released = await client
+            .post('/api/v1/device-otp/release')
+            .json({ device_uuid: device.device_uuid, code })
+        released.assertStatus(200)
+        released.assertBodyContains({
+            success: true,
+            message: 'Kode benar, perangkat dilepas. Aplikasi sekarang bisa dihapus dari HP.',
+        })
+
+        const row = await db.from('devices').where('id', device.id).first()
+        assert.isFalse(Boolean(row.is_active))
+        assert.isNotNull(row.released_at)
+
+        // Perubahan is_active true->false tercatat di activity_log.
+        const updatedLog = await db
+            .from('activity_log')
+            .where({ subject_type: DEVICE_MORPH, subject_id: device.id, event: 'updated' })
+            .orderBy('id', 'desc')
+            .first()
+        assert.deepEqual(updatedLog.properties, {
+            attributes: { is_active: false },
+            old: { is_active: true },
+        })
+    })
+
+    test('membuat kode lepas butuh izin devices.manage', async ({ client }) => {
+        const org = await makeOrganization()
+        const device = await makeDevice(org)
+        const viewer = await makeUser(org, 'operator') // hanya devices.view
+
+        const response = await client
+            .post(`/api/v1/devices/${device.id}/otp`)
+            .bearerToken(viewer.bearer)
+            .json({ purpose: 'release' })
+        response.assertStatus(403)
+        response.assertBodyContains({ message: 'Anda tidak berwenang melakukan tindakan ini' })
+    })
+
     test('klaim hanya sekali; rahasia tersimpan sebagai SHA-256', async ({ client, assert }) => {
         const org = await makeOrganization()
         const device = await makeDevice(org, { status: 'pending_enrollment' })

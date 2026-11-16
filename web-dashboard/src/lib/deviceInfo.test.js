@@ -4,11 +4,14 @@ import { test } from 'node:test'
 import {
     commandStatusMeta,
     isCommandOpen,
+    isLocationServiceOff,
     isStorageLow,
     locationQualityLabel,
+    managementModeLabel,
     missingPermissions,
     modelLabel,
     networkLabel,
+    policyLockRows,
     storageLabel,
 } from './deviceInfo.js'
 
@@ -48,4 +51,27 @@ test('label jaringan, model, penyimpanan', () => {
 test('kualitas lokasi', () => {
     assert.equal(locationQualityLabel({ location_provider: 'gps', accuracy_meters: '12.40' }), 'GPS · ±12 m')
     assert.equal(locationQualityLabel({ location_provider: null, accuracy_meters: null }), null)
+})
+
+test('mode pengelolaan perangkat', () => {
+    assert.equal(managementModeLabel({ deviceOwner: true }), 'Device Owner (aset perusahaan)')
+    assert.equal(managementModeLabel({ deviceOwner: false, deviceAdmin: true }), 'Device Admin (kunci layar saja)')
+    assert.equal(managementModeLabel({ deviceOwner: false, deviceAdmin: false }), 'Aplikasi biasa')
+    assert.equal(managementModeLabel(null), null)
+})
+
+test('status kunci perusahaan & GPS mati', () => {
+    const rows = policyLockRows({ location_policy_locked: true, uninstall_locked: false })
+    assert.equal(rows[0].value, true)
+    assert.equal(rows[0].tone, 'ok')
+    assert.equal(rows[1].value, false)
+    assert.equal(rows[1].tone, 'warn')
+    // Belum dilaporkan -> null + tone muted.
+    const unknown = policyLockRows({})
+    assert.equal(unknown[0].value, null)
+    assert.equal(unknown[0].tone, 'muted')
+
+    assert.equal(isLocationServiceOff({ location_service_on: false }), true)
+    assert.equal(isLocationServiceOff({ location_service_on: true }), false)
+    assert.equal(isLocationServiceOff({}), false)
 })
