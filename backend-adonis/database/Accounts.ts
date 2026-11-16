@@ -98,6 +98,8 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     leader: [
         'devices.view',
         'radar.view',
+        // Kelola device (daftar/ubah/hapus + buat kode lepas perangkat); lihat migrasi 0020.
+        'devices.manage',
         'devices.lock',
         'devices.unlock',
         'devices.locate',
