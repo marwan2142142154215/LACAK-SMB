@@ -11,6 +11,7 @@ import android.os.Environment
 import android.os.StatFs
 import android.telephony.TelephonyManager
 import com.lacaksmb.tracker.BuildConfig
+import com.lacaksmb.tracker.admin.DeviceOwnerSetup
 import com.lacaksmb.tracker.setup.SetupChecks
 import org.json.JSONObject
 
@@ -46,6 +47,11 @@ object DeviceInfoCollector {
                 put("storageTotalMb", it.second)
             }
             put("permissions", SetupChecks.permissionState(appContext))
+            // Kebijakan kunci HP aset perusahaan + status GPS saat ini (lihat DeviceOwnerSetup).
+            // GPS dilaporkan untuk HP non-Device-Owner yang lokasinya masih bisa dimatikan pemegang HP.
+            put("locationServiceOn", SetupChecks.isLocationServiceOn(appContext))
+            put("locationPolicyLocked", DeviceOwnerSetup.isLocationPolicyLocked(appContext))
+            put("uninstallLocked", DeviceOwnerSetup.isUninstallLocked(appContext))
         }
     }
 

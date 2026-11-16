@@ -179,6 +179,20 @@ export const storeDeviceCommandValidator = compile(
     ['command_type', 'issued_via', 'reason_note']
 )
 
+/** Jenis kode sekali-pakai per device: buka kunci mandiri (self_unlock) atau lepas perangkat (release). */
+export const OTP_PURPOSES = ['self_unlock', 'release'] as const
+
+/**
+ * Body opsional saat admin membuat kode (POST /devices/:device/otp). Tanpa purpose = self_unlock
+ * (perilaku lama). 'release' butuh izin devices.manage (dicek di controller) dan berlaku lebih lama.
+ */
+export const generateDeviceOtpValidator = compile(
+    vine.object({
+        purpose: vine.enum(OTP_PURPOSES).optional(),
+    }),
+    ['purpose']
+)
+
 export const verifyDeviceOtpValidator = compile(
     vine.object({
         device_uuid: vine.string(),

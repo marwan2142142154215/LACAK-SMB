@@ -5,11 +5,13 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.location.Location
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.wifi.WifiManager
@@ -112,6 +114,26 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
     private val lockDefenseReceiver = LockDefenseReceiver()
     private var lockDefenseRegistered = false
 
+    // GPS dinyalakan/dimatikan pemegang HP: perbarui status di dashboard SEKARANG, dan untuk HP yang
+    // BUKAN Device Owner (lokasinya masih bisa dimatikan) minta staf menyalakannya lagi lewat
+    // notifikasi. Di HP Device Owner lokasi dikunci menyala (DISALLOW_CONFIG_LOCATION), jadi tidak
+    // perlu peringatan. Broadcast MODE_CHANGED implisit tapi dikirim sistem, aman didaftar dinamis.
+    private var locationModeRegistered = false
+    private val locationModeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != LocationManager.MODE_CHANGED_ACTION) return
+            serviceScope.launch {
+                socketClient?.sendDeviceInfo(DeviceInfoCollector.collect(applicationContext))
+                val on = SetupChecks.isLocationServiceOn(applicationContext)
+                if (!on && !SetupChecks.isDeviceOwner(applicationContext)) {
+                    updateNotification("Lokasi HP dimatikan — nyalakan lagi GPS agar posisi tetap terkirim")
+                } else if (on) {
+                    updateNotification(if (socketClient?.isConnected == true) "Terhubung ke server" else "Aktif memantau")
+                }
+            }
+        }
+    }
+
     // Jaringan HP kembali (keluar dari mode pesawat, pindah WiFi → seluler, dll.): sambung ulang ke
     // gateway SEKARANG supaya perintah yang menunggu (mis. lock) tidak tertahan sampai jeda reconnect.
     private var networkCallbackRegistered = false
@@ -192,7 +214,19 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
         locationTracker = LocationTracker(applicationContext)
         createNotificationChannel()
         registerLockDefenseReceiver()
+        registerLocationModeReceiver()
         registerNetworkCallback()
+    }
+
+    private fun registerLocationModeReceiver() {
+        if (locationModeRegistered) return
+        ContextCompat.registerReceiver(
+            this,
+            locationModeReceiver,
+            IntentFilter(LocationManager.MODE_CHANGED_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        locationModeRegistered = true
     }
 
     private fun registerLockDefenseReceiver() {
@@ -353,6 +387,14 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
                 Log.w(TAG, "lockDefenseReceiver sudah tidak terdaftar: ${e.message}")
             }
             lockDefenseRegistered = false
+        }
+        if (locationModeRegistered) {
+            try {
+                unregisterReceiver(locationModeReceiver)
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "locationModeReceiver sudah tidak terdaftar: ${e.message}")
+            }
+            locationModeRegistered = false
         }
         if (networkCallbackRegistered) {
             try {

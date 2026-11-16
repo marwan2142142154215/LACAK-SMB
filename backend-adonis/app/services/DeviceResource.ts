@@ -38,6 +38,12 @@ export type DeviceRow = {
     storage_total_mb?: number | null
     permission_state?: Record<string, boolean> | null
     info_updated_at?: Date | null
+    // Kebijakan kunci HP aset perusahaan + pelepasan (migrasi 0019). Dilaporkan APK lewat device:info;
+    // null sampai HP melapor / untuk HP biasa yang tidak menerapkan kebijakan Device Owner.
+    location_policy_locked?: boolean | null
+    uninstall_locked?: boolean | null
+    location_service_on?: boolean | null
+    released_at?: Date | null
     enrolled_at: Date | null
     is_active: boolean
     secret_hash?: string | null
@@ -98,6 +104,10 @@ export function deviceResource(device: DeviceRow, relations: DeviceRelations = {
         storage_total_mb: device.storage_total_mb ?? null,
         permission_state: device.permission_state ?? null,
         info_updated_at: laravelDate(device.info_updated_at ?? null),
+        location_policy_locked: device.location_policy_locked ?? null,
+        uninstall_locked: device.uninstall_locked ?? null,
+        location_service_on: device.location_service_on ?? null,
+        released_at: laravelDate(device.released_at ?? null),
         enrolled_at: laravelDate(device.enrolled_at ?? null),
         is_active: Boolean(device.is_active),
         ...(relations.latestLocation !== undefined

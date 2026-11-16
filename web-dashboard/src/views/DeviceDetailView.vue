@@ -12,6 +12,7 @@ import {
     RefreshCw,
     StopCircle,
     Unlock,
+    Unplug,
 } from '@lucide/vue'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
@@ -36,11 +37,14 @@ import {
     COMMAND_TYPE_LABELS,
     PERMISSION_LABELS,
     commandStatusMeta,
+    isLocationServiceOff,
     isStorageLow,
     locationQualityLabel,
+    managementModeLabel,
     missingPermissions,
     modelLabel,
     networkLabel,
+    policyLockRows,
     storageLabel,
 } from '@/lib/deviceInfo'
 import { useAuthStore } from '@/stores/auth'
@@ -64,12 +68,24 @@ const acting = ref(false)
 
 // Dialog aksi.
 const otpResult = ref(null)
+const releaseResult = ref(null)
 const renameOpen = ref(false)
 const renameValue = ref('')
 const renaming = ref(false)
 
 const missing = computed(() => missingPermissions(device.value?.permission_state))
 const location = computed(() => device.value?.latest_location ?? null)
+const managementLabel = computed(() => managementModeLabel(device.value?.permission_state))
+const lockRows = computed(() => policyLockRows(device.value))
+const locationOff = computed(() => isLocationServiceOff(device.value))
+// Kartu "Kontrol perusahaan" hanya berguna kalau HP memang dikelola atau pernah melaporkan statusnya.
+const showManagementCard = computed(
+    () =>
+        !!managementLabel.value ||
+        device.value?.location_policy_locked != null ||
+        device.value?.uninstall_locked != null ||
+        !!device.value?.released_at
+)
 
 // Baris izin lengkap (semua yang pernah dilaporkan HP), untuk kartu Izin.
 const permissionRows = computed(() => {
@@ -159,6 +175,18 @@ async function generateOtp() {
     }
 }
 
+async function generateReleaseCode() {
+    acting.value = true
+    try {
+        const response = await api.post(`/devices/${deviceId.value}/otp`, { purpose: 'release' })
+        releaseResult.value = response.data.data
+    } catch (err) {
+        toast.error('Gagal membuat kode lepas', err.response?.data?.message)
+    } finally {
+        acting.value = false
+    }
+}
+
 function openRename() {
     renameValue.value = device.value?.device_name ?? ''
     renameOpen.value = true
@@ -188,6 +216,7 @@ const menuItems = computed(() => [
     { label: 'Mulai pantau', icon: PlayCircle, onSelect: () => issueCommand('start_monitor'), disabled: acting.value, hidden: !allowed('devices.monitor') },
     { label: 'Hentikan pantau', icon: StopCircle, onSelect: () => issueCommand('stop_monitor'), disabled: acting.value, hidden: !allowed('devices.monitor') },
     { label: 'Buat OTP buka kunci', icon: KeyRound, onSelect: generateOtp, disabled: acting.value, hidden: !allowed('devices.unlock') },
+    { label: 'Buat kode lepas perangkat', icon: Unplug, onSelect: generateReleaseCode, disabled: acting.value, hidden: !allowed('devices.manage') },
     { label: 'Ubah nama', icon: RefreshCw, onSelect: openRename, hidden: !allowed('devices.manage') },
 ])
 
@@ -381,6 +410,18 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
+                <div
+                    v-if="locationOff"
+                    class="flex gap-2.5 rounded-xl border border-warning-500/40 bg-warning-500/10 p-3.5 text-sm text-warning-300"
+                    role="status"
+                >
+                    <AlertTriangle class="mt-0.5 size-4 shrink-0" />
+                    <div>
+                        <p class="font-semibold">Lokasi/GPS HP sedang dimatikan</p>
+                        <p class="mt-1 text-pretty">Posisi tidak akan terkirim sampai GPS dinyalakan lagi. HP ini bukan Device Owner, jadi lokasi belum terkunci menyala — minta staf menyalakan GPS.</p>
+                    </div>
+                </div>
+
                 <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
                     <div class="space-y-6">
                         <BaseCard title="Detail perangkat">
@@ -421,6 +462,38 @@ onBeforeUnmount(() => {
                     </div>
 
                     <div class="space-y-6">
+                        <BaseCard v-if="showManagementCard" title="Kontrol perusahaan">
+                            <dl class="space-y-3 text-sm">
+                                <div class="flex items-center justify-between gap-3">
+                                    <dt class="text-base-200">Pengelolaan</dt>
+                                    <dd class="text-right text-base-100">{{ managementLabel ?? '—' }}</dd>
+                                </div>
+                                <div v-for="row in lockRows" :key="row.label" class="flex items-center justify-between gap-3">
+                                    <dt class="text-base-200">{{ row.label }}</dt>
+                                    <dd
+                                        class="inline-flex items-center gap-1 text-xs font-medium"
+                                        :class="{ 'text-st-online': row.tone === 'ok', 'text-warning-400': row.tone === 'warn', 'text-base-500': row.tone === 'muted' }"
+                                    >
+                                        <Check v-if="row.tone === 'ok'" class="size-3.5" />
+                                        <Minus v-else class="size-3.5" />
+                                        {{ row.text }}
+                                    </dd>
+                                </div>
+                                <div v-if="device.released_at" class="flex items-center justify-between gap-3">
+                                    <dt class="text-base-200">Dilepas</dt>
+                                    <dd class="text-right text-warning-400">{{ dayjs(device.released_at).format('DD MMM YYYY HH:mm') }}</dd>
+                                </div>
+                            </dl>
+                            <div v-if="allowed('devices.manage') && !device.released_at" class="mt-4 border-t border-base-800 pt-4">
+                                <p class="text-xs text-pretty text-base-400">
+                                    Untuk melepas perangkat (HP dikembalikan/diganti): buat kode lalu berikan ke staf untuk dimasukkan di aplikasi HP — mencabut kunci lokasi &amp; penghapusan lalu melepas aplikasi.
+                                </p>
+                                <BaseButton class="mt-3" size="sm" variant="outline" :loading="acting" @click="generateReleaseCode">
+                                    <Unplug class="size-4" /> Buat kode lepas perangkat
+                                </BaseButton>
+                            </div>
+                        </BaseCard>
+
                         <BaseCard title="Status izin di HP">
                             <ul v-if="permissionRows.length" class="space-y-2.5 text-sm">
                                 <li v-for="row in permissionRows" :key="row.label" class="flex items-center justify-between gap-3">
@@ -478,6 +551,22 @@ onBeforeUnmount(() => {
             </div>
             <template #footer>
                 <BaseButton variant="outline" @click="otpResult = null">Tutup</BaseButton>
+            </template>
+        </BaseDialog>
+
+        <BaseDialog
+            :open="!!releaseResult"
+            title="Kode lepas perangkat"
+            description="Berikan kode ini langsung ke staf pemegang HP. Masukkan di aplikasi SMB Pelacak → 'Lepas perangkat' untuk mencabut kunci lokasi & penghapusan, lalu hapus aplikasi."
+            size="sm"
+            @update:open="(v) => !v && (releaseResult = null)"
+        >
+            <div v-if="releaseResult" class="rounded-lg border border-base-700 bg-base-950 py-6 text-center">
+                <p class="font-mono text-4xl font-medium tracking-[0.3em] text-accent-300 tabular-nums">{{ releaseResult.code }}</p>
+                <p class="eyebrow mt-3">Berlaku sampai {{ dayjs(releaseResult.expires_at).format('HH:mm:ss') }}</p>
+            </div>
+            <template #footer>
+                <BaseButton variant="outline" @click="releaseResult = null">Tutup</BaseButton>
             </template>
         </BaseDialog>
 

@@ -83,6 +83,20 @@ export default class Device extends BaseModel {
     @column.dateTime()
     declare infoUpdatedAt: DateTime | null
 
+    // --- Kebijakan kunci HP aset perusahaan + pelepasan (migrasi 0019, dilaporkan APK) ---
+
+    @column()
+    declare locationPolicyLocked: boolean | null
+
+    @column()
+    declare uninstallLocked: boolean | null
+
+    @column()
+    declare locationServiceOn: boolean | null
+
+    @column.dateTime()
+    declare releasedAt: DateTime | null
+
     @column()
     declare isActive: boolean
 

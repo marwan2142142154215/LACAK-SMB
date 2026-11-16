@@ -21,15 +21,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.remember
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -45,9 +53,11 @@ import androidx.lifecycle.lifecycleScope
 import com.lacaksmb.tracker.BuildConfig
 import com.lacaksmb.tracker.R
 import com.lacaksmb.tracker.admin.DeviceOwnerSetup
+import com.lacaksmb.tracker.admin.DevicePolicyRelease
 import com.lacaksmb.tracker.admin.TrackerDeviceAdminReceiver
 import com.lacaksmb.tracker.data.DeviceIdentityStore
 import com.lacaksmb.tracker.data.DeviceLockStore
+import com.lacaksmb.tracker.network.DeviceOtpApi
 import com.lacaksmb.tracker.service.ServiceWatchdogWorker
 import com.lacaksmb.tracker.service.TrackerForegroundService
 import com.lacaksmb.tracker.service.TrackerStatus
@@ -76,8 +86,16 @@ class MainActivity : ComponentActivity() {
     private var checks by mutableStateOf<Map<SetupStep, Boolean>>(emptyMap())
     private var locationServiceOn by mutableStateOf(true)
     private var deviceOwner by mutableStateOf(false)
+    private var deviceAdmin by mutableStateOf(false)
     private var deviceUuid by mutableStateOf("")
     private var hint by mutableStateOf<String?>(null)
+
+    // Alur "Lepas perangkat": staf memasukkan kode lepas dari admin untuk mencabut kunci & menghapus app.
+    private var releaseDialogOpen by mutableStateOf(false)
+    private var releaseCode by mutableStateOf("")
+    private var releasing by mutableStateOf(false)
+    private var releaseResult by mutableStateOf<String?>(null)
+    private var releaseSucceeded by mutableStateOf(false)
 
     // Mode "pandu saya": setelah satu langkah selesai, langsung lanjut ke langkah berikutnya.
     private var guiding = false
@@ -120,6 +138,7 @@ class MainActivity : ComponentActivity() {
                         checks = checks,
                         locationServiceOn = locationServiceOn,
                         deviceOwner = deviceOwner,
+                        deviceAdmin = deviceAdmin,
                         connectionText = status,
                         connected = connected,
                         hint = hint,
@@ -132,6 +151,17 @@ class MainActivity : ComponentActivity() {
                             openSettings(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                         },
                         onOpenAppSettings = { openSettings(appDetailsIntent()) },
+                        onReleaseDevice = ::openReleaseDialog,
+                    )
+                    ReleaseDialog(
+                        open = releaseDialogOpen,
+                        code = releaseCode,
+                        onCodeChange = { input -> releaseCode = input.filter { it.isDigit() }.take(6) },
+                        busy = releasing,
+                        result = releaseResult,
+                        succeeded = releaseSucceeded,
+                        onSubmit = ::submitRelease,
+                        onDismiss = { if (!releasing) releaseDialogOpen = false },
                     )
                 }
             }
@@ -159,7 +189,56 @@ class MainActivity : ComponentActivity() {
         checks = SetupStep.entries.associateWith { it.isDone(this) }
         locationServiceOn = SetupChecks.isLocationServiceOn(this)
         deviceOwner = SetupChecks.isDeviceOwner(this)
-        if (checks[SetupStep.LOCATION] == true) activateMonitoring()
+        deviceAdmin = SetupChecks.isDeviceAdmin(this)
+        // Jangan menyalakan lagi pemantauan setelah perangkat dilepas di sesi ini.
+        if (checks[SetupStep.LOCATION] == true && !releaseSucceeded) activateMonitoring()
+    }
+
+    private fun openReleaseDialog() {
+        releaseCode = ""
+        releaseResult = null
+        releaseSucceeded = false
+        releaseDialogOpen = true
+    }
+
+    /**
+     * Verifikasi kode lepas ke server, lalu HENTIKAN pemantauan dan lepas kebijakan kunci + status
+     * Device Owner/Admin. Urutan: server menandai dilepas -> stop pemantauan (agar service tidak
+     * memasang ulang kebijakan Device Owner saat onStartCommand) -> DevicePolicyRelease mencabut
+     * blokir uninstall, kunci lokasi, dan status owner/admin.
+     */
+    private fun submitRelease() {
+        val code = releaseCode.trim()
+        if (code.length != 6) {
+            releaseResult = "Masukkan 6 digit kode lepas dari admin."
+            return
+        }
+        releasing = true
+        releaseResult = null
+        lifecycleScope.launch {
+            val uuid = identityStore.snapshot().deviceUuid
+            val result = DeviceOtpApi.verifyRelease(uuid, code)
+            if (result.isSuccess) {
+                DeviceLockStore(applicationContext).clear()
+                identityStore.markReleased()
+                ServiceWatchdogWorker.cancel(applicationContext)
+                stopService(Intent(this@MainActivity, TrackerForegroundService::class.java))
+                val cleared = DevicePolicyRelease.release(applicationContext)
+                releasing = false
+                releaseSucceeded = true
+                releaseResult = if (cleared) {
+                    "Perangkat dilepas. Aplikasi sekarang bisa dihapus: tekan-tahan ikon aplikasi lalu " +
+                        "pilih Hapus/Uninstall, atau lewat Setelan › Aplikasi."
+                } else {
+                    "Kode benar dan pemantauan dihentikan, tapi status admin perangkat belum bisa dilepas " +
+                        "otomatis. Buka Setelan › Keamanan › Admin perangkat, nonaktifkan Lacak SMB, lalu hapus aplikasi."
+                }
+                refreshChecks()
+            } else {
+                releasing = false
+                releaseResult = result.exceptionOrNull()?.message ?: "Kode salah atau sudah kedaluwarsa."
+            }
+        }
     }
 
     /**
@@ -400,6 +479,7 @@ private fun SetupScreen(
     checks: Map<SetupStep, Boolean>,
     locationServiceOn: Boolean,
     deviceOwner: Boolean,
+    deviceAdmin: Boolean,
     connectionText: String,
     connected: Boolean,
     hint: String?,
@@ -407,34 +487,32 @@ private fun SetupScreen(
     onStep: (SetupStep) -> Unit,
     onOpenLocationSettings: () -> Unit,
     onOpenAppSettings: () -> Unit,
+    onReleaseDevice: () -> Unit,
 ) {
     val pendingRequired = SetupStep.entries.count { it.required && checks[it] == false }
     val allRequiredDone = checks.isNotEmpty() && pendingRequired == 0
+
+    // Tiap bagian panjang bisa dibuka seperlunya supaya layar utama tetap ringkas (satu layar).
+    var expandedStep by remember { mutableStateOf<SetupStep?>(null) }
+    var showData by remember { mutableStateOf(false) }
+    var showTech by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Lacak SMB", style = MaterialTheme.typography.headlineMedium)
-        Text("Aplikasi pelacak resmi HP kantor — ${BuildConfig.SITE_NAME}", style = MaterialTheme.typography.titleSmall)
-
-        // Status koneksi langsung dari service.
-        InfoCard(
-            title = if (connected) "Terhubung ke server" else "Status pemantauan",
-            body = connectionText,
-            tone = if (connected) Tone.Good else Tone.Neutral,
+        Text("Lacak SMB", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "Aplikasi pelacak resmi HP kantor — ${BuildConfig.SITE_NAME}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
         )
 
-        if (deviceOwner) {
-            InfoCard(
-                title = "HP dikelola kantor",
-                body = "HP ini dipasang sebagai perangkat kantor (Device Owner). Sebagian izin sudah diatur otomatis.",
-                tone = Tone.Neutral,
-            )
-        }
+        // Status koneksi ringkas (satu baris, bukan kartu besar).
+        StatusLine(connected = connected, text = connectionText, deviceOwner = deviceOwner)
 
         if (!locationServiceOn) {
             InfoCard(
@@ -461,59 +539,111 @@ private fun SetupScreen(
         }
         hint?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary) }
 
-        SetupStep.entries.forEachIndexed { index, step ->
-            StepCard(number = index + 1, step = step, done = checks[step] == true, onAction = { onStep(step) })
+        // Daftar izin RINGKAS: satu baris per izin dalam satu kartu. Ketuk baris untuk membuka
+        // penjelasan singkatnya (tidak lagi kartu besar berparagraf satu per satu).
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                SetupStep.entries.forEachIndexed { index, step ->
+                    if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    PermissionRow(
+                        step = step,
+                        done = checks[step] == true,
+                        expanded = expandedStep == step,
+                        onToggle = { expandedStep = if (expandedStep == step) null else step },
+                        onAction = { onStep(step) },
+                    )
+                }
+            }
         }
 
         if (Build.MANUFACTURER.lowercase() in AGGRESSIVE_OEMS) {
             InfoCard(
                 title = "Khusus HP ${Build.MANUFACTURER}",
-                body = "Buka Info aplikasi lalu aktifkan \"Mulai otomatis\" / \"Autostart\" dan setel baterai ke " +
-                    "\"Tanpa batasan\". Tanpa ini HP merek ini bisa menghentikan pemantauan diam-diam.",
+                body = "Aktifkan \"Mulai otomatis\"/Autostart dan setel baterai \"Tanpa batasan\" supaya " +
+                    "pemantauan tidak dihentikan HP diam-diam.",
                 tone = Tone.Warn,
                 action = "Buka info aplikasi" to onOpenAppSettings,
             )
         }
 
-        DisclosureCard()
+        // Keterbukaan data -- WAJIB tetap mudah diakses staf (ini yang membuat pemantauan sah, bukan
+        // spyware). Diringkas jadi satu baris "Apa yang dipantau?" yang bisa dibuka; isi lengkap sama
+        // persis dengan DeviceInfoCollector.
+        DisclosureSection(expanded = showData, onToggle = { showData = !showData })
 
-        Text("ID Device", style = MaterialTheme.typography.labelMedium)
-        Text(deviceUuid.ifBlank { "Memuat…" }, style = MaterialTheme.typography.bodySmall)
-        Text(
-            "Versi aplikasi ${BuildConfig.VERSION_NAME}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline,
+        if (deviceOwner || deviceAdmin) {
+            CompanyLockCard(deviceOwner = deviceOwner, onReleaseDevice = onReleaseDevice)
+        }
+
+        TechnicalDetails(
+            expanded = showTech,
+            onToggle = { showTech = !showTech },
+            deviceUuid = deviceUuid,
         )
     }
 }
 
+/** Satu baris izin ringkas: nama + status/tombol "Izinkan", dan penjelasan singkat saat baris dibuka. */
 @Composable
-private fun StepCard(number: Int, step: SetupStep, done: Boolean, onAction: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+private fun PermissionRow(
+    step: SetupStep,
+    done: Boolean,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onAction: () -> Unit,
+) {
+    val statusColor = when {
+        done -> MaterialTheme.colorScheme.primary
+        step.required -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.outline
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
         Row(
-            modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(
-                if (done) "✓" else "$number",
-                style = MaterialTheme.typography.titleLarge,
-                color = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                modifier = Modifier.width(28.dp),
-            )
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(step.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(step.explanation, style = MaterialTheme.typography.bodySmall)
+            Text(if (done) "✓" else "•", style = MaterialTheme.typography.titleMedium, color = statusColor, modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(step.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                 Text(
-                    if (done) "Sudah diizinkan" else if (step.required) "Perlu tindakan" else "Opsional",
+                    if (done) "Sudah diizinkan" else if (step.required) "Perlu diizinkan" else "Opsional",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error.takeIf { step.required }
-                        ?: MaterialTheme.colorScheme.outline,
+                    color = statusColor,
                 )
             }
             if (!done) {
                 OutlinedButton(onClick = onAction) { Text("Izinkan") }
             }
+            Text(if (expanded) "▾" else "▸", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+        }
+        if (expanded) {
+            Text(
+                step.explanation,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(start = 26.dp, top = 6.dp),
+            )
+        }
+    }
+}
+
+/** Status koneksi ringkas satu baris (+ penanda HP dikelola kantor). */
+@Composable
+private fun StatusLine(connected: Boolean, text: String, deviceOwner: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "●",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        )
+        Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        if (deviceOwner) {
+            Text("HP kantor", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
     }
 }
@@ -537,29 +667,177 @@ private fun InfoCard(title: String, body: String, tone: Tone, action: Pair<Strin
 }
 
 /**
- * Pengungkapan data -- WAJIB sama dengan isi DeviceInfoCollector & heartbeat lokasi. Kalau ada
- * data baru yang dikirim, kartu ini (dan dokumen consent) harus diperbarui lebih dulu.
+ * Keterbukaan data -- satu baris "Apa yang dipantau?" yang bisa dibuka. WAJIB tetap mudah diakses
+ * staf pemilik HP (ini yang membuat pemantauan sah, bukan spyware): jangan dihapus/disembunyikan.
+ * Isi lengkap WAJIB sama dengan DeviceInfoCollector & heartbeat lokasi; kalau ada data baru, bagian
+ * ini (dan dokumen consent) diperbarui lebih dulu.
  */
 @Composable
-private fun DisclosureCard() {
+private fun DisclosureSection(expanded: Boolean, onToggle: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Data yang dikirim ke kantor", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(if (expanded) 8.dp else 2.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Apa yang dipantau?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Data yang dikirim ke kantor — ketuk untuk lihat detail",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                }
+                Text(if (expanded) "▾" else "▸", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+            }
+            if (expanded) {
+                Text(
+                    "• Lokasi (GPS/jaringan, akurasi, waktu) berkala dan saat diminta admin\n" +
+                        "• Merek, model, versi Android, versi aplikasi\n" +
+                        "• Baterai & status mengisi daya\n" +
+                        "• Jenis jaringan (WiFi/seluler), nama WiFi, nama operator\n" +
+                        "• Sisa penyimpanan, status izin aplikasi ini\n" +
+                        "• Status kunci perusahaan (lokasi & anti-hapus) dan status GPS\n" +
+                        "• Sinyal Bluetooth ke titik kantor (bila diizinkan)",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "Tidak pernah dikirim: isi pesan, kontak, riwayat panggilan, foto/berkas, atau isi aplikasi lain. " +
+                        "Notifikasi pemantauan selalu tampil selama aplikasi aktif, sesuai persetujuan tertulis.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            }
+        }
+    }
+}
+
+/** Detail teknis (ID Device & versi aplikasi) -- disembunyikan di balik ketukan supaya tidak memenuhi layar. */
+@Composable
+private fun TechnicalDetails(expanded: Boolean, onToggle: () -> Unit, deviceUuid: String) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                "• Lokasi (GPS/jaringan, akurasi, waktu) berkala dan saat diminta admin\n" +
-                    "• Merek, model, versi Android, versi aplikasi\n" +
-                    "• Baterai & status mengisi daya\n" +
-                    "• Jenis jaringan (WiFi/seluler), nama WiFi, nama operator\n" +
-                    "• Sisa penyimpanan, status izin aplikasi ini\n" +
-                    "• Sinyal Bluetooth ke titik kantor (bila diizinkan)",
+                "Detail teknis",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.weight(1f),
+            )
+            Text(if (expanded) "▾" else "▸", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+        }
+        if (expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("ID Device", style = MaterialTheme.typography.labelMedium)
+                Text(deviceUuid.ifBlank { "Memuat…" }, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "Versi aplikasi ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Pengungkapan kunci perusahaan -- JUJUR menjelaskan bahwa lokasi & penghapusan aplikasi dikunci
+ * perusahaan dan cara melepasnya (minta kode ke admin). Hanya tampil di HP yang memang dikelola
+ * (Device Owner / Device Admin), sesuai persetujuan tertulis.
+ */
+@Composable
+private fun CompanyLockCard(deviceOwner: Boolean, onReleaseDevice: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Perangkat dikunci perusahaan", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (deviceOwner) {
+                    "Selama aplikasi aktif: Lokasi/GPS dikunci menyala dan tidak bisa dimatikan, dan " +
+                        "aplikasi ini tidak bisa dihapus tanpa kode lepas dari admin kantor."
+                } else {
+                    "Aplikasi ini terpasang sebagai admin perangkat untuk kunci layar jarak jauh. " +
+                        "Untuk melepasnya sepenuhnya, minta kode lepas dari admin kantor."
+                },
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                "Tidak pernah dikirim: isi pesan, kontak, riwayat panggilan, foto/berkas, atau isi aplikasi lain. " +
-                    "Notifikasi pemantauan selalu tampil selama aplikasi aktif, sesuai persetujuan tertulis.",
+                "Untuk melepas (mis. HP dikembalikan / diganti): minta \"kode lepas perangkat\" ke admin " +
+                    "di dashboard, lalu masukkan di bawah ini.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline,
             )
+            OutlinedButton(onClick = onReleaseDevice) { Text("Lepas perangkat") }
         }
     }
+}
+
+/** Dialog masukkan kode lepas perangkat. Setelah berhasil, pesan memandu staf menghapus aplikasi. */
+@Composable
+private fun ReleaseDialog(
+    open: Boolean,
+    code: String,
+    onCodeChange: (String) -> Unit,
+    busy: Boolean,
+    result: String?,
+    succeeded: Boolean,
+    onSubmit: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (!open) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (succeeded) "Perangkat dilepas" else "Lepas perangkat") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (!succeeded) {
+                    Text(
+                        "Masukkan 6 digit kode lepas yang dibuat admin di dashboard. Kode ini mencabut " +
+                            "kunci lokasi & penghapusan, lalu melepas aplikasi dari HP.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedTextField(
+                        value = code,
+                        onValueChange = onCodeChange,
+                        singleLine = true,
+                        enabled = !busy,
+                        label = { Text("Kode lepas (6 digit)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                result?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (succeeded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (succeeded) {
+                TextButton(onClick = onDismiss) { Text("Tutup") }
+            } else {
+                TextButton(onClick = onSubmit, enabled = !busy && code.length == 6) {
+                    Text(if (busy) "Memproses…" else "Lepaskan")
+                }
+            }
+        },
+        dismissButton = {
+            if (!succeeded) {
+                TextButton(onClick = onDismiss, enabled = !busy) { Text("Batal") }
+            }
+        },
+    )
 }

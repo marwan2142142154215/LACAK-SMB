@@ -37,5 +37,10 @@ class ServiceWatchdogWorker(
                 PeriodicWorkRequestBuilder<ServiceWatchdogWorker>(15, TimeUnit.MINUTES).build(),
             )
         }
+
+        /** Perangkat dilepas: berhenti menyalakan ulang service pemantauan. */
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context.applicationContext).cancelUniqueWork(WORK_NAME)
+        }
     }
 }

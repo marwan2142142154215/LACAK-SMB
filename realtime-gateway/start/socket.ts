@@ -413,6 +413,13 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                 if (info.storageFreeMb !== null) device.storageFreeMb = info.storageFreeMb
                 if (info.storageTotalMb !== null) device.storageTotalMb = info.storageTotalMb
                 if (info.permissions !== null) device.permissionState = info.permissions
+                // Kebijakan kunci (Device Owner) & status GPS: hanya ditimpa kalau APK melaporkannya
+                // (APK versi lama tidak mengirim -> null -> nilai terakhir dipertahankan).
+                if (info.locationPolicyLocked !== null)
+                    device.locationPolicyLocked = info.locationPolicyLocked
+                if (info.uninstallLocked !== null) device.uninstallLocked = info.uninstallLocked
+                if (info.locationServiceOn !== null)
+                    device.locationServiceOn = info.locationServiceOn
                 const now = DateTime.now()
                 device.infoUpdatedAt = now
                 device.lastSeenAt = now
@@ -433,6 +440,9 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                     storage_free_mb: device.storageFreeMb,
                     storage_total_mb: device.storageTotalMb,
                     permission_state: device.permissionState,
+                    location_policy_locked: device.locationPolicyLocked,
+                    uninstall_locked: device.uninstallLocked,
+                    location_service_on: device.locationServiceOn,
                     last_seen_at: now.toISO(),
                     info_updated_at: now.toISO(),
                 })
