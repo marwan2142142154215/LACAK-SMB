@@ -159,6 +159,8 @@ export type LocationReport = {
     bleDistanceMeters: number | null
     bleRssi: number | null
     batteryLevel: number | null
+    /** Fix dari aplikasi mock location (GPS palsu)? null = APK lama tidak melaporkan. */
+    isMock: boolean | null
     /** undefined = payload tidak membawa ssid (nama terakhir dipertahankan); null/'' = tidak terhubung WiFi. */
     ssid: string | null | undefined
     ip: string | null
@@ -200,6 +202,7 @@ export function sanitizeLocationReport(payload: unknown): LocationReport {
         ip: plainText(data.ip, 45),
         nearbyBeaconUuid: plainText(data.nearbyBeaconUuid, 64),
         nearbyBeaconDistanceMeters: cleanNumber(data.nearbyBeaconDistanceMeters, 0, 1_000_000),
+        isMock: cleanBoolean(data.isMock),
     }
 }
 

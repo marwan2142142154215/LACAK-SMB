@@ -65,6 +65,7 @@ export type DeviceLocationRow = {
     accuracy_meters?: string | number | null
     location_provider?: string | null
     fixed_at?: Date | null
+    is_mock?: boolean | null
     recorded_at: Date | null
 }
 
@@ -155,6 +156,7 @@ export function deviceLocationResource(location: DeviceLocationRow) {
         accuracy_meters: laravelDecimal(location.accuracy_meters ?? null, 2),
         location_provider: location.location_provider ?? null,
         fixed_at: laravelDate(location.fixed_at ?? null),
+        is_mock: Boolean(location.is_mock ?? false),
         recorded_at: laravelDate(location.recorded_at ?? null),
     }
 }

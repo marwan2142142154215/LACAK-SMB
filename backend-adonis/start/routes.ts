@@ -17,6 +17,7 @@ const WorkSessionsController = () => import('#controllers/WorkSessionsController
 const DashboardSummaryController = () => import('#controllers/DashboardSummaryController')
 const LiveRecordingsController = () => import('#controllers/LiveRecordingsController')
 const BriefingsController = () => import('#controllers/BriefingsController')
+const StaffLocationsController = () => import('#controllers/StaffLocationsController')
 
 router.get('/health', () => ({ success: true, message: 'OK', data: null }))
 
@@ -51,6 +52,9 @@ router
                 router.get('/live/app', [WorkSessionsController, 'app'])
                 router.get('/live/activity', [WorkSessionsController, 'activity'])
                 router.get('/live/recordings', [LiveRecordingsController, 'index'])
+
+                // Lokasi terakhir tiap staf (agen HP/desktop) untuk peta Radar & detail staf.
+                router.get('/staff-locations', [StaffLocationsController, 'index'])
 
                 // Briefing: rapat video dengan peran & site yang diundang.
                 router.get('/briefings', [BriefingsController, 'index'])

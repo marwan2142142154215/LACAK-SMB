@@ -109,6 +109,12 @@ const CATALOG: Record<string, Entry> = {
         description:
             'Layar tidak wajib dibagikan saat Live Kerja: boleh dihentikan tanpa dikunci, dan status tetap dihitung bekerja selama kamera menyala.',
     },
+    'location.share': {
+        group: 'Live Kerja',
+        label: 'Bagikan lokasi sendiri',
+        description:
+            'Lokasi staf diambil lewat APK/aplikasi desktop selama login & bekerja (GPS/WiFi, tahan VPN), lalu tampil di peta Radar untuk pengawas.',
+    },
     'attendance.manage': {
         group: 'Kerja & pengawasan',
         label: 'Kelola absensi',

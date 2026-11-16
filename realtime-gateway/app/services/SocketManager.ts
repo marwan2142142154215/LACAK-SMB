@@ -65,6 +65,17 @@ class SocketManager {
             ?.to([`org:${organizationId}`, 'superadmins'])
             .emit('device:status', payload)
     }
+
+    /**
+     * Lokasi staf (dari agen HP/desktop): berisi koordinat, jadi hanya ke ruang
+     * radar site itu (pemegang izin radar.view -- leader/admin/site_admin/super_admin),
+     * sama dengan broadcastRadarUpdate untuk device.
+     */
+    broadcastStaffLocation(organizationId: number, payload: unknown) {
+        this.opsNamespace
+            ?.to([radarOrganizationRoom(organizationId), RADAR_ALL_ROOM])
+            .emit('staff:location', payload)
+    }
 }
 
 export default new SocketManager()

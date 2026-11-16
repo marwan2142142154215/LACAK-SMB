@@ -137,6 +137,7 @@ class GatewaySocketClient(
         accuracyMeters: Float? = null,
         provider: String? = null,
         fixTime: Long? = null,
+        isMock: Boolean? = null,
     ) {
         val payload = JSONObject().apply {
             put("source", source)
@@ -157,6 +158,8 @@ class GatewaySocketClient(
             if (accuracyMeters != null) put("accuracyMeters", accuracyMeters.toDouble())
             if (provider != null) put("provider", provider)
             if (fixTime != null) put("fixTime", fixTime)
+            // Anti-palsu: true kalau fix berasal dari aplikasi mock location (GPS palsu).
+            if (isMock != null) put("isMock", isMock)
         }
         socket?.emit("device:location", payload)
     }

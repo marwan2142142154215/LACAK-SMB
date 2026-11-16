@@ -37,6 +37,10 @@ export default class DeviceLocation extends BaseModel {
     @column.dateTime()
     declare fixedAt: DateTime | null
 
+    /** Fix berasal dari aplikasi mock location (GPS palsu)? Default false. */
+    @column()
+    declare isMock: boolean
+
     @column.dateTime()
     declare recordedAt: DateTime
 

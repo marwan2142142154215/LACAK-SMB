@@ -34,6 +34,8 @@ export const PERMISSIONS = [
     // Menonton Ruang pusat: siaran user yang tidak terikat site (dulu "ruang leader",
     // dikunci ke admin & root).
     'live.watch-central',
+    // Bagikan lokasi sendiri: staf melaporkan lokasinya (APK/aplikasi desktop) selama bekerja.
+    'location.share',
     // Kerja & pengawasan: kelola absensi, shift, izin/cuti, pengumuman, kirim
     // peringatan staf, dan memimpin briefing -- dulu dikunci ke nama peran (isManager).
     'attendance.manage',
@@ -111,7 +113,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         'briefing.host',
         ...WORK_SUPERVISION,
     ],
-    staff_viewer: ['devices.view', 'live.broadcast', 'live.watch'],
+    staff_viewer: ['devices.view', 'live.broadcast', 'live.watch', 'location.share'],
     // Akun layanan bot Telegram: kendali device + build APK, tanpa pengaturan site.
     // live.roster dipertahankan supaya perilaku "lihat rekan" tidak berubah.
     telegram_bot_service: [

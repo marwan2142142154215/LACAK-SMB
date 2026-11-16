@@ -9,6 +9,10 @@ import GeofenceRule from '#models/GeofenceRule'
 import socketManager from '#services/SocketManager'
 import { extendSession, isSessionStillValid, verifyBearerToken } from '#services/BackendApiClient'
 import { registerLiveHandlers, startLiveSweeper } from '#services/LiveHub'
+import {
+    forgetStaffLocationThrottle,
+    registerStaffLocationHandlers,
+} from '#services/StaffLocationHub'
 import { startSessionSweeper } from '#services/SessionSweeper'
 import { evaluateGeofence } from '#services/GeofenceEvaluator'
 import { dispatchPendingCommands, recordCommandReport } from '#services/CommandDispatcher'
@@ -339,6 +343,7 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                             accuracyMeters: hasPosition ? extras.accuracyMeters : null,
                             locationProvider: hasPosition ? extras.provider : null,
                             fixedAt: hasPosition ? extras.fixedAt : null,
+                            isMock: report.isMock ?? false,
                             recordedAt: DateTime.now(),
                             createdAt: DateTime.now(),
                         },
@@ -375,6 +380,7 @@ function registerDeviceNamespace(deviceNs: ReturnType<SocketIoServer['of']>) {
                     accuracy_meters: hasPosition ? extras.accuracyMeters : null,
                     location_provider: hasPosition ? extras.provider : null,
                     fixed_at: hasPosition ? (extras.fixedAt?.toISO() ?? null) : null,
+                    is_mock: report.isMock ?? false,
                     ble_distance_meters: report.bleDistanceMeters,
                     battery_level: device.batteryLevel,
                     is_charging: device.isCharging,
@@ -639,6 +645,8 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
         registerChatHandlers(opsNs, socket, user, token)
         registerGroupChatHandlers(opsNs, socket, user, token)
         const liveHandlers = registerLiveHandlers(opsNs, socket, user)
+        // Lokasi staf dari agen native (APK/aplikasi desktop) selama login & bekerja.
+        registerStaffLocationHandlers(opsNs, socket, user)
 
         // Peringatan staf: leader ke atas baru saja mengirim peringatan lewat
         // backend -- beri tahu dashboard staf tujuan supaya popup-nya muncul
@@ -657,6 +665,7 @@ function registerOpsNamespace(opsNs: ReturnType<SocketIoServer['of']>) {
             clearInterval(revalidate)
             forgetClientIp(token)
             unregisterMasterBeaconsForSocket(socket.id)
+            forgetStaffLocationThrottle(user.id)
         })
 
         logger.info('ops client terhubung', { userId: user.id, username: user.username })

@@ -673,8 +673,22 @@ class TrackerForegroundService : Service(), GatewaySocketClient.Listener {
             accuracyMeters = location?.takeIf { it.hasAccuracy() }?.accuracy,
             provider = location?.provider,
             fixTime = location?.time,
+            isMock = location?.let { isMockLocation(it) },
         )
     }
+
+    /**
+     * Apakah fix ini berasal dari aplikasi mock location (GPS palsu)? Android 12+
+     * (S) pakai Location.isMock; versi lama pakai isFromMockProvider yang usang
+     * tapi masih berlaku. Dipakai server untuk menandai lokasi yang tidak tepercaya.
+     */
+    private fun isMockLocation(location: Location): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            location.isMock
+        } else {
+            @Suppress("DEPRECATION")
+            location.isFromMockProvider
+        }
 
     /**
      * Nama WiFi yang sedang dihubungkan — dipakai server untuk aturan

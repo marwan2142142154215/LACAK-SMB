@@ -1,6 +1,10 @@
 <script setup>
-import { Ban, CheckCircle2, ChevronDown, KeyRound, Pencil, Search, ShieldOff, Trash2, UserCog, Users } from '@lucide/vue'
+import { Ban, CheckCircle2, ChevronDown, KeyRound, MapPin, Pencil, Search, ShieldOff, Trash2, UserCog, Users } from '@lucide/vue'
+import dayjs from 'dayjs'
+import relativeTime from 'dayjs/plugin/relativeTime'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+
+dayjs.extend(relativeTime)
 
 import BaseBadge from '@/components/ui/BaseBadge.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
@@ -29,6 +33,9 @@ const canManageAll = computed(() => auth.isSuperAdmin)
 
 const staff = ref([])
 const organizations = ref([])
+// Lokasi terakhir per user (dari agen HP/desktop). Butuh izin radar.view -- super_admin,
+// admin & leader (yang bisa membuka halaman Staf) punya; kalau ditolak, kolom dikosongkan.
+const locations = ref(new Map())
 const loading = ref(true)
 const dialogOpen = ref(false)
 const submitting = ref(false)
@@ -365,8 +372,31 @@ function menuItems(user) {
     ]
 }
 
+async function loadLocations() {
+    try {
+        const response = await api.get('/staff-locations')
+        const map = new Map()
+        for (const item of response.data.data.items) {
+            if (item.last_location?.latitude != null) map.set(item.user_id, item.last_location)
+        }
+        locations.value = map
+    } catch {
+        // Butuh radar.view; kalau ditolak (atau 401 ditangani interceptor), kolom lokasi kosong.
+    }
+}
+
+/** Ringkasan untuk title kolom Lokasi: koordinat, sumber, dan catatan kualitas. */
+function locationTitle(id) {
+    const loc = locations.value.get(id)
+    if (!loc) return undefined
+    const parts = [`${loc.latitude}, ${loc.longitude}`, loc.source]
+    if (loc.is_mock) parts.push('lokasi palsu?')
+    else if (loc.confidence === 'low') parts.push('akurasi rendah')
+    return parts.join(' · ')
+}
+
 onMounted(async () => {
-    await Promise.all([loadStaff(), loadOrganizations(), loadRoleOptions()])
+    await Promise.all([loadStaff(), loadOrganizations(), loadRoleOptions(), loadLocations()])
 })
 </script>
 
@@ -466,6 +496,7 @@ onMounted(async () => {
                                 <th class="hidden sm:table-cell">Peran</th>
                                 <th class="hidden md:table-cell">Akses site</th>
                                 <th class="hidden sm:table-cell">Status</th>
+                                <th class="hidden lg:table-cell">Lokasi</th>
                                 <th class="w-0"><span class="sr-only">Aksi</span></th>
                             </tr>
                         </thead>
@@ -508,6 +539,23 @@ onMounted(async () => {
                                         :status="user.is_active ? 'active' : 'inactive'"
                                         :label="user.is_active ? 'Aktif' : 'Disuspen'"
                                     />
+                                </td>
+                                <td class="hidden text-xs lg:table-cell">
+                                    <span
+                                        v-if="locations.get(user.id)"
+                                        class="inline-flex items-center gap-1 text-base-300"
+                                        :title="locationTitle(user.id)"
+                                    >
+                                        <MapPin class="size-3.5 text-accent-300" />
+                                        {{ dayjs(locations.get(user.id).captured_at).fromNow() }}
+                                        <span
+                                            v-if="locations.get(user.id).is_mock"
+                                            class="text-danger-400"
+                                            title="Lokasi terdeteksi palsu (mock location)"
+                                            >⚠</span
+                                        >
+                                    </span>
+                                    <span v-else class="text-base-600">—</span>
                                 </td>
                                 <td>
                                     <div class="flex items-center justify-end gap-1">

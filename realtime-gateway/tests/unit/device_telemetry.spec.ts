@@ -137,8 +137,16 @@ test.group('Telemetri device: device:location (selain koordinat)', () => {
                 ip: '192.168.1.20',
                 nearbyBeaconUuid: 'abc-123',
                 nearbyBeaconDistanceMeters: 2,
+                isMock: null,
             }
         )
+    })
+
+    test('isMock: hanya boolean yang diterima; selain itu null', ({ assert }) => {
+        assert.isTrue(sanitizeLocationReport({ source: 'gps', isMock: true }).isMock)
+        assert.isFalse(sanitizeLocationReport({ source: 'gps', isMock: false }).isMock)
+        assert.isNull(sanitizeLocationReport({ source: 'gps' }).isMock)
+        assert.isNull(sanitizeLocationReport({ source: 'gps', isMock: 'yes' }).isMock)
     })
 
     test('sumber di luar daftar jadi null (laporan dibuang pemanggil)', ({ assert }) => {

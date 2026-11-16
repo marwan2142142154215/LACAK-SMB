@@ -164,6 +164,7 @@ test.group('Device: bentuk resource sama dengan Laravel', () => {
             accuracy_meters: null,
             location_provider: null,
             fixed_at: null,
+            is_mock: false,
             recorded_at: '2026-10-25T01:00:00.000000Z',
         })
 

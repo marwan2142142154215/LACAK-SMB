@@ -1,5 +1,5 @@
 <script setup>
-import { BatteryCharging, MapPin, Radar as RadarIcon, ShieldAlert } from '@lucide/vue'
+import { BatteryCharging, MapPin, Radar as RadarIcon, ShieldAlert, Users } from '@lucide/vue'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import L from 'leaflet'
@@ -54,6 +54,88 @@ const deviceIcon = L.divIcon({
     iconAnchor: [11, 11],
     popupAnchor: [0, -14],
 })
+
+// --- Lokasi staf (agen HP/desktop) -- peta & daftar terpisah dari device ---------
+// Titik lokasi milik USER (bukan device): datang dari GET /staff-locations (snapshot
+// awal) lalu event socket `staff:location` (lihat StaffLocationHub di gateway). Hanya
+// pemegang radar.view yang menerima datanya (endpoint & ruang radar di-gate server).
+const staffLocations = reactive(new Map())
+const staffList = computed(() =>
+    Array.from(staffLocations.values())
+        .filter((s) => s.latitude != null && s.longitude != null)
+        .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '')),
+)
+
+// Penanda staf: titik amber (beda jelas dari titik aksen device).
+const staffIcon = L.divIcon({
+    className: 'staff-pin',
+    html: '<span class="staff-pin-dot"></span>',
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+    popupAnchor: [0, -12],
+})
+
+const staffMapEl = ref(null)
+let staffMap = null
+let staffLayer = null
+
+function renderStaffMap() {
+    const entries = staffList.value
+    if (!staffMapEl.value || entries.length === 0) return
+    if (!staffMap) {
+        staffMap = L.map(staffMapEl.value, { attributionControl: true })
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors',
+        }).addTo(staffMap)
+        staffLayer = L.layerGroup().addTo(staffMap)
+    }
+    staffLayer.clearLayers()
+    const bounds = []
+    for (const s of entries) {
+        const lat = Number(s.latitude)
+        const lng = Number(s.longitude)
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue
+        bounds.push([lat, lng])
+        const marker = L.marker([lat, lng], { icon: staffIcon })
+        // Nama staf diketik admin -> dikirim sebagai node teks, bukan innerHTML (anti-XSS).
+        const label = document.createElement('span')
+        label.textContent = s.name ?? ''
+        marker.bindPopup(label)
+        staffLayer.addLayer(marker)
+    }
+    if (bounds.length) staffMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 })
+    requestAnimationFrame(() => staffMap?.invalidateSize())
+}
+
+async function loadStaffLocations() {
+    try {
+        const response = await api.get('/staff-locations')
+        for (const item of response.data.data.items) {
+            const loc = item.last_location
+            if (!loc || loc.latitude == null) continue
+            staffLocations.set(item.user_id, {
+                user_id: item.user_id,
+                name: item.user_name,
+                latitude: loc.latitude,
+                longitude: loc.longitude,
+                accuracy_meters: loc.accuracy_meters,
+                source: loc.source,
+                confidence: loc.confidence,
+                is_mock: loc.is_mock,
+                captured_at: loc.captured_at,
+            })
+        }
+        await nextTick()
+        renderStaffMap()
+    } catch (err) {
+        // Butuh radar.view; 401 ditangani interceptor global, 403 = memang tak boleh.
+        // Selain itu beri tahu, tapi jangan gagalkan halaman Radar.
+        if (err.response?.status && ![401, 403].includes(err.response.status)) {
+            toast.error('Gagal memuat lokasi staf', err.response?.data?.message)
+        }
+    }
+}
 
 function renderMap(device) {
     if (!mapEl.value || device?.latitude == null || device?.longitude == null) return
@@ -110,6 +192,9 @@ onBeforeUnmount(() => {
     mapInstance?.remove()
     mapInstance = null
     accuracyCircle = null
+    staffMap?.remove()
+    staffMap = null
+    staffLayer = null
 })
 
 // Subjudul peta: umur posisi + kualitas fix (sumber & akurasi), dan peringatan kalau GPS belum
@@ -121,6 +206,7 @@ const mapSubtitle = computed(() => {
     const quality = locationQualityLabel(d)
     if (quality) parts.push(quality)
     if (d.fixed_at && dayjs(d.recorded_at).diff(d.fixed_at, 'minute') >= 2) parts.push('GPS belum dapat posisi baru')
+    if (d.is_mock) parts.push('⚠ Lokasi palsu terdeteksi (mock)')
     return parts.join(' · ')
 })
 
@@ -173,6 +259,7 @@ async function loadInitialDevices() {
                 accuracy_meters: d.latest_location?.accuracy_meters ?? null,
                 location_provider: d.latest_location?.location_provider ?? null,
                 fixed_at: d.latest_location?.fixed_at ?? null,
+                is_mock: d.latest_location?.is_mock ?? false,
                 recorded_at: d.latest_location?.recorded_at ?? null,
                 is_charging: d.is_charging ?? null,
                 last_seen_at: d.last_seen_at ?? null,
@@ -234,6 +321,24 @@ onMounted(async () => {
         violations.value.unshift({ ...payload, id: Date.now() })
         violations.value = violations.value.slice(0, 8)
     })
+
+    socket.on('staff:location', (payload) => {
+        if (payload.latitude == null || payload.longitude == null) return
+        staffLocations.set(payload.user_id, {
+            user_id: payload.user_id,
+            name: payload.name,
+            latitude: payload.latitude,
+            longitude: payload.longitude,
+            accuracy_meters: payload.accuracy_meters,
+            source: payload.source,
+            confidence: payload.confidence,
+            is_mock: payload.is_mock,
+            captured_at: payload.captured_at,
+        })
+        nextTick(renderStaffMap)
+    })
+
+    await loadStaffLocations()
 })
 </script>
 
@@ -293,7 +398,15 @@ onMounted(async () => {
                             >
                                 <div class="min-w-0 flex-1">
                                     <p class="truncate text-sm font-medium text-base-50">{{ d.device_name }}</p>
-                                    <div class="mt-1"><StatusDot :status="d.status" /></div>
+                                    <div class="mt-1 flex items-center gap-2">
+                                        <StatusDot :status="d.status" />
+                                        <span
+                                            v-if="d.is_mock"
+                                            class="rounded bg-danger-500/15 px-1.5 py-0.5 text-[11px] text-danger-400"
+                                            title="Lokasi terdeteksi palsu (mock location)"
+                                            >Lokasi palsu?</span
+                                        >
+                                    </div>
                                 </div>
                                 <div class="shrink-0 text-right font-mono text-xs tabular-nums">
                                     <p class="text-base-100">
@@ -355,6 +468,52 @@ onMounted(async () => {
                     </ol>
                 </BaseCard>
             </div>
+
+            <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+                <BaseCard
+                    title="Lokasi staf"
+                    :subtitle="staffList.length ? `${staffList.length} staf terpantau · lokasi dari agen HP/desktop` : 'Lokasi staf yang login lewat APK / aplikasi desktop'"
+                    flush
+                >
+                    <EmptyState
+                        v-if="staffList.length === 0"
+                        :icon="Users"
+                        title="Belum ada lokasi staf"
+                        description="Lokasi muncul di sini saat staf login lewat APK atau aplikasi desktop dengan lokasi menyala."
+                    />
+                    <div v-show="staffList.length > 0" ref="staffMapEl" class="map h-[22rem] w-full" />
+                </BaseCard>
+
+                <BaseCard title="Staf terpantau" :count="staffList.length" flush>
+                    <EmptyState
+                        v-if="staffList.length === 0"
+                        :icon="Users"
+                        title="Belum ada staf"
+                        description="Menunggu laporan lokasi dari agen staf."
+                    />
+                    <ul v-else class="max-h-[22rem] divide-y divide-base-800/70 overflow-y-auto">
+                        <li v-for="s in staffList" :key="s.user_id" class="flex items-start gap-3 px-5 py-3">
+                            <MapPin class="mt-0.5 size-4 shrink-0 text-amber-400" />
+                            <div class="min-w-0 flex-1">
+                                <p class="truncate text-sm font-medium text-base-50">{{ s.name }}</p>
+                                <p class="mt-0.5 text-xs text-base-400">{{ dayjs(s.captured_at).fromNow() }}</p>
+                                <div class="mt-1 flex flex-wrap gap-1">
+                                    <span
+                                        v-if="s.is_mock"
+                                        class="rounded bg-danger-500/15 px-1.5 py-0.5 text-[11px] text-danger-400"
+                                        >Lokasi palsu?</span
+                                    >
+                                    <span
+                                        v-else-if="s.confidence === 'low'"
+                                        class="rounded bg-base-800 px-1.5 py-0.5 text-[11px] text-base-400"
+                                        >Akurasi rendah</span
+                                    >
+                                </div>
+                            </div>
+                        </li>
+                    </ul>
+                </BaseCard>
+            </div>
         </div>
     </div>
 </template>
@@ -385,6 +544,24 @@ onMounted(async () => {
     background: var(--color-accent-500);
     box-shadow:
         0 0 0 6px color-mix(in oklab, var(--color-accent-500) 28%, transparent),
+        0 2px 8px rgb(0 0 0 / 0.45);
+}
+
+/* Penanda staf: titik amber, dibedakan jelas dari titik aksen device. */
+.map :deep(.staff-pin) {
+    border: 0;
+    background: transparent;
+}
+
+.map :deep(.staff-pin-dot) {
+    display: block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid #fff;
+    border-radius: 9999px;
+    background: #f59e0b;
+    box-shadow:
+        0 0 0 6px color-mix(in oklab, #f59e0b 28%, transparent),
         0 2px 8px rgb(0 0 0 / 0.45);
 }
 
