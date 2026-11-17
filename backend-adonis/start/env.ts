@@ -98,6 +98,8 @@ export default await Env.create(new URL('../', import.meta.url), {
     LACAKSMB_WSL_DISTRO: Env.schema.string.optional(),
     // bash = server Linux, wsl = mesin build Windows. Kosong = otomatis dari OS.
     LACAKSMB_APK_BUILD_RUNNER: Env.schema.enum.optional(['bash', 'wsl'] as const),
+    // Batas waktu build APK (detik). Build Gradle pertama/cold bisa > 5 menit; default 1200.
+    LACAKSMB_APK_BUILD_TIMEOUT_SECONDS: Env.schema.number.optional(),
 
     // Redis: cache, rate limit, dan antrean (build APK) -- lihat config/redis.ts
     // Seeder (node ace db:seed / demo:seed-accounts): password awal akun.

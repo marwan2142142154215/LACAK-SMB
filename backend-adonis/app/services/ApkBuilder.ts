@@ -26,8 +26,13 @@ export type ApkType = 'tracker' | 'master' | 'live' | 'server'
 
 export const APK_TYPES: readonly ApkType[] = ['tracker', 'master', 'live', 'server']
 
-/** Process::timeout(300) di backend-api. */
-export const BUILD_TIMEOUT_SECONDS = 300
+/**
+ * Batas waktu build APK (detik). Build Gradle -- terutama build pertama (unduh Gradle +
+ * dependency) atau app Live (LiveKit) -- sering lebih dari 5 menit, jadi 300 (nilai lama
+ * padanan backend-api) terlalu pendek. Default dinaikkan ke 1200 (20 menit); bisa disetel
+ * per-server lewat env LACAKSMB_APK_BUILD_TIMEOUT_SECONDS.
+ */
+export const BUILD_TIMEOUT_SECONDS = env.get('LACAKSMB_APK_BUILD_TIMEOUT_SECONDS', 1200)
 
 /** mb_substr($output, -5000): build_log hanya menyimpan ekor output. */
 export const BUILD_LOG_TAIL = 5000
