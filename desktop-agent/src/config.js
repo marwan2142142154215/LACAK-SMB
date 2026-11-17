@@ -7,16 +7,16 @@ const fs = require('node:fs')
 /**
  * Konfigurasi & penyimpanan sesi agen desktop.
  *
- * - URL server: dari env (AGENT_API_BASE / AGENT_GATEWAY_URL) atau config.json di
- *   folder data aplikasi; default ke dev lokal. WAJIB diisi URL produksi (HTTPS)
- *   saat distribusi -- lihat README.
+ * - URL server: default ke produksi (lacaklive.smbservice.xyz). Bisa ditimpa per-PC
+ *   lewat env (AGENT_API_BASE / AGENT_GATEWAY_URL) atau config.json di folder data
+ *   aplikasi -- mis. untuk dev lokal. Lihat README.
  * - Token login: disimpan terenkripsi lewat safeStorage (DPAPI di Windows) kalau
  *   tersedia; kalau tidak, disimpan apa adanya dengan peringatan.
  */
 
 const DEFAULTS = {
-    apiBase: 'http://127.0.0.1:8010/api/v1',
-    gatewayUrl: 'http://127.0.0.1:3333',
+    apiBase: 'https://lacaklive.smbservice.xyz/api/v1',
+    gatewayUrl: 'https://lacaklive.smbservice.xyz',
     // Jeda minimum kirim lokasi (server juga membatasi ~15 dtk).
     intervalMs: 25_000,
 }
