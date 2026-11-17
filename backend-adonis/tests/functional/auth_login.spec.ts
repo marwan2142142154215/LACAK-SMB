@@ -321,7 +321,7 @@ test.group('Auth: login, 2FA, logout', (group) => {
         blocked.assertStatus(429)
     })
 
-    test('satu akun satu sesi: login baru mengakhiri sesi lain (session_replaced)', async ({
+    test('satu akun boleh aktif di 2 perangkat; perangkat ke-3 mengakhiri yang terlama', async ({
         client,
         assert,
     }) => {
@@ -335,10 +335,23 @@ test.group('Auth: login, 2FA, logout', (group) => {
             return response.body().data.access_token as string
         }
 
-        const oldToken = await login({ client: 'web_dashboard' })
-        const newToken = await login({ client: 'master_app' })
+        const me = async (token: string) => {
+            const response = await client.get('/api/v1/auth/me').bearerToken(token)
+            return response.status()
+        }
 
-        const old = await client.get('/api/v1/auth/me').bearerToken(oldToken)
+        // Dua perangkat login: keduanya tetap aktif.
+        const first = await login({ client: 'web_dashboard' })
+        const second = await login({ client: 'master_app' })
+
+        assert.equal(await me(first), 200)
+        assert.equal(await me(second), 200)
+        assert.lengthOf(await tokensOf(user.id), 2)
+
+        // Perangkat ketiga: yang PALING LAMA (first) berakhir, dua terbaru tetap aktif.
+        const third = await login({ client: 'master_app' })
+
+        const old = await client.get('/api/v1/auth/me').bearerToken(first)
         old.assertStatus(401)
         old.assertBody({
             success: false,
@@ -346,9 +359,9 @@ test.group('Auth: login, 2FA, logout', (group) => {
             errors: { reason: 'session_replaced' },
         })
 
-        const current = await client.get('/api/v1/auth/me').bearerToken(newToken)
-        current.assertStatus(200)
-        assert.lengthOf(await tokensOf(user.id), 1)
+        assert.equal(await me(second), 200)
+        assert.equal(await me(third), 200)
+        assert.lengthOf(await tokensOf(user.id), 2)
     })
 
     test('token tidak berlaku biasa tetap 401 tanpa alasan', async ({ client }) => {

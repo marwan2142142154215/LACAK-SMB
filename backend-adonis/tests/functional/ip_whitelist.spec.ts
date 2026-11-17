@@ -143,8 +143,7 @@ test.group('Whitelist IP', (group) => {
         loginOffice.assertStatus(200)
         assert.isString(loginOffice.body().data.access_token)
 
-        // Dimatikan: bebas dari mana saja lagi. (Login barusan mencabut token
-        // lama staf -- satu akun satu sesi -- jadi pakai token barunya.)
+        // Dimatikan: bebas dari mana saja lagi. (Pakai token hasil login barusan.)
         const off = await client
             .put('/api/v1/settings/ip-whitelist')
             .header('Authorization', `Bearer ${root.bearer}`)

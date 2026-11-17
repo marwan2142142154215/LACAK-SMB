@@ -48,6 +48,8 @@ export const TOKEN_IDLE_HOURS = 2
 
 /** Penanda token yang dicabut karena akunnya login di perangkat lain (lihat handler.ts). */
 export const REPLACED_TOKEN_PREFIX = 'auth:replaced_token:'
+/** Berapa perangkat boleh login aktif sekaligus dengan satu akun. */
+export const MAX_ACTIVE_SESSIONS = 2
 
 /** Nilai personal_access_tokens.device_type (perangkat tempat login). */
 export const DEVICE_COMPUTER = 'computer'
@@ -475,8 +477,10 @@ async function issueLoginToken(ctx: HttpContext, user: User, client: Client = db
 }
 
 /**
- * Satu akun = satu sesi aktif: login baru mengakhiri sesi login lain akun
- * ini (web, APK Master, APK Live). Yang terbaru menang -- sesi lama yang
+ * Satu akun boleh aktif di MAX_ACTIVE_SESSIONS perangkat sekaligus (web, APK
+ * Master, APK Live). Login baru hanya mengakhiri sesi PALING LAMA ketika jumlah
+ * sesi sudah melewati batas -- jadi login di perangkat kedua tidak lagi
+ * mengeluarkan perangkat pertama. Yang terbaru selalu menang, sesi terlama yang
  * terlupa di perangkat lain tidak bisa mengunci staf keluar.
  *
  * Hanya token login (selalu punya expires_at); token akun layanan
@@ -484,13 +488,17 @@ async function issueLoginToken(ctx: HttpContext, user: User, client: Client = db
  * perangkat lama diberi tahu alasannya (session_replaced di handler.ts).
  */
 async function endOtherSessions(user: User, client: Client) {
+    // Sesi login lama (terbaru dulu): yang sudah ada BOLEH tetap hidup selama totalnya,
+    // bersama token baru yang akan dibuat, tidak melewati batas. Sisakan paling banyak
+    // MAX_ACTIVE_SESSIONS - 1 sesi lama; selebihnya (yang paling lama) diakhiri.
     const tokens = await client
         .from('personal_access_tokens')
         .where('tokenable_type', LARAVEL_USER_MORPH)
         .where('tokenable_id', user.id)
         .whereNotNull('expires_at')
+        .orderBy('id', 'desc')
         .select('id')
-    const tokenIds = tokens.map((row) => Number(row.id))
+    const tokenIds = tokens.slice(MAX_ACTIVE_SESSIONS - 1).map((row) => Number(row.id))
 
     if (tokenIds.length === 0) {
         return
