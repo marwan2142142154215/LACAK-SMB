@@ -1,0 +1,32 @@
+LACAK SMB - NYALAKAN LOKASI WINDOWS (untuk agen pelacak PC)
+
+Kenapa perlu ini
+Windows sengaja melarang aplikasi menyalakan "Layanan Lokasi" sendiri (privasi).
+Skrip ini menyalakannya sekali per PC lewat izin Administrator, supaya staf tidak
+perlu mengatur manual dan layar "Aktifkan lokasi" di agen tidak muncul lagi.
+
+MEMASANG (1 PC)
+1. Salin folder ini ke PC (idealnya saat staf yang akan memakainya sudah login).
+2. Klik dua kali  Nyalakan-Lokasi.bat
+3. Pilih "Yes" saat Windows minta izin Administrator.
+4. Buka / buka-ulang Lacak SMB Agent -> layar "Aktifkan lokasi" tidak muncul lagi.
+
+MENGECEK
+Settings -> Privacy & security -> Location:
+  - "Location services"                         = On
+  - "Let desktop apps access your location"     = On
+
+BANYAK PC (domain) - lewat Group Policy / Intune
+  - Jalankan nyalakan-lokasi.ps1 sebagai startup/logon script (Computer config), ATAU
+  - Set langsung registry berikut device-wide (tipe REG_SZ, isi: Allow):
+      HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location\Value
+      HKLM\...\CapabilityAccessManager\ConsentStore\location\NonPackaged\Value
+    dan pastikan service "lfsvc" (Geolocation) berjalan (Startup = Automatic).
+
+MEMATIKAN LAGI (opsional)
+  Buka PowerShell sebagai Administrator, lalu:
+      powershell -NoProfile -ExecutionPolicy Bypass -File nyalakan-lokasi.ps1 -Uninstall
+
+CATATAN
+Setelan lokasi sedikit berbeda antar-versi Windows. Uji dulu di 1 PC sebelum sebar
+massal: pasang -> buka agen -> pastikan titik PC muncul di dashboard.

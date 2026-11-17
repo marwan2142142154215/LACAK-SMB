@@ -41,9 +41,22 @@
                 font-weight: 600;
                 border: 0;
                 border-radius: 8px;
-                background: #2563eb;
+                background: #b45309;
                 color: #fff;
                 cursor: pointer;
+            }
+            button.secondary {
+                background: transparent;
+                color: inherit;
+                border: 1px solid rgba(128, 128, 128, 0.5);
+                font-weight: 500;
+            }
+            .actions {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                width: 100%;
+                max-width: 260px;
             }
             ol {
                 text-align: left;
@@ -61,13 +74,17 @@
         <p>Pekerjaan memerlukan lokasi aktif. Aktifkan layanan lokasi lalu izinkan aplikasi ini.</p>
         <div class="reason" id="reason"></div>
         <ol>
-            <li>Buka Setelan Windows → Privasi &amp; keamanan → Lokasi.</li>
-            <li>Nyalakan "Layanan lokasi" dan izinkan aplikasi desktop mengaksesnya.</li>
-            <li>Klik "Coba lagi" di bawah.</li>
+            <li>Klik <b>"Buka Setelan Lokasi"</b> di bawah.</li>
+            <li>Nyalakan <b>"Layanan lokasi"</b> dan <b>"Biarkan aplikasi desktop mengakses lokasi Anda"</b>.</li>
+            <li>Kembali ke sini, klik <b>"Coba lagi"</b>.</li>
         </ol>
-        <button id="retry" type="button">Coba lagi</button>
+        <div class="actions">
+            <button id="open" type="button">Buka Setelan Lokasi</button>
+            <button id="retry" class="secondary" type="button">Coba lagi</button>
+        </div>
         <script>
             const reason = document.getElementById('reason')
+            document.getElementById('open').addEventListener('click', () => window.agent.openLocationSettings())
             document.getElementById('retry').addEventListener('click', () => window.agent.retry())
             window.agent.onState((s) => {
                 reason.textContent = s.lastError || ''

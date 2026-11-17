@@ -39,13 +39,19 @@
                 background: transparent;
                 color: inherit;
             }
+            #code {
+                letter-spacing: 0.4em;
+                text-align: center;
+                font-variant-numeric: tabular-nums;
+                font-size: 18px;
+            }
             button {
                 padding: 10px;
                 font-size: 14px;
                 font-weight: 600;
                 border: 0;
                 border-radius: 8px;
-                background: #2563eb;
+                background: #b45309;
                 color: #fff;
                 cursor: pointer;
             }
@@ -63,14 +69,26 @@
                 opacity: 0.65;
                 line-height: 1.4;
             }
+            .link {
+                background: none;
+                border: 0;
+                padding: 0;
+                margin-top: 10px;
+                font-size: 12px;
+                font-weight: 500;
+                color: #b45309;
+                cursor: pointer;
+            }
         </style>
     </head>
     <body>
         <div>
             <h1>Masuk Lacak SMB</h1>
-            <p class="sub">Agen ini membagikan lokasi Anda ke kantor selama Anda bekerja.</p>
+            <p class="sub" id="sub">Agen ini membagikan lokasi Anda ke kantor selama Anda bekerja.</p>
         </div>
-        <form id="form">
+
+        <!-- Langkah 1: kredensial -->
+        <form id="form-creds">
             <div style="margin-bottom: 10px">
                 <label for="u">Username</label>
                 <input id="u" autocapitalize="none" autocomplete="username" required />
@@ -79,33 +97,101 @@
                 <label for="p">Password</label>
                 <input id="p" type="password" autocomplete="current-password" required />
             </div>
-            <button id="btn" type="submit">Masuk</button>
+            <button id="btn-login" type="submit">Masuk</button>
         </form>
+
+        <!-- Langkah 2: kode 2FA (muncul kalau akun pakai authenticator) -->
+        <form id="form-2fa" hidden>
+            <div style="margin-bottom: 12px">
+                <label for="code">Kode 2FA (6 digit)</label>
+                <input
+                    id="code"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    maxlength="6"
+                    pattern="[0-9]{6}"
+                    placeholder="______"
+                />
+            </div>
+            <button id="btn-verify" type="submit">Verifikasi</button>
+            <button id="back" class="link" type="button">← Ganti akun</button>
+        </form>
+
         <div class="err" id="err"></div>
         <p class="note">
             Dengan masuk, lokasi perangkat (GPS/WiFi) dikirim ke kantor selama sesi berjalan.
             Lokasi harus aktif agar bisa bekerja.
         </p>
+
         <script>
-            const form = document.getElementById('form')
-            const btn = document.getElementById('btn')
+            const sub = document.getElementById('sub')
             const err = document.getElementById('err')
-            form.addEventListener('submit', async (e) => {
+            const formCreds = document.getElementById('form-creds')
+            const form2fa = document.getElementById('form-2fa')
+            const btnLogin = document.getElementById('btn-login')
+            const btnVerify = document.getElementById('btn-verify')
+            const codeInput = document.getElementById('code')
+            let challengeToken = null
+
+            function showCreds() {
+                challengeToken = null
+                err.textContent = ''
+                form2fa.hidden = true
+                formCreds.hidden = false
+                sub.textContent = 'Agen ini membagikan lokasi Anda ke kantor selama Anda bekerja.'
+                btnLogin.disabled = false
+                btnLogin.textContent = 'Masuk'
+            }
+
+            function showTwoFactor() {
+                err.textContent = ''
+                formCreds.hidden = true
+                form2fa.hidden = false
+                sub.textContent = 'Masukkan kode 6 digit dari aplikasi authenticator Anda.'
+                codeInput.value = ''
+                codeInput.focus()
+            }
+
+            formCreds.addEventListener('submit', async (e) => {
                 e.preventDefault()
                 err.textContent = ''
-                btn.disabled = true
-                btn.textContent = 'Memeriksa…'
+                btnLogin.disabled = true
+                btnLogin.textContent = 'Memeriksa…'
                 const res = await window.agent.login({
                     username: document.getElementById('u').value.trim().toLowerCase(),
                     password: document.getElementById('p').value,
                 })
-                if (!res.ok) {
-                    err.textContent = res.message || 'Login gagal'
-                    btn.disabled = false
-                    btn.textContent = 'Masuk'
+                if (res.ok) return // main menutup jendela ini & mulai memantau
+                if (res.twoFactor) {
+                    challengeToken = res.challengeToken
+                    showTwoFactor()
+                    return
                 }
-                // Sukses: main menutup jendela ini & mulai memantau.
+                err.textContent = res.message || 'Login gagal'
+                btnLogin.disabled = false
+                btnLogin.textContent = 'Masuk'
             })
+
+            form2fa.addEventListener('submit', async (e) => {
+                e.preventDefault()
+                const code = codeInput.value.trim()
+                if (code.length !== 6) {
+                    err.textContent = 'Masukkan 6 digit kode.'
+                    return
+                }
+                err.textContent = ''
+                btnVerify.disabled = true
+                btnVerify.textContent = 'Memeriksa…'
+                const res = await window.agent.verifyTwoFactor({ challengeToken, code })
+                if (res.ok) return // sukses: main menutup jendela
+                err.textContent = res.message || 'Kode 2FA salah'
+                codeInput.value = ''
+                codeInput.focus()
+                btnVerify.disabled = false
+                btnVerify.textContent = 'Verifikasi'
+            })
+
+            document.getElementById('back').addEventListener('click', showCreds)
         </script>
     </body>
 </html>

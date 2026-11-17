@@ -17,6 +17,8 @@ const fs = require('node:fs')
 const DEFAULTS = {
     apiBase: 'https://lacaklive.smbservice.xyz/api/v1',
     gatewayUrl: 'https://lacaklive.smbservice.xyz',
+    // Dashboard web yang ditampilkan penuh di dalam aplikasi (auto-login dari token agen).
+    dashboardUrl: 'https://lacaklive.smbservice.xyz',
     // Jeda minimum kirim lokasi (server juga membatasi ~15 dtk).
     intervalMs: 25_000,
 }
@@ -42,6 +44,7 @@ function settings() {
     return {
         apiBase: process.env.AGENT_API_BASE || file.apiBase || DEFAULTS.apiBase,
         gatewayUrl: process.env.AGENT_GATEWAY_URL || file.gatewayUrl || DEFAULTS.gatewayUrl,
+        dashboardUrl: process.env.AGENT_DASHBOARD_URL || file.dashboardUrl || DEFAULTS.dashboardUrl,
         intervalMs: Number(process.env.AGENT_INTERVAL_MS || file.intervalMs || DEFAULTS.intervalMs),
     }
 }

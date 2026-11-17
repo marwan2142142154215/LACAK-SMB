@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="id">
+    <head>
+        <meta charset="utf-8" />
+        <title>Lacak SMB Agent</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+                font-family: system-ui, "Segoe UI", sans-serif;
+            }
+            body {
+                margin: 0;
+                padding: 24px 24px;
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+            h1 {
+                font-size: 17px;
+                margin: 0;
+            }
+            .badge {
+                align-self: flex-start;
+                display: inline-flex;
+                align-items: center;
+                gap: 7px;
+                border-radius: 999px;
+                padding: 4px 12px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .badge .dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: currentColor;
+            }
+            .badge.ok {
+                color: #15803d;
+                background: rgba(22, 163, 74, 0.14);
+            }
+            .badge.err {
+                color: #b91c1c;
+                background: rgba(220, 38, 38, 0.14);
+            }
+            .badge.off {
+                color: #92600a;
+                background: rgba(180, 83, 9, 0.14);
+            }
+            dl {
+                margin: 0;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+            dl > div {
+                display: flex;
+                justify-content: space-between;
+                gap: 12px;
+                font-size: 13px;
+                border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+                padding-bottom: 8px;
+            }
+            dt {
+                opacity: 0.65;
+            }
+            dd {
+                margin: 0;
+                font-weight: 500;
+                text-align: right;
+                max-width: 60%;
+                overflow-wrap: anywhere;
+            }
+            .actions {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                margin-top: 4px;
+            }
+            button {
+                padding: 10px;
+                font-size: 14px;
+                font-weight: 600;
+                border: 0;
+                border-radius: 8px;
+                background: #b45309;
+                color: #fff;
+                cursor: pointer;
+            }
+            button.secondary {
+                background: transparent;
+                color: inherit;
+                border: 1px solid rgba(128, 128, 128, 0.5);
+                font-weight: 500;
+            }
+            .note {
+                font-size: 11px;
+                opacity: 0.6;
+                line-height: 1.4;
+                margin: 0;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Lacak SMB Agent</h1>
+        <span class="badge off" id="badge"><span class="dot"></span><span id="badgeText">Menunggu</span></span>
+
+        <dl>
+            <div><dt>Pengguna</dt><dd id="user">—</dd></div>
+            <div><dt>Status</dt><dd id="statusText">—</dd></div>
+            <div><dt>Lokasi terakhir</dt><dd id="lastFix">—</dd></div>
+        </dl>
+
+        <div class="actions">
+            <button id="settings" hidden>Buka Setelan Lokasi</button>
+            <button id="logout" class="secondary">Keluar (logout)</button>
+        </div>
+        <p class="note">Agen tetap berjalan di tray setelah jendela ini ditutup. Untuk mematikan sepenuhnya: klik kanan ikon tray → Keluar aplikasi.</p>
+
+        <script>
+            const badge = document.getElementById('badge')
+            const badgeText = document.getElementById('badgeText')
+            const settingsBtn = document.getElementById('settings')
+
+            function render(s) {
+                document.getElementById('user').textContent = s.user?.name || '—'
+                document.getElementById('lastFix').textContent = s.lastFixAt
+                    ? new Date(s.lastFixAt).toLocaleTimeString('id-ID')
+                    : 'Belum ada'
+
+                let kind = 'off'
+                let text = 'Menghubungkan…'
+                if (!s.signedIn) {
+                    kind = 'off'
+                    text = 'Belum login'
+                } else if (s.lastError) {
+                    kind = 'err'
+                    text = s.lastError
+                } else if (s.locating) {
+                    kind = 'ok'
+                    text = 'Memantau lokasi'
+                }
+                document.getElementById('statusText').textContent = text
+                badge.className = 'badge ' + kind
+                badgeText.textContent = { ok: 'Aktif memantau', err: 'Bermasalah', off: 'Menunggu' }[kind]
+                settingsBtn.hidden = kind !== 'err'
+            }
+
+            window.agent.onState(render)
+            window.agent.getState().then(render)
+            document.getElementById('logout').addEventListener('click', () => window.agent.logout())
+            settingsBtn.addEventListener('click', () => window.agent.openLocationSettings())
+        </script>
+    </body>
+</html>
