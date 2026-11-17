@@ -181,7 +181,7 @@ async function copyText(text, message) {
 </script>
 
 <template>
-    <div class="grid min-h-dvh bg-base-950 lg:grid-cols-[minmax(0,1.2fr)_minmax(26rem,1fr)]">
+    <div class="grid min-h-dvh lg:grid-cols-[minmax(0,1.2fr)_minmax(26rem,1fr)]">
         <!-- Panel instrumen: radar BLE, sama seperti yang dilihat admin setelah masuk -->
         <section
             class="relative isolate flex flex-col overflow-hidden border-b border-base-800 bg-base-900 px-6 pt-6 pb-8 sm:px-10 lg:border-r lg:border-b-0 lg:py-10"

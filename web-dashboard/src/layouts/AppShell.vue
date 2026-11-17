@@ -301,7 +301,7 @@ async function handleLogout() {
 </script>
 
 <template>
-    <div class="flex min-h-dvh bg-base-950">
+    <div class="flex min-h-dvh">
         <!-- Overlay gelap di belakang drawer saat terbuka (mobile) -->
         <div v-if="mobileNavOpen && !isEmbedded" class="fixed inset-0 z-40 bg-base-950/80 backdrop-blur-sm lg:hidden" @click="mobileNavOpen = false" />
 
@@ -315,7 +315,7 @@ async function handleLogout() {
         -->
         <aside
             v-if="!isEmbedded"
-            class="fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-base-800 bg-base-900 transition-transform duration-200 lg:sticky lg:top-0 lg:h-dvh lg:!translate-x-0"
+            class="app-aside fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-base-800 transition-transform duration-200 lg:sticky lg:top-0 lg:h-dvh lg:!translate-x-0"
             :class="mobileNavOpen ? 'translate-x-0' : '-translate-x-full'"
         >
             <div class="flex min-h-0 flex-1 flex-col">
@@ -324,9 +324,17 @@ async function handleLogout() {
                         :to="{ name: 'radar' }"
                         class="flex items-center gap-3 rounded-xl focus-visible:outline-2 focus-visible:outline-accent-500"
                     >
-                        <!-- Logo: beacon putih di atas biru -- sinyal yang sedang dipantau -->
-                        <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-500 shadow-sm" aria-hidden="true">
-                            <span class="beacon bg-white!" />
+                        <!-- Logo: radar sederhana di kotak hijau -->
+                        <span
+                            class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-500 text-white shadow-(--shadow-card)"
+                            aria-hidden="true"
+                        >
+                            <svg viewBox="0 0 24 24" class="size-[21px]">
+                                <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-opacity="0.45" stroke-width="1.4" />
+                                <circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" stroke-opacity="0.7" stroke-width="1.4" />
+                                <line x1="12" y1="12" x2="19.2" y2="6.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+                                <circle cx="12" cy="12" r="1.8" fill="currentColor" />
+                            </svg>
                         </span>
                         <span class="leading-tight">
                             <span class="block font-display text-[15px] font-semibold tracking-[-0.01em] text-base-50">Lacak SMB</span>
@@ -345,7 +353,7 @@ async function handleLogout() {
 
                 <nav class="flex-1 space-y-6 overflow-y-auto px-3 pt-3 pb-4" aria-label="Menu utama">
                     <div v-for="group in navGroups" :key="group.label">
-                        <p class="mb-1 px-3 text-xs font-medium text-base-500">{{ group.label }}</p>
+                        <p class="mb-1 px-3 text-[11px] font-semibold tracking-wider uppercase text-base-500">{{ group.label }}</p>
                         <!--
                             Pakai exact-active-class (bukan active-class): active-class
                             bawaan Vue Router mencocokkan prefix path, jadi link Radar
@@ -588,10 +596,44 @@ async function handleLogout() {
 </template>
 
 <style scoped>
-/* Menu aktif: lapisan biru tipis, ikon biru -- sama di tema terang & gelap */
+/*
+ * Sidebar selalu slate gelap, di tema terang maupun gelap -- jangkar visual yang
+ * tenang. Variabel base/aksen ditimpa lokal supaya kelas nav yang sudah ada
+ * (text-base-400, hover:bg-base-850, dst) otomatis tampil terang di atas slate,
+ * tanpa ubah markup.
+ */
+.app-aside {
+    background-image: linear-gradient(180deg, #1b1b1e, #0c0c0d);
+    --color-base-900: #0d0d0f;
+    --color-base-850: rgb(255 255 255 / 0.06);
+    --color-base-800: rgb(255 255 255 / 0.10);
+    --color-base-700: rgb(255 255 255 / 0.14);
+    --color-base-500: rgb(255 255 255 / 0.50);
+    --color-base-400: rgb(255 255 255 / 0.70);
+    --color-base-300: rgb(255 255 255 / 0.82);
+    --color-base-100: #ffffff;
+    --color-base-50: #ffffff;
+    --color-accent-500: #fbbf24;
+    --color-accent-400: #fcd34d;
+    --color-accent-300: #fde68a;
+}
+
+/* Menu aktif: lapisan putih tipis + rail amber di tepi kiri, ikon amber */
 .nav-link.is-active {
-    background-color: color-mix(in oklab, var(--color-accent-500) 9%, transparent);
-    color: var(--color-base-50);
+    background-color: rgb(255 255 255 / 0.1);
+    color: #ffffff;
+}
+
+.nav-link.is-active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 1.15rem;
+    width: 3px;
+    transform: translateY(-50%);
+    border-radius: 9999px;
+    background-color: var(--color-accent-500);
 }
 
 .nav-link.is-active .nav-icon {

@@ -10,13 +10,13 @@ defineProps({
 </script>
 
 <template>
-    <section class="overflow-hidden rounded-2xl border border-base-800 bg-base-900 shadow-(--shadow-card)">
+    <section class="panel-card overflow-hidden rounded-lg border border-base-800 shadow-(--shadow-card)">
         <header
             v-if="title || $slots.actions"
-            class="flex flex-wrap items-center justify-between gap-3 border-b border-base-800 px-5 py-4"
+            class="flex flex-wrap items-center justify-between gap-3 border-b border-base-800 px-5 py-3.5"
         >
             <div class="min-w-0">
-                <h2 v-if="title" class="flex items-center gap-2 font-display text-[15px] font-semibold tracking-[-0.01em] text-base-50">
+                <h2 v-if="title" class="flex items-center gap-2 font-display text-[15px] font-semibold tracking-[-0.01em] text-base-100">
                     {{ title }}
                     <span
                         v-if="count != null"

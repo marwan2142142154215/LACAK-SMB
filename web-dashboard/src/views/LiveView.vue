@@ -541,8 +541,9 @@ function focusStep(direction) {
 // Lebih dari 4 staf live -> semua tampil sebagai ubin kecil (klik = popup
 // besar). Pilihan 1/2/4 layar hanya berlaku saat yang live 4 orang atau kurang.
 const COMPACT_THRESHOLD = 4
-// Maksimal staf per halaman = maksimal room yang dibuka sekaligus untuk dinding (satu room per site + peran).
-const COMPACT_PAGE_SIZE = 12
+// Dinding pantau padat: sampai 50 staf per halaman (gaya ruang kontrol). Ini juga batas
+// room yang dibuka sekaligus -- 50 video serentak berat, jadi sisanya ke halaman berikut.
+const COMPACT_PAGE_SIZE = 50
 const compact = computed(() => wallMembers.value.length > COMPACT_THRESHOLD)
 const pageSize = computed(() => (compact.value ? COMPACT_PAGE_SIZE : layout.value))
 const pageCount = computed(() => pageCountOf(wallMembers.value.length, pageSize.value))
@@ -606,7 +607,9 @@ watch(
     },
 )
 const wallGridClass = computed(() => {
-    if (compact.value) return 'grid-cols-2 sm:grid-cols-3 2xl:grid-cols-4'
+    // Dinding padat: makin lebar layar, makin banyak kolom -- di monitor ruang kontrol
+    // (layar penuh) ~50 ubin muat sebagai satu dinding.
+    if (compact.value) return 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 min-[1920px]:grid-cols-7'
     return layout.value === 4 ? '2xl:grid-cols-2' : 'grid-cols-1'
 })
 watch(compact, () => (page.value = 0))

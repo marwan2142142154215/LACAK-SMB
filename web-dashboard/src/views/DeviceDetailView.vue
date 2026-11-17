@@ -251,7 +251,7 @@ function renderMap(loc) {
     const accuracy = Number(loc.accuracy_meters)
     if (loc.accuracy_meters != null && Number.isFinite(accuracy) && accuracy > 0) {
         if (!accuracyCircle) {
-            accuracyCircle = L.circle([lat, lng], { radius: accuracy, color: '#7dd3c0', weight: 1, fillOpacity: 0.12, interactive: false }).addTo(mapInstance)
+            accuracyCircle = L.circle([lat, lng], { radius: accuracy, color: '#f59e0b', weight: 1, fillOpacity: 0.12, interactive: false }).addTo(mapInstance)
         } else {
             accuracyCircle.setLatLng([lat, lng]).setRadius(accuracy)
         }
@@ -583,7 +583,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* Tile: terang di tema terang, dibalik gelap di tema gelap supaya menyatu panel */
 .map :deep(.leaflet-tile-pane) {
+    filter: saturate(0.9) brightness(1.02);
+}
+
+:global(:root[data-theme='dark']) .map :deep(.leaflet-tile-pane) {
     filter: invert(1) hue-rotate(180deg) brightness(0.82) contrast(0.92) saturate(0.6);
 }
 .map :deep(.leaflet-container) {

@@ -12,8 +12,9 @@
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Lacak SMB" />
-        <meta name="theme-color" content="#f6f7f9" />
-        <!-- Tema dipasang sebelum CSS dimuat supaya tidak berkedip (lihat src/composables/useTheme.js) -->
+        <meta name="theme-color" content="#f7f7f8" />
+        <!-- Tema dipasang sebelum CSS dimuat supaya tidak berkedip (lihat src/composables/useTheme.js).
+             Bawaan = terang (bersih & minimalis); gelap hanya bila user memilihnya. -->
         <script>
             ;(function () {
                 var theme = 'light'
@@ -21,13 +22,13 @@
                     theme = localStorage.getItem('lacak_theme') === 'dark' ? 'dark' : 'light'
                 } catch (e) {}
                 document.documentElement.dataset.theme = theme
-                if (theme === 'dark') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#09090b')
+                if (theme === 'dark') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0a0a0b')
             })()
         </script>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
-            href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Onest:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
             rel="stylesheet"
         />
         <title>Lacak Master — Dashboard</title>

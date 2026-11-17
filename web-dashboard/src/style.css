@@ -1,69 +1,76 @@
 @import 'tailwindcss';
 
 /*
- * Palet & token desain "Lacak SMB" -- arah modern & bersih: kanvas abu sangat
- * muda, kartu putih bergaris tipis, teks hampir hitam, dan SATU aksen biru
- * tegas untuk tindakan utama & penanda aktif. Huruf Geist untuk judul & teks,
- * Geist Mono hanya untuk angka. Semua warna didefinisikan sebagai CSS
- * variable di sini, dipakai lewat @theme supaya kelas Tailwind (bg-base-900,
- * text-accent-400, dst) ikut konsisten di seluruh aplikasi.
+ * Palet & token desain "Lacak SMB" -- konsol operasi modern: netral abu zinc
+ * (tanpa sedikit pun undertone biru), SATU aksen amber/emas tegas yang dipakai
+ * HEMAT (hanya tindakan utama, status aktif, angka penting), dan warna status
+ * yang tenang. Kedalaman datang dari garis rambut + bayangan halus, bukan warna.
+ * Tanpa warna biru di mana pun. Semua warna didefinisikan sebagai CSS variable
+ * di sini, dipakai lewat @theme supaya kelas Tailwind (bg-base-900,
+ * text-accent-400, dst) konsisten di seluruh aplikasi.
  *
  * Skala base: 950 = latar halaman, 900 = permukaan kartu, 50 = teks paling
  * tegas. Tema terang (bawaan) & gelap memakai nama yang sama.
  */
 @theme {
-    --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
-    --font-display: 'Geist', ui-sans-serif, system-ui, sans-serif;
-    --font-mono: 'Geist Mono', ui-monospace, monospace;
+    /* Gaya rumah "Buku Komisi" (revenue): Onest untuk teks, Familjen Grotesk untuk
+       judul, IBM Plex Mono untuk angka. Modern, bersih, tenang. */
+    --font-sans: 'Onest', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Familjen Grotesk', 'Onest', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
     --radius-md: 0.5rem;
     --radius-lg: 0.625rem;
     --radius-xl: 0.75rem;
     --radius-2xl: 1rem;
 
-    /* Tema gelap: grafit netral */
-    --color-base-950: #09090b;
-    --color-base-900: #111113;
-    --color-base-850: #18181b;
-    --color-base-800: #222226;
-    --color-base-700: #2e2e33;
-    --color-base-600: #3f3f46;
-    --color-base-500: #71717a;
-    --color-base-400: #a1a1aa;
-    --color-base-300: #c4c4cb;
-    --color-base-200: #dcdce1;
-    --color-base-100: #ececef;
+    /* Tema gelap (saat dipilih): zinc netral near-black, teks abu terang */
+    --color-base-950: #0a0a0b; /* latar halaman */
+    --color-base-900: #141416; /* permukaan kartu */
+    --color-base-850: #1a1a1d; /* subtle: hover, header tabel */
+    --color-base-800: #26262a; /* garis rambut */
+    --color-base-700: #323237; /* garis tegas */
+    --color-base-600: #46464d;
+    --color-base-500: #8e8e97; /* teks redup */
+    --color-base-400: #adadb5;
+    --color-base-300: #c8c8cf;
+    --color-base-200: #e1e1e5;
+    --color-base-100: #efeff1; /* teks */
     --color-base-50: #fafafa;
 
-    /* Aksen = biru tegas */
-    --color-accent-600: #3b6cf6;
-    --color-accent-500: #4f7dff;
-    --color-accent-400: #7aa0ff;
-    --color-accent-300: #a6c0ff;
+    /* Aksen = amber/emas (dicerahkan untuk latar gelap). Dipakai hemat. */
+    --color-accent-600: #d97706;
+    --color-accent-500: #f59e0b;
+    --color-accent-400: #fbbf24;
+    --color-accent-300: #fcd34d;
 
-    /* Pendamping = hijau-toska (nama lama "copper" dipertahankan) */
-    --color-copper-600: #0d9488;
-    --color-copper-500: #14b8a6;
-    --color-copper-400: #2dd4bf;
+    /* Pendamping = ungu (sekunder, jarang). Nama lama "copper" dipertahankan. */
+    --color-copper-600: #9333ea;
+    --color-copper-500: #a855f7;
+    --color-copper-400: #c084fc;
 
-    --color-danger-600: #dc2626;
-    --color-danger-500: #ef4444;
-    --color-danger-400: #f87171;
+    --color-danger-600: #e5484d;
+    --color-danger-500: #f36d6d;
+    --color-danger-400: #f89a9a;
 
-    --color-warning-500: #e0a12e;
-    --color-warning-400: #f5bd4f;
+    /* Peringatan = oranye, dibedakan dari aksen amber */
+    --color-warning-500: #fb923c;
+    --color-warning-400: #fdba74;
 
-    /* Status kerja Live Kerja (lihat src/lib/workStatus.js) */
+    /* Status kerja Live Kerja (lihat src/lib/workStatus.js) -- semantik, tanpa biru */
     --color-st-working: #34d399;
-    --color-st-idle: #facc15;
-    --color-st-break: #38bdf8;
+    --color-st-idle: #fb923c;
+    --color-st-break: #a1a1aa;
     --color-st-disconnected: #f87171;
-    --color-st-screen: #fb923c;
-    --color-st-camera: #a78bfa;
-    --color-st-online: #2dd4bf;
+    --color-st-screen: #fdba74;
+    --color-st-camera: #c084fc;
+    --color-st-online: #34d399;
 
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
-    --shadow-raised: 0 20px 48px -16px rgb(0 0 0 / 0.7);
+    /* Bayangan halus, kedalaman tenang */
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.4);
+    --shadow-raised: 0 8px 24px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.4);
+    /* Teks di atas isian aksen amber terang: tinta gelap (kontras) */
+    --color-on-accent: #1c1600;
 }
 
 /*
@@ -74,45 +81,51 @@
 :root[data-theme='light'] {
     color-scheme: light;
 
-    --color-base-950: #f6f7f9;
-    --color-base-900: #ffffff;
-    --color-base-850: #f3f4f6;
-    --color-base-800: #e8eaee;
-    --color-base-700: #dcdfe5;
-    --color-base-600: #b8bdc7;
-    --color-base-500: #6b7280;
-    --color-base-400: #525866;
-    --color-base-300: #3b404b;
-    --color-base-200: #272b34;
-    --color-base-100: #16191f;
-    --color-base-50: #0a0b0d;
+    /* Netral abu zinc: kanvas abu sangat muda, kartu putih, teks hampir hitam */
+    --color-base-950: #f7f7f8; /* canvas */
+    --color-base-900: #ffffff; /* surface/kartu */
+    --color-base-850: #f1f1f3; /* subtle: header tabel, hover */
+    --color-base-800: #e4e4e7; /* line */
+    --color-base-700: #d4d4d8; /* line-strong */
+    --color-base-600: #a1a1aa;
+    --color-base-500: #5f5f67; /* muted (>=4.5:1 di putih) */
+    --color-base-400: #46464d;
+    --color-base-300: #343438;
+    --color-base-200: #1f1f23;
+    --color-base-100: #121214; /* text */
+    --color-base-50: #09090b;
 
-    --color-accent-600: #1d48d8;
-    --color-accent-500: #2b5cf0;
-    --color-accent-400: #1f4fd6;
-    --color-accent-300: #1a43b8;
+    /* Primary = amber tua/emas (digelapkan supaya kontras >= 4.5:1 di atas putih) */
+    --color-accent-600: #854d0e;
+    --color-accent-500: #a16207;
+    --color-accent-400: #a16207;
+    --color-accent-300: #854d0e;
 
-    --color-copper-600: #0b5f58;
-    --color-copper-500: #0f766e;
-    --color-copper-400: #0d6b64;
+    /* Pendamping = ungu */
+    --color-copper-600: #6d28d9;
+    --color-copper-500: #7c3aed;
+    --color-copper-400: #7c3aed;
 
-    --color-danger-600: #b91c1c;
-    --color-danger-500: #dc2626;
-    --color-danger-400: #c42121;
+    --color-danger-600: #991b13;
+    --color-danger-500: #b42318;
+    --color-danger-400: #b42318;
 
-    --color-warning-500: #b7790b;
-    --color-warning-400: #8f5d00;
+    /* Peringatan = oranye, dibedakan dari aksen amber */
+    --color-warning-500: #c2410c;
+    --color-warning-400: #9a3412;
 
     --color-st-working: #047857;
-    --color-st-idle: #a16207;
-    --color-st-break: #0369a1;
-    --color-st-disconnected: #c81e1e;
+    --color-st-idle: #b45309;
+    --color-st-break: #52525b;
+    --color-st-disconnected: #b42318;
     --color-st-screen: #c2410c;
-    --color-st-camera: #6d28d9;
-    --color-st-online: #0f766e;
+    --color-st-camera: #7c3aed;
+    --color-st-online: #047857;
 
-    --shadow-card: 0 1px 2px rgb(10 11 13 / 0.04);
-    --shadow-raised: 0 24px 56px -24px rgb(10 11 13 / 0.28);
+    --shadow-card: 0 1px 2px rgb(24 24 27 / 0.05), 0 1px 3px rgb(24 24 27 / 0.08);
+    --shadow-raised: 0 4px 16px rgb(24 24 27 / 0.1), 0 2px 4px rgb(24 24 27 / 0.06);
+    /* Teks di atas isian amber tua: putih */
+    --color-on-accent: #ffffff;
 }
 
 @layer base {
@@ -124,9 +137,16 @@
         background-color: var(--color-base-950);
         color: var(--color-base-100);
         font-family: var(--font-sans);
-        font-feature-settings: 'ss01';
+        font-variant-numeric: tabular-nums;
         -webkit-font-smoothing: antialiased;
         text-rendering: optimizeLegibility;
+    }
+
+    /* Judul pakai display grotesk, tracking rapat (gaya revenue) */
+    h1,
+    h2,
+    h3 {
+        letter-spacing: -0.01em;
     }
 
     ::selection {
@@ -147,6 +167,11 @@
  * deretan class Tailwind yang sama (dan diam-diam mulai berbeda).
  */
 @layer components {
+    /* Kartu: permukaan putih bersih (gaya revenue), kedalaman dari bayangan halus saja */
+    .panel-card {
+        background-color: var(--color-base-900);
+    }
+
     /* Label kecil di atas angka/judul bagian: huruf biasa, abu tenang */
     .eyebrow {
         font-family: var(--font-sans);
@@ -197,6 +222,24 @@
         }
     }
 
+    /* Garis sapuan radar pada logo -- isyarat "sedang memantau". */
+    .logo-sweep {
+        transform-origin: 12px 12px;
+        animation: radar-sweep 4s linear infinite;
+    }
+
+    @keyframes radar-sweep {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .logo-sweep {
+            animation: none;
+        }
+    }
+
     .field-label {
         display: block;
         margin-bottom: 0.4rem;
@@ -211,7 +254,7 @@
         border: 1px solid var(--color-base-700);
         background-color: var(--color-base-900);
         padding: 0.6rem 0.85rem;
-        box-shadow: 0 1px 2px rgb(10 11 13 / 0.03);
+        box-shadow: 0 1px 2px rgb(16 38 31 / 0.05);
         font-size: 0.875rem;
         color: var(--color-base-50);
         outline: none;
@@ -275,9 +318,9 @@
     }
 
     .data-table th {
-        padding: 0.75rem 1.25rem;
+        padding: 0.7rem 1.25rem;
         border-bottom: 1px solid var(--color-base-800);
-        background-color: color-mix(in oklab, var(--color-base-850) 60%, transparent);
+        background-color: var(--color-base-850);
         font-size: 0.75rem;
         font-weight: 500;
         color: var(--color-base-500);
@@ -307,7 +350,7 @@
     }
 
     .data-table tbody tr:hover {
-        background-color: color-mix(in oklab, var(--color-base-850) 70%, transparent);
+        background-color: var(--color-base-850);
     }
 
     /* Pilihan bersegmen (mis. Tanpa / Per site / Per peran): satu pilihan aktif, terangkat. */
