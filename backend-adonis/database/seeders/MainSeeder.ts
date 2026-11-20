@@ -19,34 +19,38 @@ type Account = {
 }
 
 /**
- * Data awal sistem (`node ace db:seed`): peran & izin, akun super_admin awal,
- * dan akun layanan. Aman dijalankan ulang -- akun manusia yang sudah ada TIDAK
- * disentuh (reseed tidak boleh me-reset password/2FA); akun layanan selalu
- * disamakan. Akun dummy server uji: `node ace demo:seed-accounts`.
+ * super_admin awal dari .env (INITIAL_SUPERADMIN_USERNAME + INITIAL_SUPERADMIN_EMAIL, password
+ * opsional lewat INITIAL_SUPERADMIN_PASSWORD). Salah satu kosong = tidak membuat akun apa pun.
+ */
+function initialSuperAdmin(): Account | null {
+    const username = env.get('INITIAL_SUPERADMIN_USERNAME')?.trim()
+    const email = env.get('INITIAL_SUPERADMIN_EMAIL')?.trim()
+    if (!username || !email) return null
+    return {
+        username,
+        name: username,
+        email,
+        password: env.get('INITIAL_SUPERADMIN_PASSWORD')?.release(),
+        isActive: true,
+        twoFactorConfirmed: false,
+        roles: ['super_admin'],
+    }
+}
+
+/**
+ * Data awal sistem (`node ace db:seed`): peran & izin, akun layanan (system-automation,
+ * telegram-bot), dan -- hanya kalau diisi di .env -- satu super_admin awal. Aman dijalankan
+ * ulang: akun manusia yang sudah ada TIDAK disentuh (reseed tidak boleh me-reset password/2FA);
+ * akun layanan selalu disamakan. Akun dummy server uji: `node ace demo:seed-accounts`.
  */
 export default class MainSeeder extends BaseSeeder {
     async run() {
         await seedRolesAndPermissions(this.client)
 
-        // super_admin lintas site; login pertama memaksa enrollment 2FA.
-        await this.createIfMissing({
-            username: 'marwanmaster',
-            name: 'Marwan Master',
-            email: 'marwanyahabibi@gmail.com',
-            password: env.get('INITIAL_SUPERADMIN_PASSWORD')?.release(),
-            isActive: true,
-            twoFactorConfirmed: false,
-            roles: ['super_admin'],
-        })
-        await this.createIfMissing({
-            username: 'fortunesmb',
-            name: 'Fortune SMB',
-            email: 'fortunesmb@lacaksmbbot.com',
-            password: env.get('FORTUNESMB_SUPERADMIN_PASSWORD')?.release(),
-            isActive: true,
-            twoFactorConfirmed: false,
-            roles: ['super_admin'],
-        })
+        // super_admin awal HANYA kalau diminta lewat .env (instalasi baru yang belum punya satu pun);
+        // tidak ada akun manusia yang ditulis di kode. Login pertama memaksa enrollment 2FA.
+        const initial = initialSuperAdmin()
+        if (initial) await this.createIfMissing(initial)
 
         // Pelaku aksi otomatis server (mis. auto-lock geofence) -- tidak bisa login.
         await this.upsertServiceAccount({

@@ -165,7 +165,7 @@ Status (25 Okt, ±06:15 UTC): **peralihan berjalan di produksi.**
   - Database lama: migrasi hanya memeriksa tabel `migrations` Laravel berisi ke-44 migrasi itu, lalu dicatat sudah jalan di `adonis_schema`. Kalau ada yang belum, migrasi berhenti dan menyebutkan namanya.
   - Diuji: skema dari `baseline.sql` sama dengan hasil `php artisan migrate` (beda hanya penulisan CHECK constraint oleh Postgres), dan 213/213 tes Adonis lolos di database yang dibuat dari nol.
   - Perubahan skema berikutnya = migrasi Lucid baru (`node ace make:migration`).
-- Seeder: `node ace db:seed` (`database/seeders/MainSeeder.ts`: peran & izin, `marwanmaster`, `fortunesmb`, `system-automation`, `telegram-bot`, `root` hanya di development). Akun dummy server uji: `node ace demo:seed-accounts` (padanan `DemoAccountsSeeder`).
+- Seeder: `node ace db:seed` (`database/seeders/MainSeeder.ts`: peran & izin, `system-automation`, `telegram-bot`, super_admin awal hanya bila `INITIAL_SUPERADMIN_USERNAME` + `INITIAL_SUPERADMIN_EMAIL` diisi di .env, `root` hanya di development). Akun dummy server uji: `node ace demo:seed-accounts` (padanan `DemoAccountsSeeder`).
 - File lokal: `STORAGE_PATH` (path absolut, default server `/var/www/lacak/storage/app/private`); `LARAVEL_STORAGE_PATH` masih dibaca sebagai nama lama.
 - Nama env `LARAVEL_APP_KEY`/`LARAVEL_APP_URL` sengaja dipertahankan: token, 2FA, dan URL bertanda tangan lama tetap berlaku.
 - `server-gui` menjalankan `backend-adonis` (dev, queue:work, scheduler:run) di port 8000.

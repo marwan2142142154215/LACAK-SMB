@@ -104,8 +104,10 @@ export default await Env.create(new URL('../', import.meta.url), {
     // Redis: cache, rate limit, dan antrean (build APK) -- lihat config/redis.ts
     // Seeder (node ace db:seed / demo:seed-accounts): password awal akun.
     // Kosong = dibuat acak dan dicetak sekali di terminal.
+    // super_admin awal untuk instalasi baru: butuh USERNAME + EMAIL; tanpa keduanya seeder tidak membuat akun manusia.
+    INITIAL_SUPERADMIN_USERNAME: Env.schema.string.optional(),
+    INITIAL_SUPERADMIN_EMAIL: Env.schema.string.optional(),
     INITIAL_SUPERADMIN_PASSWORD: Env.schema.secret.optional(),
-    FORTUNESMB_SUPERADMIN_PASSWORD: Env.schema.secret.optional(),
     DEMO_ACCOUNTS_PASSWORD: Env.schema.secret.optional(),
     ROOT_PASSWORD: Env.schema.secret.optional(),
 
