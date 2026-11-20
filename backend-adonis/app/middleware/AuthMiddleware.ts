@@ -4,6 +4,7 @@ import type { NextFn } from '@adonisjs/core/types/http'
 import PersonalAccessToken from '#models/PersonalAccessToken'
 import User from '#models/User'
 import UnauthenticatedException from '#exceptions/UnauthenticatedException'
+import { clearAccessCache } from '#services/Access'
 import { ipRejectionBody, ipRejectionFor } from '#services/IpWhitelist'
 import { LARAVEL_USER_MORPH } from '#services/laravel/index'
 import { parseSanctumToken, sanctumHashMatches } from '#services/laravel/SanctumToken'
@@ -48,15 +49,28 @@ export default class AuthMiddleware {
             return ctx.response.status(403).send(ipRejectionBody(rejection, ctx))
         }
 
-        // Sanctum mencatat last_used_at di setiap request terautentikasi.
-        accessToken.lastUsedAt = DateTime.now()
-        await accessToken.save()
+        // Sanctum mencatat last_used_at di setiap request terautentikasi. Dashboard memanggil API puluhan
+        // kali per menit per user, jadi ditulis paling sering sekali per menit (bukan satu UPDATE per request).
+        const lastUsedMs = accessToken.lastUsedAt?.toMillis() ?? 0
+        if (Date.now() - lastUsedMs >= LAST_USED_WRITE_INTERVAL_MS) {
+            accessToken.lastUsedAt = DateTime.now()
+            await accessToken.save()
+        }
 
         ctx.authUser = user
         ctx.accessToken = accessToken
-        return next()
+        try {
+            return await next()
+        } finally {
+            // Hak akses di-cache singkat (lihat Access.ts); setelah aksi yang mengubah data -- berhasil
+            // atau tidak -- cache dibuang supaya perubahan peran/izin/akses site langsung berlaku.
+            if (!READ_ONLY_METHODS.has(ctx.request.method())) clearAccessCache()
+        }
     }
 }
+
+const LAST_USED_WRITE_INTERVAL_MS = 60_000
+const READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 declare module '@adonisjs/core/http' {
     interface HttpContext {

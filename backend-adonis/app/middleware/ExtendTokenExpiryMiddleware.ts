@@ -16,10 +16,18 @@ export default class ExtendTokenExpiryMiddleware {
 
         const token = ctx.accessToken
         if (token && token.expiresAt) {
-            token.expiresAt = DateTime.now().plus({ hours: TOKEN_IDLE_HOURS })
-            await token.save()
+            // Digeser paling sering sekali per menit: batas 2 jam bergeser 60 detik paling banyak, tetapi
+            // tiap request tidak lagi memicu UPDATE.
+            const now = DateTime.now()
+            const extended = now.plus({ hours: TOKEN_IDLE_HOURS })
+            if (extended.toMillis() - token.expiresAt.toMillis() >= EXTEND_WRITE_INTERVAL_MS) {
+                token.expiresAt = extended
+                await token.save()
+            }
         }
 
         return output
     }
 }
+
+const EXTEND_WRITE_INTERVAL_MS = 60_000
