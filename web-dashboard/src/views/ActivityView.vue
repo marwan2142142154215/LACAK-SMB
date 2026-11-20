@@ -11,6 +11,7 @@ import { useToast } from '@/composables/useToast'
 import { CHART_GROUPS, buildSegments, clipSegments, groupTotals } from '@/lib/activityTimeline'
 import api from '@/lib/api'
 import { FACE_LOG_MIN_MS, faceGaps } from '@/lib/faceLog'
+import { createVisiblePoller } from '@/lib/visiblePoll'
 import { WORK_EVENT_LABELS, formatDuration, workStatus } from '@/lib/workStatus'
 
 const ALL_SITES = 'all'
@@ -36,7 +37,7 @@ const notes = ref([])
 const loading = ref(false)
 const loadedOnce = ref(false)
 const now = ref(Date.now())
-let refreshTimer = null
+let refreshPoller = null
 
 const isToday = computed(() => day.value.isSame(dayjs(), 'day'))
 const siteNames = computed(() => Object.fromEntries(sites.value.map((site) => [site.id, site.name])))
@@ -82,15 +83,19 @@ onMounted(async () => {
         toast.error('Gagal memuat daftar staf', err.response?.data?.message)
     }
     await loadActivity()
-    // Hari ini: pita shift & angka terus bergerak.
-    refreshTimer = setInterval(() => {
-        if (!isToday.value) return
-        loadActivity({ quiet: true })
-        loadRoster().catch(() => {})
-    }, 30_000)
+    // Hari ini: pita shift & angka terus bergerak (tab tersembunyi cukup tiap 5 menit).
+    refreshPoller = createVisiblePoller(
+        () => {
+            if (!isToday.value) return
+            loadActivity({ quiet: true })
+            loadRoster().catch(() => {})
+        },
+        { visibleMs: 30_000, hiddenMs: 5 * 60_000 },
+    )
+    refreshPoller.start()
 })
 
-onBeforeUnmount(() => clearInterval(refreshTimer))
+onBeforeUnmount(() => refreshPoller?.stop())
 
 // ---- Perhitungan
 const segmentsByUser = computed(() =>

@@ -41,6 +41,7 @@ import WarningPopup from '@/components/work/WarningPopup.vue'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useTheme } from '@/composables/useTheme'
 import api from '@/lib/api'
+import { createVisiblePoller } from '@/lib/visiblePoll'
 import { refreshWorkCounters, workCountersVersion } from '@/lib/workCounters'
 import { useBriefingCall } from '@/composables/useBriefingCall'
 import { usePwaInstall } from '@/composables/usePwaInstall'
@@ -179,7 +180,6 @@ onBeforeUnmount(() => {
 const BRIEFING_POLL_MS = 60_000
 const briefings = ref([])
 const upcomingBriefings = ref([])
-let briefingTimer = null
 async function loadBriefings() {
     try {
         const { data } = await api.get('/briefings')
@@ -235,15 +235,28 @@ async function dismissAnnouncement() {
     }
 }
 
+// Tab tersembunyi cukup tiap 5 menit; banner & angka menyusul begitu tab dibuka lagi.
+const briefingPoller = createVisiblePoller(
+    () => {
+        loadBriefings()
+        loadWorkCounters()
+    },
+    { visibleMs: BRIEFING_POLL_MS, hiddenMs: 5 * 60_000 },
+)
+const refreshOnReturn = () => {
+    if (document.visibilityState !== 'visible') return
+    briefingPoller.tick()
+}
 onMounted(() => {
     loadBriefings()
     loadWorkCounters()
-    briefingTimer = setInterval(() => {
-        loadBriefings()
-        loadWorkCounters()
-    }, BRIEFING_POLL_MS)
+    briefingPoller.start()
+    document.addEventListener('visibilitychange', refreshOnReturn)
 })
-onBeforeUnmount(() => clearInterval(briefingTimer))
+onBeforeUnmount(() => {
+    briefingPoller.stop()
+    document.removeEventListener('visibilitychange', refreshOnReturn)
+})
 watch(
     () => route.name,
     () => {

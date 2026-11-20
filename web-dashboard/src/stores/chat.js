@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 
 import api from '@/lib/api'
 import { goToLogin } from '@/lib/routerRef'
+import { createVisiblePoller } from '@/lib/visiblePoll'
 import { useAuthStore } from '@/stores/auth'
 
 // Pesan terakhir yang sudah dibaca, per site -- disimpan per browser supaya
@@ -23,7 +24,7 @@ function readMarks() {
 }
 
 let socket = null
-let groupsTimer = null
+let groupsPoller = null
 const typingTimers = new Map()
 
 /**
@@ -195,15 +196,20 @@ export const useChatStore = defineStore('chat', () => {
         socket.on('chatgroup:refresh', () => loadGroups())
         socket.on('chatgroup:removed', ({ groupId }) => dropGroup(groupId))
 
-        clearInterval(groupsTimer)
-        groupsTimer = setInterval(() => loadGroups(), GROUPS_REFRESH_MS)
+        // Perubahan grup datang lewat socket (chatgroup:refresh); ini hanya cadangan, tab tersembunyi 5 menit.
+        groupsPoller?.stop()
+        groupsPoller = createVisiblePoller(() => loadGroups(), {
+            visibleMs: GROUPS_REFRESH_MS,
+            hiddenMs: 5 * 60_000,
+        })
+        groupsPoller.start()
     }
 
     function stop() {
         socket?.disconnect()
         socket = null
-        clearInterval(groupsTimer)
-        groupsTimer = null
+        groupsPoller?.stop()
+        groupsPoller = null
         connected.value = false
         open.value = false
         sites.value = []

@@ -11,6 +11,7 @@ import Readout from '@/components/ui/Readout.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
 import { faceBackLabel, faceGaps } from '@/lib/faceLog'
+import { createVisiblePoller } from '@/lib/visiblePoll'
 import { formatDuration } from '@/lib/workStatus'
 
 const ALL_SITES = 'all'
@@ -38,7 +39,7 @@ const loading = ref(false)
 const loadedOnce = ref(false)
 const now = ref(Date.now())
 const sort = ref(readSort())
-let refreshTimer = null
+let refreshPoller = null
 
 const isToday = computed(() => day.value.isSame(dayjs(), 'day'))
 const siteNames = computed(() => Object.fromEntries(sites.value.map((site) => [site.id, site.name])))
@@ -98,13 +99,17 @@ onMounted(async () => {
         toast.error('Gagal memuat daftar staf', err.response?.data?.message)
     }
     await loadEvents()
-    // Hari ini: selang yang masih berlangsung terus bertambah.
-    refreshTimer = setInterval(() => {
-        if (isToday.value) loadEvents({ quiet: true })
-    }, 30_000)
+    // Hari ini: selang yang masih berlangsung terus bertambah (tab tersembunyi cukup tiap 5 menit).
+    refreshPoller = createVisiblePoller(
+        () => {
+            if (isToday.value) loadEvents({ quiet: true })
+        },
+        { visibleMs: 30_000, hiddenMs: 5 * 60_000 },
+    )
+    refreshPoller.start()
 })
 
-onBeforeUnmount(() => clearInterval(refreshTimer))
+onBeforeUnmount(() => refreshPoller?.stop())
 
 // ---- Log
 const rosterById = computed(() => new Map(roster.value.map((staff) => [staff.user_id, staff])))

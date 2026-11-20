@@ -20,7 +20,15 @@ cp .env build/.env
 (cd build && npm ci --omit=dev)
 
 echo "==> Restart semua proses backend"
-pm2 restart lacak-api lacak-api-queue lacak-api-scheduler --update-env
+pm2 restart lacak-api-queue lacak-api-scheduler --update-env
+# API di-restart satu per satu (jika ada salinan lacak-api-2/-3): nginx memakai salinan lain selama jeda
+# ini, jadi dashboard tidak putus.
+for api in lacak-api lacak-api-2 lacak-api-3; do
+    if pm2 describe "$api" >/dev/null 2>&1; then
+        pm2 restart "$api" --update-env
+        sleep 5
+    fi
+done
 
 # Gateway realtime (status Live Kerja per room site + peran) harus ikut sama versi dengan backend.
 echo "==> Gateway: build & restart"

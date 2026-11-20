@@ -14,8 +14,8 @@
  *   pm2 reload ecosystem.config.cjs           # restart tanpa putus
  *   pm2 save && pm2 startup                   # hidup lagi setelah reboot
  *
- * Catatan: jalankan SATU instance saja per proses (fork). Gateway menyimpan
- * status realtime di memori, dan queue/scheduler tidak boleh ganda.
+ * Catatan: gateway, queue, dan scheduler SATU instance saja (gateway menyimpan status realtime di memori,
+ * queue/scheduler tidak boleh ganda). Hanya API HTTP yang boleh punya salinan (lihat API_REPLICAS).
  */
 const path = require('node:path')
 
@@ -26,6 +26,12 @@ const dir = (name) => path.join(__dirname, name, 'build')
 // Rekorder ringan (folder recorder/, Go) hanya ikut dijalankan kalau binary-nya sudah dibangun di server:
 //   cd recorder && go build -o lacak-recorder .
 const recorderBinary = path.join(__dirname, 'recorder', 'lacak-recorder')
+
+/** Salinan lacak-api (selain yang di PORT dari .env, bawaan 7564), masing-masing satu proses di port sendiri. */
+const API_REPLICAS = [
+    { name: 'lacak-api-2', port: 7565 },
+    { name: 'lacak-api-3', port: 7566 },
+]
 
 /** Pengaturan bersama: batas restart meniru StartLimit systemd (5x / 5 menit). */
 const base = {
@@ -50,6 +56,17 @@ module.exports = {
             // Aplikasi keluar sendiri setelah 8 detik (bin/server.ts).
             kill_timeout: 15000,
         },
+        // Salinan API di port lain: satu proses Node hanya memakai satu core, dan API ini tanpa status per
+        // proses (rate limit di Redis, cache lokal ber-TTL pendek). Nginx membagi permintaan ke semua port
+        // (upstream lacak_api). Daftarkan hanya yang dipakai di upstream nginx.
+        ...API_REPLICAS.map(({ name, port }) => ({
+            ...base,
+            name,
+            cwd: dir('backend-adonis'),
+            script: 'bin/server.js',
+            kill_timeout: 15000,
+            env: { ...base.env, PORT: String(port) },
+        })),
         {
             ...base,
             name: 'lacak-api-queue',

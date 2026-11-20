@@ -8,6 +8,7 @@ import { useRoute } from 'vue-router'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { useToast } from '@/composables/useToast'
 import api from '@/lib/api'
+import { createVisiblePoller } from '@/lib/visiblePoll'
 import { playWarningSound, primeWarningSound } from '@/lib/warningSound'
 import { useChatStore } from '@/stores/chat'
 
@@ -19,7 +20,8 @@ import { useChatStore } from '@/stores/chat'
  * yang dibuka lagi jadi cadangan. Nada peringatan berbunyi berulang selama
  * popup terbuka dan baru berhenti setelah semua peringatan dikonfirmasi.
  */
-const POLL_MS = 30_000
+const POLL_MS = 60_000
+const HIDDEN_POLL_MS = 5 * 60_000
 const SOUND_REPEAT_MS = 3_000
 
 const route = useRoute()
@@ -69,16 +71,21 @@ watch(
     },
 )
 
-let timer = null
-const onVisible = () => document.visibilityState === 'visible' && load()
+// Cadangan saja (peringatan baru datang lewat gateway): tab tersembunyi cukup tiap 5 menit.
+const poller = createVisiblePoller(load, { visibleMs: POLL_MS, hiddenMs: HIDDEN_POLL_MS })
+const onVisible = () => {
+    if (document.visibilityState !== 'visible') return
+    poller.markRun()
+    load()
+}
 onMounted(() => {
     primeWarningSound()
     load()
-    timer = setInterval(load, POLL_MS)
+    poller.start()
     document.addEventListener('visibilitychange', onVisible)
 })
 onBeforeUnmount(() => {
-    clearInterval(timer)
+    poller.stop()
     stopSound()
     document.removeEventListener('visibilitychange', onVisible)
 })
