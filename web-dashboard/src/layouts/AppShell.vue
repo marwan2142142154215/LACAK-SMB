@@ -17,6 +17,7 @@ import {
     PackageOpen,
     Presentation,
     Radar,
+    RefreshCw,
     ScanFace,
     Send,
     ServerCog,
@@ -43,6 +44,7 @@ import { useTheme } from '@/composables/useTheme'
 import api from '@/lib/api'
 import { createVisiblePoller } from '@/lib/visiblePoll'
 import { refreshWorkCounters, workCountersVersion } from '@/lib/workCounters'
+import { useAppUpdate } from '@/composables/useAppUpdate'
 import { useBriefingCall } from '@/composables/useBriefingCall'
 import { usePwaInstall } from '@/composables/usePwaInstall'
 import { isEmbedded } from '@/lib/embedded'
@@ -60,6 +62,11 @@ const toast = useToast()
 // dan toast ini muncul walau user sedang di menu lain saat pemimpin mengakhiri.
 const briefingCall = useBriefingCall()
 const briefingActive = briefingCall.active
+// Versi baru dashboard: muat ulang otomatis hanya bila tidak sedang siaran/briefing (di APK hanya tombol).
+const appUpdate = useAppUpdate({
+    isBusy: () => live.isBroadcasting || briefingCall.inCall.value,
+    canAutoReload: !isEmbedded,
+})
 watch(
     () => briefingCall.endedByHost.value,
     (ended) => ended && toast.info('Briefing selesai', 'Pemimpin mengakhiri briefing.'),
@@ -509,6 +516,24 @@ async function handleLogout() {
                     !isEmbedded && 'max-lg:pb-[calc(4.5rem+env(safe-area-inset-bottom))]',
                 ]"
             >
+                <div
+                    v-if="appUpdate.available.value"
+                    class="mx-4 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-accent-500/30 bg-accent-500/10 px-4 py-3 sm:mx-8"
+                    role="status"
+                >
+                    <RefreshCw class="size-4 shrink-0 text-accent-500" />
+                    <p class="min-w-0 flex-1 text-sm text-base-100">
+                        <span class="font-semibold">Versi baru dashboard tersedia.</span>
+                        <span class="text-base-400"> Muat ulang setelah selesai kerja supaya siaran tidak terputus.</span>
+                    </p>
+                    <button
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-lg bg-accent-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-600"
+                        @click="appUpdate.reloadNow()"
+                    >
+                        Muat ulang
+                    </button>
+                </div>
                 <div
                     v-if="briefingInvite"
                     class="mx-4 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-accent-500/30 bg-accent-500/10 px-4 py-3 sm:mx-8"

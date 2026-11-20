@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import { pageScope } from '@/lib/api'
+import { CHUNK_ERROR_EVENT, isChunkLoadError } from '@/lib/appVersion'
 import { isEmbedded } from '@/lib/embedded'
 import { checkIpAccess } from '@/lib/ipAccess'
 import { canEnter } from '@/lib/pageAccess'
@@ -240,6 +241,11 @@ router.beforeEach(async (to) => {
     }
 
     return true
+})
+
+// Berkas halaman gagal dimuat = tab ini masih versi lama setelah deploy: kabari useAppUpdate (AppShell).
+router.onError((error) => {
+    if (isChunkLoadError(error)) window.dispatchEvent(new CustomEvent(CHUNK_ERROR_EVENT))
 })
 
 // Pindah menu: permintaan milik halaman yang ditinggalkan dibatalkan (hasilnya tidak pernah
