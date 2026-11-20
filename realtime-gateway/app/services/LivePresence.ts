@@ -88,31 +88,30 @@ export async function applyReportedState(
     const now = new Date()
     const wasDisconnected = session.disconnected_at !== null
 
-    await db
-        .from('work_sessions')
-        .where('id', session.id)
-        .update({ last_heartbeat_at: now, disconnected_at: null, updated_at: now })
     session.last_heartbeat_at = now
     session.disconnected_at = null
 
-    if (wasDisconnected) {
-        await record(session, 'reconnected', now)
-    }
+    const events: { type: string; status: string }[] = []
+    if (wasDisconnected) events.push({ type: 'reconnected', status: statusOf(session, now) })
 
-    // Satu kolom per langkah, supaya status di tiap baris log adalah status
-    // tepat setelah perubahan itu saja.
+    // Satu kolom per langkah di memori, supaya status di tiap baris log adalah status
+    // tepat setelah perubahan itu saja; penulisannya digabung jadi satu UPDATE dan satu INSERT.
+    const changes: Partial<Record<StateColumn, boolean>> = {}
     for (const column of Object.keys(STATE_EVENTS) as StateColumn[]) {
         const value = state[column]
         if (value === undefined || session[column] === value) continue
 
-        await db
-            .from('work_sessions')
-            .where('id', session.id)
-            .update({ [column]: value, updated_at: now })
         session[column] = value
+        changes[column] = value
         if (column === 'face_missing' && !value && (await dropShortFaceGap(session, now))) continue
-        await record(session, STATE_EVENTS[column][value ? 0 : 1], now)
+        events.push({ type: STATE_EVENTS[column][value ? 0 : 1], status: statusOf(session, now) })
     }
+
+    await db
+        .from('work_sessions')
+        .where('id', session.id)
+        .update({ ...changes, last_heartbeat_at: now, disconnected_at: null, updated_at: now })
+    await recordAll(session, events, now)
 
     return session
 }
@@ -143,18 +142,25 @@ async function dropShortFaceGap(session: LiveSession, now: Date) {
     return true
 }
 
-async function record(session: LiveSession, type: string, now: Date) {
+async function recordAll(
+    session: LiveSession,
+    events: { type: string; status: string }[],
+    now: Date
+) {
+    if (!events.length) return
     const db = await getDb()
-    await db.table('work_session_events').insert({
-        user_id: session.user_id,
-        organization_id: session.organization_id,
-        work_session_id: session.id,
-        type,
-        status: statusOf(session, now),
-        occurred_at: now,
-        created_at: now,
-        updated_at: now,
-    })
+    await db.table('work_session_events').multiInsert(
+        events.map((event) => ({
+            user_id: session.user_id,
+            organization_id: session.organization_id,
+            work_session_id: session.id,
+            type: event.type,
+            status: event.status,
+            occurred_at: now,
+            created_at: now,
+            updated_at: now,
+        }))
+    )
 }
 
 /**
@@ -163,14 +169,21 @@ async function record(session: LiveSession, type: string, now: Date) {
  * /live/overview). Token login selalu punya expires_at; token akun layanan tidak.
  */
 export async function hasActiveLogin(userId: number): Promise<boolean> {
+    const loggedIn = await usersWithActiveLogin([userId])
+    return loggedIn.has(userId)
+}
+
+/** Sama dengan hasActiveLogin, untuk banyak user sekaligus dalam satu query. */
+export async function usersWithActiveLogin(userIds: number[]): Promise<Set<number>> {
+    if (!userIds.length) return new Set()
     const db = await getDb()
-    const row = await db
+    const rows: { tokenable_id: number | string }[] = await db
         .from('personal_access_tokens')
         .where('tokenable_type', 'App\\Models\\User')
-        .where('tokenable_id', userId)
+        .whereIn('tokenable_id', userIds)
         .where('expires_at', '>', new Date())
-        .first()
-    return Boolean(row)
+        .distinct('tokenable_id')
+    return new Set(rows.map((row) => Number(row.tokenable_id)))
 }
 
 /** Bentuk yang sama dengan WorkSessionResource di backend-api. */

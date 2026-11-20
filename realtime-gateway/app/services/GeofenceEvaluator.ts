@@ -137,6 +137,30 @@ export function evaluateGeofence(device: Device, report: LocationReport): Promis
     return next
 }
 
+/**
+ * Aturan geofence berubah jarang, sedangkan laporan lokasi datang tiap 15-30 detik dari ratusan
+ * device: aturan per organisasi disimpan sebentar di memori. Perubahan aturan berlaku paling lambat
+ * sebesar TTL ini.
+ */
+const RULES_CACHE_TTL_MS = 30_000
+const rulesCache = new Map<number, { loadedAt: number; rules: Promise<GeofenceRule[]> }>()
+
+function activeRulesOf(organizationId: number): Promise<GeofenceRule[]> {
+    const cached = rulesCache.get(organizationId)
+    if (cached && Date.now() - cached.loadedAt < RULES_CACHE_TTL_MS) return cached.rules
+
+    const rules = GeofenceRule.query()
+        .where('organization_id', organizationId)
+        .where('is_active', true)
+        .then((rows) => rows)
+    rulesCache.set(organizationId, { loadedAt: Date.now(), rules })
+    // Query gagal tidak boleh tersimpan: laporan berikutnya mencoba lagi.
+    rules.catch(() => {
+        if (rulesCache.get(organizationId)?.rules === rules) rulesCache.delete(organizationId)
+    })
+    return rules
+}
+
 async function evaluateGeofenceNow(device: Device, report: LocationReport) {
     const now = Date.now()
     const previousReportAt = lastReportAtByDevice.get(device.id)
@@ -155,9 +179,7 @@ async function evaluateGeofenceNow(device: Device, report: LocationReport) {
         report.nearbyBeaconDistanceMeters <= MASTER_ANCHOR_SAFE_RADIUS_METERS &&
         isAuthorizedMasterBeaconFor(report.nearbyBeaconUuid, device.organizationId)
 
-    const rules = await GeofenceRule.query()
-        .where('organization_id', device.organizationId)
-        .where('is_active', true)
+    const rules = await activeRulesOf(device.organizationId)
 
     if (rules.length === 0) return
 

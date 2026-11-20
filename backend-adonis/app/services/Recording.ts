@@ -332,22 +332,49 @@ export async function pruneShortSessions(now: Date = new Date()): Promise<number
         )
         .select('live_recordings.work_session_id', 'live_recordings.source')
 
+    if (!groups.length) return 0
+
+    // Semua potongan dari semua grup diambil sekali; pasangan (sesi, sumber) disaring di memori.
+    const wanted = new Set(groups.map((group) => `${group.work_session_id}:${group.source}`))
+    const candidates = await db
+        .from('live_recordings')
+        .whereIn(
+            'work_session_id',
+            groups.map((group) => group.work_session_id)
+        )
+        .select('id', 'work_session_id', 'source', 'file_path')
+    const rows = candidates.filter((row) => wanted.has(`${row.work_session_id}:${row.source}`))
+    return removeRecordings(rows, 'Gagal menghapus rekaman sesi singkat')
+}
+
+/** Berkas dihapus per kelompok kecil lalu barisnya sekali per kelompok, supaya tidak ada ribuan query terpisah. */
+const REMOVE_CHUNK_SIZE = 50
+
+/**
+ * Hapus file di Spaces lalu barisnya. Baris yang file-nya gagal dihapus dibiarkan (dicoba lagi pada
+ * putaran berikutnya). @returns jumlah baris yang dihapus
+ */
+async function removeRecordings(
+    rows: { id: number; file_path: string | null }[],
+    failureMessage: string
+): Promise<number> {
     let removed = 0
-    for (const group of groups) {
-        const rows = await db
-            .from('live_recordings')
-            .where('work_session_id', group.work_session_id)
-            .where('source', group.source)
-        for (const recording of rows) {
-            try {
-                if (recording.file_path && recordingEnabled())
+    for (let start = 0; start < rows.length; start += REMOVE_CHUNK_SIZE) {
+        const removable: number[] = []
+        for (const recording of rows.slice(start, start + REMOVE_CHUNK_SIZE)) {
+            if (recording.file_path && recordingEnabled()) {
+                try {
                     await disk('spaces').delete(recording.file_path)
-            } catch (error) {
-                log.warn({ err: error, id: recording.id }, 'Gagal menghapus rekaman sesi singkat')
-                continue
+                } catch (error) {
+                    log.warn({ err: error, id: recording.id }, failureMessage)
+                    continue
+                }
             }
-            await db.from('live_recordings').where('id', recording.id).delete()
-            removed++
+            removable.push(recording.id)
+        }
+        if (removable.length) {
+            await db.from('live_recordings').whereIn('id', removable).delete()
+            removed += removable.length
         }
     }
     return removed
@@ -356,18 +383,12 @@ export async function pruneShortSessions(now: Date = new Date()): Promise<number
 /** Hapus file & baris rekaman yang lebih tua dari masa simpan (72 jam). */
 export async function pruneRecordings(now: Date = new Date()): Promise<number> {
     const cutoff = new Date(now.getTime() - RECORDING_RETENTION_HOURS * 3_600_000)
-    const old = await db.from('live_recordings').where('started_at', '<', cutoff).limit(500)
-    for (const recording of old) {
-        if (recording.file_path && recordingEnabled()) {
-            try {
-                await disk('spaces').delete(recording.file_path)
-            } catch (error) {
-                log.warn({ err: error, id: recording.id }, 'Gagal menghapus file rekaman lama')
-                continue
-            }
-        }
-        await db.from('live_recordings').where('id', recording.id).delete()
-    }
+    const old = await db
+        .from('live_recordings')
+        .where('started_at', '<', cutoff)
+        .select('id', 'file_path')
+        .limit(500)
+    await removeRecordings(old, 'Gagal menghapus file rekaman lama')
     return old.length
 }
 

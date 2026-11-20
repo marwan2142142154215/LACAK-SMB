@@ -130,6 +130,12 @@ async function sessionAlerts(settings: Map<number, AlertSettings>, now: Date) {
                 .orWhere('work_sessions.face_missing', true)
         })
         .select('work_sessions.*', 'users.name as user_name', 'organizations.name as site_name')
+    // Kejadian terakhir tiap (sesi, jenis) diambil sekali untuk semua sesi -- bukan satu query per
+    // pengecekan di dalam loop.
+    const latestEvents = await latestSessionEvents(
+        sessions.map((session) => Number(session.id)),
+        ['camera_stop', 'screen_stop', 'face_lost']
+    )
     let raised = 0
     for (const session of sessions) {
         const config =
@@ -163,12 +169,7 @@ async function sessionAlerts(settings: Map<number, AlertSettings>, now: Date) {
         ]
         for (const check of checks) {
             if (!check.when) continue
-            const event = await db
-                .from('work_session_events')
-                .where('work_session_id', session.id)
-                .where('type', check.event)
-                .orderBy('id', 'desc')
-                .first()
+            const event = latestEvents.get(`${session.id}:${check.event}`)
             // Belum ada kejadiannya (kamera belum pernah menyala): hitung dari awal sesi.
             const since: Date = event?.occurred_at ?? session.started_at
             const minutes = Math.floor((now.getTime() - since.getTime()) / MINUTE)
@@ -185,6 +186,32 @@ async function sessionAlerts(settings: Map<number, AlertSettings>, now: Date) {
         }
     }
     return raised
+}
+
+type LatestSessionEvent = { id: number; work_session_id: number; type: string; occurred_at: Date }
+
+/** Kejadian terbaru per (sesi, jenis) untuk banyak sesi sekaligus, kuncinya `"<sesi>:<jenis>"`. */
+async function latestSessionEvents(
+    sessionIds: number[],
+    types: string[]
+): Promise<Map<string, LatestSessionEvent>> {
+    const result = new Map<string, LatestSessionEvent>()
+    if (!sessionIds.length) return result
+
+    const rows: LatestSessionEvent[] = await db
+        .from('work_session_events')
+        .whereIn(
+            'id',
+            db
+                .from('work_session_events')
+                .whereIn('work_session_id', sessionIds)
+                .whereIn('type', types)
+                .groupBy('work_session_id', 'type')
+                .max('id')
+        )
+        .select('id', 'work_session_id', 'type', 'occurred_at')
+    for (const row of rows) result.set(`${row.work_session_id}:${row.type}`, row)
+    return result
 }
 
 /** Staf yang belum Mulai kerja padahal shift-nya sudah lewat batas terlambat. */

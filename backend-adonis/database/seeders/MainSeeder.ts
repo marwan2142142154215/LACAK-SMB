@@ -83,7 +83,11 @@ export default class MainSeeder extends BaseSeeder {
 
     private async createIfMissing(account: Account) {
         const client = this.client as QueryClientContract
-        const existing = await client.from('users').where('username', account.username).first()
+        const existing = await client
+            .from('users')
+            .where('username', account.username)
+            .orWhere('email', account.email)
+            .first()
         if (existing) {
             await addRoles(client, existing.id, account.roles)
             return

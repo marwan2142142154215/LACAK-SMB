@@ -84,11 +84,18 @@ async function runDispatch(deviceId?: number) {
         isDeviceConnected
     )
 
+    // Site tiap device diambil sekali untuk semua perintah di putaran ini (siaran status butuh
+    // organization_id), bukan satu query per perubahan status.
+    const hasWork = plan.expire.length + plan.fail.length + plan.send.length > 0
+    const organizationOf = hasWork
+        ? await organizationsOfDevices([...new Set(open.map((command) => command.deviceId))])
+        : new Map<number, number>()
+
     for (const { id, message } of plan.expire) {
-        await closeCommand(byId.get(id)!, 'expired', message)
+        await closeCommand(byId.get(id)!, 'expired', message, organizationOf)
     }
     for (const { id, message } of plan.fail) {
-        await closeCommand(byId.get(id)!, 'failed', message)
+        await closeCommand(byId.get(id)!, 'failed', message, organizationOf)
     }
 
     for (const id of plan.send) {
@@ -115,7 +122,7 @@ async function runDispatch(deviceId?: number) {
         })
 
         if (command.status === 'pending') {
-            await broadcastCommandStatus(command, 'delivered', null)
+            await broadcastCommandStatus(command, 'delivered', null, organizationOf)
         } else {
             logger.info('perintah dikirim ulang, belum dikonfirmasi HP', {
                 commandId: command.id,
@@ -131,7 +138,20 @@ function affectedRows(result: unknown): number {
     return Number(result ?? 0)
 }
 
-async function closeCommand(command: DeviceCommand, status: 'expired' | 'failed', message: string) {
+async function organizationsOfDevices(deviceIds: number[]): Promise<Map<number, number>> {
+    const result = new Map<number, number>()
+    if (!deviceIds.length) return result
+    const devices = await Device.query().whereIn('id', deviceIds).select('id', 'organization_id')
+    for (const device of devices) result.set(device.id, Number(device.organizationId))
+    return result
+}
+
+async function closeCommand(
+    command: DeviceCommand,
+    status: 'expired' | 'failed',
+    message: string,
+    organizationOf?: Map<number, number>
+) {
     const updated = await DeviceCommand.query()
         .where('id', command.id)
         .whereIn('status', ['pending', 'delivered'])
@@ -149,20 +169,25 @@ async function closeCommand(command: DeviceCommand, status: 'expired' | 'failed'
         status,
         message,
     })
-    await broadcastCommandStatus(command, status, message)
+    await broadcastCommandStatus(command, status, message, organizationOf)
 }
 
 async function broadcastCommandStatus(
     command: DeviceCommand,
     status: CommandStatus,
-    message: string | null
+    message: string | null,
+    organizationOf?: Map<number, number>
 ) {
-    const device = await Device.query()
-        .where('id', command.deviceId)
-        .select('id', 'organization_id')
-        .first()
-    if (!device) return
-    socketManager.broadcastCommandStatus(Number(device.organizationId), {
+    let organizationId = organizationOf?.get(command.deviceId)
+    if (organizationId === undefined) {
+        const device = await Device.query()
+            .where('id', command.deviceId)
+            .select('id', 'organization_id')
+            .first()
+        if (!device) return
+        organizationId = Number(device.organizationId)
+    }
+    socketManager.broadcastCommandStatus(organizationId, {
         device_id: command.deviceId,
         command_id: command.id,
         command_type: command.commandType,

@@ -4,7 +4,7 @@ import type { AuthenticatedUser } from '#services/BackendApiClient'
 import { parseReportedState, statusOf, type WorkStatus } from '#services/LiveStatus'
 import {
     applyReportedState,
-    hasActiveLogin,
+    usersWithActiveLogin,
     openSessionsIn,
     sessionPayload,
     type LiveSession,
@@ -168,14 +168,15 @@ function publishSession(opsNs: OpsNamespace, session: LiveSession, now: Date) {
     })
 }
 
-async function publishEnded(
+function publishEnded(
     opsNs: OpsNamespace,
     userId: number,
     organizationId: number | null,
-    room: string
+    room: string,
+    hasLogin: boolean
 ) {
     // Selesai kerja tapi masih login = 'online'; logout / sesi habis = 'offline'.
-    const status = (await hasActiveLogin(userId)) ? 'online' : 'offline'
+    const status = hasLogin ? 'online' : 'offline'
     transports.delete(userId)
     opsNs.to(room).emit('live:status', {
         organization_id: organizationId,
@@ -296,13 +297,25 @@ export function startLiveSweeper(opsNs: OpsNamespace): () => void {
 
             // Yang berakhir dulu, baru yang baru/berubah -- staf yang langsung
             // mulai sesi baru tidak boleh tertimpa "offline".
+            const ended: { userId: number; organizationId: number | null; room: string }[] = []
             for (const [sessionId, known] of lastKnown) {
                 if (!watched.has(known.room)) {
                     lastKnown.delete(sessionId)
                 } else if (!openIds.has(sessionId)) {
                     lastKnown.delete(sessionId)
-                    await publishEnded(opsNs, known.userId, known.organizationId, known.room)
+                    ended.push(known)
                 }
+            }
+            // Status login semua yang berakhir diambil sekali, bukan satu query per sesi.
+            const loggedIn = await usersWithActiveLogin(ended.map((known) => known.userId))
+            for (const known of ended) {
+                publishEnded(
+                    opsNs,
+                    known.userId,
+                    known.organizationId,
+                    known.room,
+                    loggedIn.has(known.userId)
+                )
             }
 
             for (const session of sessions) {
