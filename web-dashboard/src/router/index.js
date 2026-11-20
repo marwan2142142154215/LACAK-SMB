@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import { pageScope } from '@/lib/api'
 import { isEmbedded } from '@/lib/embedded'
 import { checkIpAccess } from '@/lib/ipAccess'
 import { canEnter } from '@/lib/pageAccess'
@@ -239,6 +240,12 @@ router.beforeEach(async (to) => {
     }
 
     return true
+})
+
+// Pindah menu: permintaan milik halaman yang ditinggalkan dibatalkan (hasilnya tidak pernah
+// dipakai), supaya tidak menumpuk di server dan tidak berebut koneksi dengan halaman baru.
+router.afterEach((to, from) => {
+    if (to.name !== from.name) pageScope.leave()
 })
 
 export default router

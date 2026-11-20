@@ -68,12 +68,14 @@ function applyRange(value) {
     }
 }
 
-async function loadRecap() {
+// fresh: true = tombol "Tampilkan" ditekan sendiri oleh pengguna, jadi lewati cache API.
+async function loadRecap({ fresh = false } = {}) {
     if (to.value < from.value) return toast.error('Rentang tanggal terbalik', 'Tanggal akhir harus setelah tanggal awal.')
     loadingRecap.value = true
     try {
         const { data } = await api.get('/attendance', {
             params: { from: from.value, to: to.value, ...(siteId.value ? { organization_id: siteId.value } : {}) },
+            fresh,
         })
         canManage.value = data.data.can_manage
         if (!sites.value.length) sites.value = data.data.sites ?? []
@@ -453,7 +455,7 @@ onMounted(async () => {
                 <template v-if="range === 'custom'">
                     <BaseInput v-model="from" type="date" label="Dari" class="w-40" />
                     <BaseInput v-model="to" type="date" label="Sampai" class="w-40" />
-                    <BaseButton variant="outline" :loading="loadingRecap" @click="loadRecap">Tampilkan</BaseButton>
+                    <BaseButton variant="outline" :loading="loadingRecap" @click="loadRecap({ fresh: true })">Tampilkan</BaseButton>
                 </template>
                 <div class="ml-auto flex gap-2">
                     <input
