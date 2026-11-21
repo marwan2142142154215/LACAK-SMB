@@ -40,11 +40,11 @@ const reviewFilter = ref('pending')
 async function load() {
     try {
         const { data } = await api.get('/leave-requests', { params: { status: reviewFilter.value } })
-        types.value = data.data.types
-        mine.value = data.data.mine
-        review.value = data.data.review
-        canReview.value = data.data.can_review
-        pendingCount.value = data.data.pending_count
+        types.value = data.data.types ?? []
+        mine.value = data.data.mine ?? []
+        review.value = data.data.review ?? []
+        canReview.value = data.data.can_review ?? false
+        pendingCount.value = data.data.pending_count ?? 0
         loaded.value = true
     } catch (err) {
         toast.error('Gagal memuat izin & cuti', err.response?.data?.message)

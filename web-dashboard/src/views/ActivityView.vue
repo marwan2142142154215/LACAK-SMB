@@ -48,8 +48,8 @@ const dayEnd = computed(() => day.value.endOf('day').valueOf() + 1)
 // ---- Data
 async function loadRoster() {
     const response = await api.get('/live/overview')
-    sites.value = response.data.data.sites
-    roster.value = response.data.data.roster
+    sites.value = response.data.data.sites ?? []
+    roster.value = response.data.data.roster ?? []
     if (sites.value.length === 1) siteFilter.value = sites.value[0].id
 }
 
@@ -62,7 +62,7 @@ async function loadActivity({ quiet = false } = {}) {
             ...(siteFilter.value === ALL_SITES ? { all_sites: 1 } : { organization_id: siteFilter.value }),
         }
         const response = await api.get('/live/activity', { params })
-        events.value = response.data.data.events
+        events.value = response.data.data.events ?? []
         initialStatuses.value = response.data.data.initial_statuses ?? {}
         notes.value = response.data.data.notes ?? []
         now.value = Date.now()

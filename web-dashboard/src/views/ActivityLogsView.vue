@@ -155,8 +155,8 @@ async function load() {
     try {
         const response = await api.get('/activity-logs', { params: params() })
         if (seq !== requestSeq) return // filter sudah berubah lagi
-        entries.value = response.data.data.entries
-        hasMore.value = response.data.data.has_more
+        entries.value = response.data.data.entries ?? []
+        hasMore.value = response.data.data.has_more ?? false
         expanded.value = new Set()
     } catch (err) {
         if (seq === requestSeq) toast.error('Gagal memuat log aktivitas', err.response?.data?.message)

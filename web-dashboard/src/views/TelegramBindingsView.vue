@@ -50,7 +50,8 @@ const linkForm = ref({ user_id: null, telegram_user_id: '', telegram_username: '
 
 async function loadStaffLinks() {
     const response = await api.get('/telegram-user-links')
-    staffLinks.value = response.data.data
+    const links = response.data.data
+    staffLinks.value = Array.isArray(links) ? links : []
 }
 
 async function loadStaffUsers() {
@@ -100,7 +101,7 @@ async function loadBindings() {
     loading.value = true
     try {
         const response = await api.get('/telegram-bindings', { params: { per_page: 100 } })
-        bindings.value = response.data.data.items
+        bindings.value = response.data.data.items ?? []
     } finally {
         loading.value = false
     }

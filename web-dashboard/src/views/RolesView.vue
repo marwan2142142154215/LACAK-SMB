@@ -109,8 +109,8 @@ const groupedPermissions = computed(() => {
 async function loadRoles() {
     try {
         const response = await api.get('/roles')
-        roles.value = response.data.data.roles
-        permissions.value = response.data.data.permissions
+        roles.value = response.data.data.roles ?? []
+        permissions.value = response.data.data.permissions ?? []
     } catch (err) {
         toast.error('Gagal memuat daftar peran', err.response?.data?.message)
     } finally {

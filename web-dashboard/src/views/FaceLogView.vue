@@ -66,8 +66,8 @@ watch(sort, (value) => {
 // ---- Data
 async function loadRoster() {
     const response = await api.get('/live/overview')
-    sites.value = response.data.data.sites
-    roster.value = response.data.data.roster
+    sites.value = response.data.data.sites ?? []
+    roster.value = response.data.data.roster ?? []
     if (sites.value.length === 1) siteFilter.value = sites.value[0].id
 }
 
@@ -80,7 +80,7 @@ async function loadEvents({ quiet = false } = {}) {
             ...(siteFilter.value === ALL_SITES ? { all_sites: 1 } : { organization_id: siteFilter.value }),
         }
         const response = await api.get('/live/activity', { params })
-        events.value = response.data.data.events
+        events.value = response.data.data.events ?? []
         now.value = Date.now()
         loadedOnce.value = true
     } catch (err) {

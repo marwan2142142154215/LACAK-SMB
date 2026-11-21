@@ -72,7 +72,8 @@ async function loadRoleOptions() {
     if (!canManageAll.value) return
     try {
         const response = await api.get('/roles/options')
-        roleOptions.value = response.data.data
+        // Hanya ganti kalau bentuknya benar (array); kalau tidak, pakai cadangan bawaan.
+        if (Array.isArray(response.data.data)) roleOptions.value = response.data.data
     } catch {
         // Cadangan bawaan tetap dipakai; daftar peran tidak menghalangi halaman Staf.
     }

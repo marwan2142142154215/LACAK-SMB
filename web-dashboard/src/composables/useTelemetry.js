@@ -26,7 +26,12 @@ export function useTelemetry() {
         ])
         if (summaryResult.status === 'fulfilled') summary.value = summaryResult.value.data.data
         if (liveResult.status === 'fulfilled' && liveResult.value) {
-            liveCount.value = liveResult.value.data.data.reduce((total, site) => total + (site.live_count ?? 0), 0)
+            // Backend sehat mengirim array; kalau sesekali hiccup (bentuk tak
+            // terduga) jangan sampai strip di SETIAP halaman crash.
+            const liveSites = liveResult.value.data?.data
+            liveCount.value = Array.isArray(liveSites)
+                ? liveSites.reduce((total, site) => total + (site.live_count ?? 0), 0)
+                : 0
         }
     }
 

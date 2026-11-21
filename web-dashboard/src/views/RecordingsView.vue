@@ -79,8 +79,8 @@ function sizeLabel(bytes) {
 
 async function loadRoster() {
     const response = await api.get('/live/overview')
-    sites.value = response.data.data.sites
-    roster.value = response.data.data.roster
+    sites.value = response.data.data.sites ?? []
+    roster.value = response.data.data.roster ?? []
     if (sites.value.length === 1) siteId.value = sites.value[0].id
 }
 
@@ -100,7 +100,7 @@ async function loadRecordings() {
             },
         })
         enabled.value = response.data.data.enabled
-        items.value = response.data.data.items
+        items.value = response.data.data.items ?? []
         loaded.value = true
     } catch (err) {
         toast.error('Gagal memuat rekaman', err.response?.data?.message)

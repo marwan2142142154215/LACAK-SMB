@@ -132,7 +132,8 @@ export const useChatStore = defineStore('chat', () => {
 
         if (auth.hasPermission('live.watch')) {
             try {
-                sites.value = (await api.get('/live/sites')).data.data
+                const siteRows = (await api.get('/live/sites')).data?.data
+                sites.value = Array.isArray(siteRows) ? siteRows : []
             } catch {
                 sites.value = []
             }

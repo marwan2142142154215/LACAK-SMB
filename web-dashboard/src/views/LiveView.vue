@@ -253,13 +253,13 @@ async function loadStatus() {
     try {
         const response = await api.get('/live/overview')
         const data = response.data.data
-        sites.value = data.sites
-        roster.value = data.roster
+        sites.value = data.sites ?? []
+        roster.value = data.roster ?? []
         centralRoster.value = data.central?.roster ?? []
         liveRooms.value = data.rooms ?? []
         roleLabels.value = Object.fromEntries((data.roles ?? []).map((role) => [role.name, role.label]))
         sessionByIdentity.value = Object.fromEntries(
-            [...data.items, ...(data.central?.items ?? [])].map((session) => [session.participant_identity, session]),
+            [...(data.items ?? []), ...(data.central?.items ?? [])].map((session) => [session.participant_identity, session]),
         )
         syncLazyRooms().catch(() => {})
     } catch {
