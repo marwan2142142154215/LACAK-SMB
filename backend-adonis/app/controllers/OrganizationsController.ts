@@ -36,6 +36,7 @@ const ORGANIZATION_COLUMNS = [
     'organizations.type',
     'organizations.unique_site_code',
     'organizations.is_active',
+    'organizations.after_hours_lock',
     'organizations.created_at',
     'organizations.updated_at',
 ]
@@ -224,6 +225,7 @@ export default class OrganizationsController {
             changes.name = name
         }
         if (data.is_active !== undefined) changes.is_active = data.is_active
+        if (data.after_hours_lock !== undefined) changes.after_hours_lock = data.after_hours_lock
 
         // Eloquent hanya menyimpan kalau ada yang berubah (updated_by ikut
         // dihitung), dan hanya field tercatat yang masuk log.

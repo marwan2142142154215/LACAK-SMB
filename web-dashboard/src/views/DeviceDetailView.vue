@@ -211,6 +211,71 @@ async function saveRename() {
     }
 }
 
+// ---- Pagar lokasi per-HP: keluar radius -> auto-lock (lihat GeofenceEvaluator gateway) ----
+const fenceLat = ref('')
+const fenceLng = ref('')
+const fenceRadius = ref('')
+const savingFence = ref(false)
+const hasFence = computed(() => device.value?.geofence_latitude != null)
+
+watch(
+    device,
+    (d) => {
+        fenceLat.value = d?.geofence_latitude ?? ''
+        fenceLng.value = d?.geofence_longitude ?? ''
+        fenceRadius.value = d?.geofence_radius_meters ?? ''
+    },
+    { immediate: true },
+)
+
+function fenceFromLastLocation() {
+    const loc = device.value?.latest_location
+    if (loc?.latitude == null) {
+        toast.error('Belum ada lokasi terakhir HP ini')
+        return
+    }
+    fenceLat.value = loc.latitude
+    fenceLng.value = loc.longitude
+    if (!fenceRadius.value) fenceRadius.value = 100
+}
+
+async function saveFence() {
+    const lat = Number(fenceLat.value)
+    const lng = Number(fenceLng.value)
+    const radius = Number(fenceRadius.value)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(radius) || radius <= 0) {
+        toast.error('Isi latitude, longitude, dan radius (meter) yang benar')
+        return
+    }
+    savingFence.value = true
+    try {
+        await api.put(`/devices/${deviceId.value}/geofence`, {
+            latitude: lat,
+            longitude: lng,
+            radius_meters: Math.round(radius),
+        })
+        toast.success('Pagar lokasi dipasang', `Radius ${Math.round(radius)} m — HP terkunci otomatis jika keluar`)
+        await loadDevice(false)
+    } catch (err) {
+        toast.error('Gagal memasang pagar lokasi', err.response?.data?.message)
+    } finally {
+        savingFence.value = false
+    }
+}
+
+async function clearFence() {
+    savingFence.value = true
+    try {
+        await api.put(`/devices/${deviceId.value}/geofence`, { latitude: null, longitude: null, radius_meters: null })
+        toast.success('Pagar lokasi dihapus')
+        await loadDevice(false)
+    } catch (err) {
+        toast.error('Gagal menghapus pagar lokasi', err.response?.data?.message)
+    } finally {
+        savingFence.value = false
+    }
+}
+
 const menuItems = computed(() => [
     { label: 'Minta lokasi sekarang', icon: MapPin, onSelect: () => issueCommand('locate_now'), disabled: acting.value, hidden: !allowed('devices.locate') },
     { label: 'Mulai pantau', icon: PlayCircle, onSelect: () => issueCommand('start_monitor'), disabled: acting.value, hidden: !allowed('devices.monitor') },
@@ -458,6 +523,51 @@ onBeforeUnmount(() => {
                                 title="Belum ada koordinat GPS"
                                 description="Device ini belum pernah mengirim lokasi. Gunakan 'Minta lokasi sekarang'."
                             />
+                        </BaseCard>
+
+                        <BaseCard v-if="allowed('devices.manage')" title="Pagar lokasi HP">
+                            <p class="text-xs text-pretty text-base-400">
+                                Patok HP ini ke satu titik GPS. Jika keluar radius, HP
+                                <strong class="text-base-200">terkunci otomatis</strong> dan terbuka lagi saat kembali.
+                            </p>
+                            <div
+                                v-if="hasFence"
+                                class="mt-3 rounded-lg border border-accent-500/30 bg-accent-500/10 px-3 py-2 text-xs"
+                            >
+                                <p class="font-medium text-base-100">Pagar aktif</p>
+                                <p class="mt-0.5 font-mono text-base-300 tabular-nums">
+                                    {{ device.geofence_latitude }}, {{ device.geofence_longitude }} · radius
+                                    {{ device.geofence_radius_meters }} m
+                                </p>
+                            </div>
+                            <div class="mt-4 grid grid-cols-2 gap-3">
+                                <label class="block">
+                                    <span class="field-label">Latitude</span>
+                                    <input v-model="fenceLat" inputmode="decimal" class="field-control" placeholder="-6.1891" />
+                                </label>
+                                <label class="block">
+                                    <span class="field-label">Longitude</span>
+                                    <input v-model="fenceLng" inputmode="decimal" class="field-control" placeholder="106.7366" />
+                                </label>
+                            </div>
+                            <label class="mt-3 block">
+                                <span class="field-label">Radius (meter)</span>
+                                <input v-model="fenceRadius" inputmode="numeric" class="field-control" placeholder="100" />
+                            </label>
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                <BaseButton size="sm" variant="outline" :disabled="savingFence" @click="fenceFromLastLocation">
+                                    <MapPin class="size-4" /> Pakai lokasi terakhir
+                                </BaseButton>
+                                <BaseButton size="sm" :loading="savingFence" @click="saveFence">Simpan pagar</BaseButton>
+                                <BaseButton
+                                    v-if="hasFence"
+                                    size="sm"
+                                    variant="danger-outline"
+                                    :disabled="savingFence"
+                                    @click="clearFence"
+                                    >Hapus pagar</BaseButton
+                                >
+                            </div>
                         </BaseCard>
                     </div>
 

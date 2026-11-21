@@ -12,6 +12,7 @@ import { pruneRecordings, pruneShortSessions, rotateRecordings } from '#services
 import { reconcileRecordings } from '#services/RecordingReconcile'
 import { runWorkAlerts } from '#services/WorkAlerts'
 import { closeStaleWorkSessions } from './CloseStaleWorkSessions.js'
+import { runScheduledDeviceLock } from '#services/ScheduledDeviceLock'
 
 /** Milidetik sampai awal menit berikutnya (jadwal Laravel jalan tepat di detik 0). */
 export function msUntilNextMinute(now: Date = new Date()): number {
@@ -120,6 +121,14 @@ export default class SchedulerRun extends BaseCommand {
             } finally {
                 this.#runningWork = false
             }
+        }
+
+        try {
+            const lock = await runScheduledDeviceLock()
+            if (lock.locked || lock.unlocked)
+                this.logger.info(`Kunci terjadwal: ${lock.locked} dikunci, ${lock.unlocked} dibuka.`)
+        } catch (error) {
+            this.logger.error(`Kunci terjadwal gagal diproses: ${String(error)}`)
         }
 
         try {

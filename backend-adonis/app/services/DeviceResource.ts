@@ -44,6 +44,10 @@ export type DeviceRow = {
     uninstall_locked?: boolean | null
     location_service_on?: boolean | null
     released_at?: Date | null
+    // Pagar GPS milik HP sendiri (migrasi 0024). Opsional: baris lama belum memuatnya.
+    geofence_latitude?: string | number | null
+    geofence_longitude?: string | number | null
+    geofence_radius_meters?: number | null
     enrolled_at: Date | null
     is_active: boolean
     secret_hash?: string | null
@@ -109,6 +113,9 @@ export function deviceResource(device: DeviceRow, relations: DeviceRelations = {
         uninstall_locked: device.uninstall_locked ?? null,
         location_service_on: device.location_service_on ?? null,
         released_at: laravelDate(device.released_at ?? null),
+        geofence_latitude: laravelDecimal(device.geofence_latitude ?? null, 7),
+        geofence_longitude: laravelDecimal(device.geofence_longitude ?? null, 7),
+        geofence_radius_meters: device.geofence_radius_meters ?? null,
         enrolled_at: laravelDate(device.enrolled_at ?? null),
         is_active: Boolean(device.is_active),
         ...(relations.latestLocation !== undefined

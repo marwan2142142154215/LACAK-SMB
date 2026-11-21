@@ -25,6 +25,7 @@ import {
 } from '#services/DeviceResource'
 import {
     moveDeviceSiteValidator,
+    setDeviceGeofenceValidator,
     storeDeviceValidator,
     updateDeviceValidator,
 } from '#validators/Devices'
@@ -277,6 +278,62 @@ export default class DevicesController {
         return success('Device dipindahkan ke site lain', { organization_id: target })
     }
 
+    /**
+     * Pasang/hapus pagar GPS milik HP ini (selain aturan geofence per-site).
+     * Keluar radius -> auto-lock oleh gateway (lihat GeofenceEvaluator). Semua
+     * field null = hapus pagar; semua terisi = pasang.
+     */
+    async setGeofence(ctx: HttpContext) {
+        const device = await findDeviceOrFail(ctx.params.device)
+        const access = await accessOf(ctx)
+        if (!can(access, 'devices.manage')) return forbidden(ctx)
+
+        if (!canAccessOrganization(access, device.organization_id)) {
+            return ctx.response.status(403).send(fail('Anda tidak berwenang mengubah pagar device ini'))
+        }
+
+        const input = await ctx.request.validateUsing(setDeviceGeofenceValidator, {
+            messagesProvider: setDeviceGeofenceValidator.messagesProvider,
+        })
+
+        // "Semua atau tidak sama sekali": kalau ada satu yang null, perlakukan sebagai hapus pagar.
+        const clearing =
+            input.latitude === null || input.longitude === null || input.radius_meters === null
+        const lat = clearing ? null : input.latitude
+        const lng = clearing ? null : input.longitude
+        const radius = clearing ? null : input.radius_meters
+
+        const now = eloquentNow()
+        await db.from('devices').where('id', device.id).update({
+            geofence_latitude: lat,
+            geofence_longitude: lng,
+            geofence_radius_meters: radius,
+            updated_by: ctx.authUser!.id,
+            updated_at: now,
+        })
+        await writeActivity(ctx, {
+            logName: 'devices',
+            description: clearing
+                ? `Menghapus pagar lokasi device "${device.device_name}"`
+                : `Memasang pagar lokasi device "${device.device_name}" (radius ${radius}m)`,
+            event: 'updated',
+            subjectType: DEVICE_MORPH,
+            subjectId: device.id,
+            properties: {
+                geofence_latitude: lat,
+                geofence_longitude: lng,
+                geofence_radius_meters: radius,
+            },
+            organizationId: device.organization_id,
+        })
+
+        return success(clearing ? 'Pagar lokasi device dihapus' : 'Pagar lokasi device dipasang', {
+            geofence_latitude: lat,
+            geofence_longitude: lng,
+            geofence_radius_meters: radius,
+        })
+    }
+
     async destroy(ctx: HttpContext) {
         const device = await findDeviceOrFail(ctx.params.device)
         const access = await accessOf(ctx)
@@ -284,6 +341,15 @@ export default class DevicesController {
 
         if (!canAccessOrganization(access, device.organization_id)) {
             return ctx.response.status(403).send(fail('Anda tidak berwenang menghapus device ini'))
+        }
+
+        // Pengaman: jangan hapus device yang sedang TERKUNCI. Setelah terhapus (soft delete),
+        // device 404 di semua endpoint -> perintah buka-kunci maupun OTP tak bisa lagi menjangkau
+        // HP, sehingga HP terjebak terkunci permanen. Buka kunci dulu, baru hapus.
+        if (device.status === 'locked') {
+            return ctx.response
+                .status(422)
+                .send(fail('Device sedang terkunci. Buka kunci dulu sebelum menghapus, agar HP tidak terjebak terkunci.'))
         }
 
         // Soft delete Eloquent: deleted_at & updated_at diisi waktu yang sama.

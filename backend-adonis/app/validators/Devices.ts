@@ -159,6 +159,19 @@ export const updateDeviceValidator = compile(
     ['device_name', 'is_active']
 )
 
+/**
+ * Pagar GPS per-HP: koordinat + radius. Semua null = hapus pagar; semua terisi =
+ * pasang pagar. Validasi "semua atau tidak sama sekali" ditegakkan di controller.
+ */
+export const setDeviceGeofenceValidator = compile(
+    vine.object({
+        latitude: vine.number().min(-90).max(90).nullable(),
+        longitude: vine.number().min(-180).max(180).nullable(),
+        radius_meters: vine.number().withoutDecimals().positive().max(100000).nullable(),
+    }),
+    ['latitude', 'longitude', 'radius_meters']
+)
+
 export const COMMAND_TYPES = [
     'lock',
     'unlock',

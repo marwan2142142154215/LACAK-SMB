@@ -350,6 +350,42 @@ async function evaluateGeofenceNow(device: Device, report: LocationReport) {
         }
     }
 
+    // Pagar GPS milik HP sendiri (migrasi 0024) -- selain aturan per-site. Keluar radius
+    // -> pelanggaran -> auto-lock. Dikonfirmasi 2x (seperti GPS site) agar bukan noise GPS.
+    const fenceLat = device.geofenceLatitude !== null ? Number(device.geofenceLatitude) : null
+    const fenceLng = device.geofenceLongitude !== null ? Number(device.geofenceLongitude) : null
+    const fenceRadius = device.geofenceRadiusMeters
+    if (
+        fenceLat !== null &&
+        !Number.isNaN(fenceLat) &&
+        fenceLng !== null &&
+        !Number.isNaN(fenceLng) &&
+        fenceRadius &&
+        fenceRadius > 0 &&
+        report.latitude !== null &&
+        report.latitude !== undefined &&
+        report.longitude !== null &&
+        report.longitude !== undefined
+    ) {
+        hasEvaluableSignal = true
+        const distance = haversineMeters(fenceLat, fenceLng, report.latitude, report.longitude)
+        if (distance > fenceRadius) {
+            anyViolated = true
+            const detail = `${Math.round(distance)}m dari titik patok HP (maks ${fenceRadius}m)`
+            // Konfirmasi: laporan SEBELUMNYA untuk pagar HP ini (geofence_rule_id NULL) juga melanggar.
+            const previousFenceViolation = await ViolationLog.query()
+                .where('device_id', device.id)
+                .whereNull('geofence_rule_id')
+                .where('violation_type', 'distance_exceeded')
+                .where('detected_at', '>=', DateTime.now().minus({ seconds: 90 }).toJSDate())
+                .orderBy('detected_at', 'desc')
+                .first()
+            await recordViolation(device, null, 'distance_exceeded', detail, !!previousFenceViolation)
+        } else if (distance > fenceRadius * UNLOCK_SAFE_RATIO) {
+            safeForUnlock = false
+        }
+    }
+
     // Syarat buka otomatis (semua harus terpenuhi):
     // 1. ADA sinyal yang benar-benar dicek (bukan cuma laporan kosong),
     // 2. SEMUANYA sesuai aturan (tidak ada pelanggaran),
@@ -380,7 +416,7 @@ async function evaluateGeofenceNow(device: Device, report: LocationReport) {
 
 async function recordViolation(
     device: Device,
-    rule: GeofenceRule,
+    rule: GeofenceRule | null,
     type: 'wifi_mismatch' | 'ip_mismatch' | 'distance_exceeded',
     detectedValue: string,
     shouldAutoLock: boolean
@@ -394,7 +430,7 @@ async function recordViolation(
     const telegramText = [
         '⚠️ Pelanggaran terdeteksi — Lacak SMB',
         `Device: ${device.deviceName}`,
-        `Aturan: ${rule.ruleName}`,
+        `Aturan: ${rule?.ruleName ?? 'Pagar HP ini'}`,
         `Jenis: ${violationLabel}`,
         `Detail: ${detectedValue}`,
     ].join('\n')
@@ -406,7 +442,11 @@ async function recordViolation(
     // notifikasinya yang di-throttle.
     const recentlyNotified = await ViolationLog.query()
         .where('device_id', device.id)
-        .where('geofence_rule_id', rule.id)
+        .if(
+            rule,
+            (q) => q.where('geofence_rule_id', rule!.id),
+            (q) => q.whereNull('geofence_rule_id')
+        )
         .where('violation_type', type)
         .where('notified_telegram', true)
         .where('detected_at', '>=', new Date(Date.now() - TELEGRAM_NOTIFY_MIN_INTERVAL_MS))
@@ -424,7 +464,7 @@ async function recordViolation(
         const createdViolation = await ViolationLog.create(
             {
                 deviceId: device.id,
-                geofenceRuleId: rule.id,
+                geofenceRuleId: rule ? rule.id : null,
                 violationType: type,
                 detectedValue,
                 notifiedTelegram,
@@ -433,7 +473,10 @@ async function recordViolation(
             },
             { client: trx }
         )
-        const hasLocked = shouldAutoLock ? await autoLock(device, rule, trx) : false
+        const lockReason = rule
+            ? `Otomatis: melewati radius aman aturan "${rule.ruleName}"`
+            : 'Otomatis: keluar titik patok HP ini'
+        const hasLocked = shouldAutoLock ? await autoLock(device, lockReason, trx) : false
 
         return { violation: createdViolation, isLocked: hasLocked }
     })
@@ -441,7 +484,7 @@ async function recordViolation(
     socketManager.broadcastViolation(device.organizationId, {
         device_id: device.id,
         device_name: device.deviceName,
-        rule_name: rule.ruleName,
+        rule_name: rule?.ruleName ?? 'Pagar HP ini',
         violation_type: type,
         detected_value: detectedValue,
         detected_at: violation.detectedAt,
@@ -470,7 +513,7 @@ async function recordViolation(
  */
 async function autoLock(
     device: Device,
-    rule: GeofenceRule,
+    reasonNote: string,
     trx: TransactionClientContract
 ): Promise<boolean> {
     // Baca ulang status TERKINI dari DB dulu: caller bisa memegang objek device
@@ -485,7 +528,6 @@ async function autoLock(
     if (!fresh || fresh.status === 'locked') return false
 
     const systemUserId = await getSystemUserId()
-    const reasonNote = `Otomatis: melewati radius aman aturan "${rule.ruleName}"`
 
     await DeviceCommand.create(
         {

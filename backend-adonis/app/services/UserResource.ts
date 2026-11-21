@@ -32,6 +32,8 @@ export type OrganizationRow = {
     created_at: Date | null
     updated_at: Date | null
     devices_count?: number
+    // Saklar kunci otomatis di luar jam kerja (migrasi 0024).
+    after_hours_lock?: boolean
 }
 
 export const USER_COLUMNS = [
@@ -132,6 +134,7 @@ export function organizationResource(organization: OrganizationRow) {
         type: organization.type,
         unique_site_code: organization.unique_site_code,
         is_active: organization.is_active,
+        after_hours_lock: Boolean(organization.after_hours_lock),
         ...(organization.devices_count !== undefined
             ? { devices_count: Number(organization.devices_count) }
             : {}),

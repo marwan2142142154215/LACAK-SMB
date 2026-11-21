@@ -51,6 +51,7 @@ router
                 // dengan handler sama bentrok nama otomatisnya di router Adonis.
                 router.route('/devices/:device', ['PUT', 'PATCH'], [DevicesController, 'update'])
                 router.put('/devices/:device/site', [DevicesController, 'moveSite'])
+                router.put('/devices/:device/geofence', [DevicesController, 'setGeofence'])
                 router.delete('/devices/:device', [DevicesController, 'destroy'])
 
                 router.get('/devices/:device/commands', [DeviceCommandsController, 'index'])

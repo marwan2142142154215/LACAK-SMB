@@ -97,6 +97,17 @@ export default class Device extends BaseModel {
     @column.dateTime()
     declare releasedAt: DateTime | null
 
+    // --- Pagar GPS milik HP sendiri (migrasi 0024): keluar radius -> auto-lock ---
+
+    @column()
+    declare geofenceLatitude: number | null
+
+    @column()
+    declare geofenceLongitude: number | null
+
+    @column()
+    declare geofenceRadiusMeters: number | null
+
     @column()
     declare isActive: boolean
 
