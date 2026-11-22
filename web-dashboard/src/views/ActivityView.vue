@@ -254,7 +254,7 @@ const selectedWeekScale = computed(() => niceCeil(Math.max(1, ...selectedWeek.va
 const selectedEvents = computed(() =>
     selected.value
         ? events.value
-              .filter((e) => e.user_id === selected.value.id && inDay(e) && !shortFaceEventIds.value.has(e.id))
+              .filter((e) => e.user_id === selected.value.id && inDay(e) && shownInLog(e))
               .slice()
               .reverse()
         : [],
@@ -290,11 +290,17 @@ const shortFaceEventIds = computed(() => {
     return hidden
 })
 
+// Idle yang tercatat di tengah istirahat (sebelum server mengabaikannya): bukan idle, staf
+// sedang istirahat -- statusnya tetap Break, barisnya tidak ditampilkan.
+const IDLE_EVENTS = new Set(['idle_start', 'idle_end'])
+const shownInLog = (event) =>
+    !shortFaceEventIds.value.has(event.id) && !(IDLE_EVENTS.has(event.type) && event.status === 'break')
+
 const logOpen = ref(false)
 const dayLog = computed(() => {
     const ids = new Set(rows.value.map((row) => row.id))
     return events.value
-        .filter((e) => ids.has(e.user_id) && inDay(e) && !shortFaceEventIds.value.has(e.id))
+        .filter((e) => ids.has(e.user_id) && inDay(e) && shownInLog(e))
         .slice()
         .reverse()
 })

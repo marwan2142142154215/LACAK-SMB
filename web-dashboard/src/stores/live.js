@@ -886,6 +886,7 @@ export const useLiveStore = defineStore('live', () => {
             faceWatch.start(
                 () => rawCameraTrack(ownCameraTrack()),
                 () => cameraBackground.personVisible(),
+                () => onBreak.value,
             )
             await sendHeartbeat()
         } catch (err) {
@@ -1028,6 +1029,8 @@ export const useLiveStore = defineStore('live', () => {
 
     async function setBreak(enabled) {
         onBreak.value = enabled
+        // Peringatan "wajah hilang" langsung hilang begitu istirahat (tidak menunggu cek berikutnya).
+        if (enabled) faceMissing.value = false
         await sendHeartbeat()
     }
 
@@ -1063,8 +1066,9 @@ export const useLiveStore = defineStore('live', () => {
             camera_active: cameraLive.value && cameraIsLive(),
             screen_active: trackIsLive(SCREEN_SOURCE),
             on_break: onBreak.value,
-            idle: isIdle.value,
-            face_missing: faceMissing.value,
+            // Istirahat: idle & wajah hilang tidak berlaku (server juga mengabaikannya).
+            idle: isIdle.value && !onBreak.value,
+            face_missing: faceMissing.value && !onBreak.value,
         }
 
         // Lewat socket gateway: tanpa request HTTP, tanpa PHP. HTTP hanya

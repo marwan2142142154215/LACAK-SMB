@@ -90,6 +90,20 @@ export function statusOf(session: WorkSessionRow | null, now: Date = new Date())
     return 'working'
 }
 
+/**
+ * Selama istirahat staf memang boleh meninggalkan meja: idle & wajah hilang tidak berlaku
+ * (dulu log mencatat "Idle" / "Wajah hilang" di tengah istirahat, padahal staf menekan
+ * Istirahat). Keduanya dipaksa false -- laporan aplikasi lama yang masih mengirimnya
+ * ikut tertangani. Sama dengan backend-adonis WorkPresence.ts.
+ */
+export function stateDuringBreak(
+    session: Pick<WorkSessionRow, 'on_break'>,
+    state: Partial<Record<StateColumn, boolean>>
+): Partial<Record<StateColumn, boolean>> {
+    if (!(state.on_break ?? session.on_break)) return state
+    return { ...state, idle: false, face_missing: false }
+}
+
 /** Ambil hanya kolom status yang valid (boolean) dari laporan staf. */
 export function parseReportedState(payload: unknown): Partial<Record<StateColumn, boolean>> {
     const state: Partial<Record<StateColumn, boolean>> = {}

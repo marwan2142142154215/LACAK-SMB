@@ -1,5 +1,10 @@
 import { test } from '@japa/runner'
-import { parseReportedState, statusOf, type WorkSessionRow } from '#services/LiveStatus'
+import {
+    parseReportedState,
+    stateDuringBreak,
+    statusOf,
+    type WorkSessionRow,
+} from '#services/LiveStatus'
 
 /** Kasus yang sama dengan WorkPresenceTest di backend-api -- aturannya harus identik. */
 const NOW = new Date('2026-10-25T08:00:00Z')
@@ -102,5 +107,29 @@ test.group('Live Kerja: laporan status dari staf', () => {
             { camera_active: true, on_break: false }
         )
         assert.deepEqual(parseReportedState(null), {})
+    })
+})
+
+test.group('Live Kerja: idle & wajah hilang tidak berlaku saat istirahat', () => {
+    test('istirahat (baru dimulai atau sedang berjalan) memaksa idle & face_missing false', ({
+        assert,
+    }) => {
+        assert.deepEqual(
+            stateDuringBreak(session(), { on_break: true, idle: true, face_missing: true }),
+            { on_break: true, idle: false, face_missing: false }
+        )
+        assert.deepEqual(stateDuringBreak(session({ on_break: true }), { idle: true }), {
+            idle: false,
+            face_missing: false,
+        })
+    })
+
+    test('tidak istirahat / istirahat diakhiri: laporan diteruskan apa adanya', ({ assert }) => {
+        const reported = { idle: true, face_missing: true }
+        assert.deepEqual(stateDuringBreak(session(), reported), reported)
+        assert.deepEqual(
+            stateDuringBreak(session({ on_break: true }), { on_break: false, idle: true }),
+            { on_break: false, idle: true }
+        )
     })
 })

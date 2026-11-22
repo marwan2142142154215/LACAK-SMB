@@ -20,6 +20,8 @@ const CHECK_INTERVAL_MS = 1000
 export const FACE_MISSING_AFTER_MS = 30_000
 // Cek gagal terus selama ini (frame macet, model error) = status wajah tidak diketahui, "hilang" dicabut.
 const UNKNOWN_AFTER_MS = 30_000
+// Minimal cek berturut-turut tanpa wajah sebelum "hilang" -- lihat minMisses di faceState.js.
+const MIN_MISSES = 3
 // grabFrame() Chrome kadang tidak pernah selesai (kamera dinyalakan ulang / track diganti). Tanpa
 // batas waktu, cek berikutnya tertahan "sibuk" selamanya dan status wajah membeku.
 const GRAB_TIMEOUT_MS = 3000
@@ -117,11 +119,16 @@ export function createFaceWatch(onChange) {
     let timer = null
     let getTrack = () => null
     let getPersonVisible = () => null
+    let isPaused = () => false
     let capture = null
     let busy = false
     const canvas = { square: new OffscreenCanvas(256, 256), small: new OffscreenCanvas(SEGMENT_WIDTH, 144) }
     let missing = false
-    const state = createFaceState({ missingAfterMs: FACE_MISSING_AFTER_MS, unknownAfterMs: UNKNOWN_AFTER_MS })
+    const state = createFaceState({
+        missingAfterMs: FACE_MISSING_AFTER_MS,
+        unknownAfterMs: UNKNOWN_AFTER_MS,
+        minMisses: MIN_MISSES,
+    })
 
     function setMissing(value) {
         if (missing === value) return
@@ -139,6 +146,11 @@ export function createFaceWatch(onChange) {
 
     async function check() {
         if (busy) return
+        // Istirahat: staf boleh meninggalkan meja -- tidak dicek, hitungan mulai lagi saat lanjut kerja.
+        if (isPaused()) {
+            setMissing(state.reset())
+            return
+        }
         const track = getTrack()
         // Kamera mati / dibisukan: urusan status Camera off, bukan wajah.
         if (!track || track.readyState !== 'live' || track.muted || !track.enabled) {
@@ -173,12 +185,14 @@ export function createFaceWatch(onChange) {
         /**
          * Mulai memantau; [cameraTrack] mengembalikan MediaStreamTrack kamera
          * saat ini, [personVisible] (opsional) hasil masker background: false =
-         * video yang tersiar tidak memperlihatkan orang.
+         * video yang tersiar tidak memperlihatkan orang, [paused] (opsional) true = jangan cek
+         * (staf sedang istirahat).
          */
-        start(cameraTrack, personVisible = () => null) {
+        start(cameraTrack, personVisible = () => null, paused = () => false) {
             if (!('ImageCapture' in window)) return
             getTrack = cameraTrack
             getPersonVisible = personVisible
+            isPaused = paused
             if (timer) return
             state.reset()
             timer = setInterval(check, CHECK_INTERVAL_MS)
@@ -188,6 +202,7 @@ export function createFaceWatch(onChange) {
             timer = null
             getTrack = () => null
             getPersonVisible = () => null
+            isPaused = () => false
             capture = null
             busy = false
             state.reset()

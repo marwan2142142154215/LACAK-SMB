@@ -1,6 +1,7 @@
 import {
     FACE_LOG_MIN_SECONDS,
     STATE_EVENTS,
+    stateDuringBreak,
     statusOf,
     type StateColumn,
     type WorkSessionRow,
@@ -79,10 +80,11 @@ export async function openSessionsIn(
  */
 export async function applyReportedState(
     userId: number,
-    state: Partial<Record<StateColumn, boolean>>
+    reported: Partial<Record<StateColumn, boolean>>
 ): Promise<LiveSession | null> {
     const session = await openSessionOf(userId)
     if (!session) return null
+    const state = stateDuringBreak(session, reported)
 
     const db = await getDb()
     const now = new Date()
@@ -103,6 +105,8 @@ export async function applyReportedState(
 
         session[column] = value
         changes[column] = value
+        // idle yang dicabut karena istirahat: tidak perlu baris "Aktif lagi" di log.
+        if (column === 'idle' && session.on_break) continue
         if (column === 'face_missing' && !value && (await dropShortFaceGap(session, now))) continue
         events.push({ type: STATE_EVENTS[column][value ? 0 : 1], status: statusOf(session, now) })
     }

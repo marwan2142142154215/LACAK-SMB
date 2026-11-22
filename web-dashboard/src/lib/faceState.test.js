@@ -3,9 +3,9 @@ import { test } from 'node:test'
 
 import { createFaceState } from './faceState.js'
 
-function setup() {
+function setup(minMisses = 1) {
     let t = 0
-    const state = createFaceState({ missingAfterMs: 30_000, unknownAfterMs: 30_000, now: () => t })
+    const state = createFaceState({ missingAfterMs: 30_000, unknownAfterMs: 30_000, minMisses, now: () => t })
     return { state, advance: (ms) => (t += ms) }
 }
 
@@ -39,4 +39,30 @@ test('kamera mati bukan wajah hilang', () => {
     advance(40_000)
     assert.equal(state.notSeen(), true)
     assert.equal(state.cameraOff(), false)
+})
+
+test('cek yang jarang (tab di latar belakang): satu frame tanpa wajah belum dianggap hilang', () => {
+    const { state, advance } = setup(3)
+    // Timer diperlambat Chrome: cek berikutnya baru jalan semenit kemudian.
+    advance(60_000)
+    assert.equal(state.notSeen(), false)
+    advance(60_000)
+    assert.equal(state.seen(), false)
+    // Benar-benar pergi: tiga cek berturut-turut tanpa wajah.
+    advance(60_000)
+    assert.equal(state.notSeen(), false)
+    advance(60_000)
+    assert.equal(state.notSeen(), false)
+    advance(60_000)
+    assert.equal(state.notSeen(), true)
+})
+
+test('cek tiap detik: tetap hilang setelah 30 detik walau ada syarat beberapa cek', () => {
+    const { state, advance } = setup(3)
+    for (let i = 0; i < 29; i++) {
+        advance(1_000)
+        assert.equal(state.notSeen(), false)
+    }
+    advance(1_000)
+    assert.equal(state.notSeen(), true)
 })

@@ -128,14 +128,29 @@ export async function record(
 }
 
 /**
+ * Selama istirahat staf memang boleh meninggalkan meja: idle & wajah hilang tidak berlaku
+ * (dulu log mencatat "Idle" / "Wajah hilang" di tengah istirahat, padahal staf menekan
+ * Istirahat). Keduanya dipaksa false -- laporan aplikasi lama yang masih mengirimnya
+ * ikut tertangani. Sama dengan realtime-gateway/app/services/LiveStatus.ts.
+ */
+export function stateDuringBreak(
+    session: Pick<WorkSessionRow, 'on_break'>,
+    state: Partial<Record<StateColumn, boolean>>
+): Partial<Record<StateColumn, boolean>> {
+    if (!(state.on_break ?? session.on_break)) return state
+    return { ...state, idle: false, face_missing: false }
+}
+
+/**
  * Laporan status dari aplikasi staf (heartbeat): satu kejadian untuk tiap
  * kolom yang benar-benar berubah, berurutan supaya status di tiap baris log
  * adalah status tepat setelah perubahan itu.
  */
 export async function applyState(
     session: WorkSessionRow,
-    state: Partial<Record<StateColumn, boolean>>
+    reported: Partial<Record<StateColumn, boolean>>
 ): Promise<WorkSessionRow> {
+    const state = stateDuringBreak(session, reported)
     const now = new Date()
     const wasDisconnected = session.disconnected_at !== null
 
@@ -159,6 +174,8 @@ export async function applyState(
             .where('id', session.id)
             .update({ [column]: value, updated_at: now })
         session[column] = value
+        // idle yang dicabut karena istirahat: tidak perlu baris "Aktif lagi" di log.
+        if (column === 'idle' && session.on_break) continue
         if (column === 'face_missing' && !value && (await dropShortFaceGap(session, now))) continue
         await record(session.user_id, STATE_EVENTS[column][value ? 0 : 1], session)
     }

@@ -3,6 +3,7 @@ import { broadcasterToken, issue, parseRoomName, roomName } from '#services/Live
 import type { Access } from '#services/Access'
 import { authorizedOrganizationId, organizationFilter } from '#services/OrganizationScope'
 import {
+    stateDuringBreak,
     statusOf,
     summarize,
     type PresenceEvent,
@@ -272,5 +273,29 @@ test.group('Cakupan site (padanan ResolvesOrganizationScope)', () => {
         assert.isNull(authorizedOrganizationId(staff, 3))
         assert.deepEqual(organizationFilter(staff), [2])
         assert.deepEqual(organizationFilter(access(['staff_viewer'], null)), [])
+    })
+})
+
+test.group('Live Kerja: idle & wajah hilang tidak berlaku saat istirahat', () => {
+    test('istirahat (baru dimulai atau sedang berjalan) memaksa idle & face_missing false', ({
+        assert,
+    }) => {
+        assert.deepEqual(
+            stateDuringBreak(session(), { on_break: true, idle: true, face_missing: true }),
+            { on_break: true, idle: false, face_missing: false }
+        )
+        assert.deepEqual(stateDuringBreak(session({ on_break: true }), { idle: true }), {
+            idle: false,
+            face_missing: false,
+        })
+    })
+
+    test('tidak istirahat / istirahat diakhiri: laporan diteruskan apa adanya', ({ assert }) => {
+        const reported = { idle: true, face_missing: true }
+        assert.deepEqual(stateDuringBreak(session(), reported), reported)
+        assert.deepEqual(
+            stateDuringBreak(session({ on_break: true }), { on_break: false, idle: true }),
+            { on_break: false, idle: true }
+        )
     })
 })
