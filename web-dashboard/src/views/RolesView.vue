@@ -60,7 +60,15 @@ const LIVE_MEDIA_OPTIONS = [
 const liveMediaLabel = (role) => (role.permissions.includes(SCREEN_OPTIONAL) ? 'Kamera saja' : 'Kamera + layar')
 const screenOptional = computed({
     get: () => form.value.permissions.includes(SCREEN_OPTIONAL),
-    set: (value) => togglePermission(SCREEN_OPTIONAL, value),
+    set: (value) => {
+        // Peran terkunci (super_admin) tak punya tombol Simpan -> simpan langsung
+        // lewat endpoint khusus yang HANYA membalik izin ini.
+        if (isLocked.value) {
+            setLiveMediaRemote(value)
+            return
+        }
+        togglePermission(SCREEN_OPTIONAL, value)
+    },
 })
 
 const emptyForm = () => ({
@@ -142,6 +150,26 @@ function openEdit(role) {
 function togglePermission(name, checked) {
     const current = form.value.permissions
     form.value.permissions = checked ? [...new Set([...current, name])] : current.filter((item) => item !== name)
+}
+
+// Peran terkunci (super_admin) hanya boleh mengubah SATU hal: mode media Live Kerja
+// ("Kamera saja"). Karena tak ada tombol Simpan untuk peran terkunci, simpan seketika
+// lewat endpoint khusus. Izin lain, nama, scope, level tetap tak bisa diubah.
+const savingLiveMedia = ref(false)
+async function setLiveMediaRemote(value) {
+    if (!editTarget.value || savingLiveMedia.value) return
+    savingLiveMedia.value = true
+    togglePermission(SCREEN_OPTIONAL, value) // optimistis: radio langsung pindah
+    try {
+        await api.put(`/roles/${editTarget.value.id}/live-media`, { screen_optional: value })
+        toast.success(value ? 'Diubah ke "Kamera saja"' : 'Diubah ke "Kamera + seluruh layar"')
+        await loadRoles()
+    } catch (err) {
+        togglePermission(SCREEN_OPTIONAL, !value) // gagal -> kembalikan radio
+        toast.error('Gagal mengubah mode media Live Kerja', errorDetail(err))
+    } finally {
+        savingLiveMedia.value = false
+    }
 }
 
 // Izin pengelolaan akses (sensitif) hanya milik Super Admin: tidak bisa diberikan ke peran lain.
@@ -370,8 +398,10 @@ onMounted(loadRoles)
                     </div>
                 </fieldset>
 
-                <!-- Yang wajib dibagikan saat staf peran ini Live Kerja (izin live.screen-optional). -->
-                <fieldset class="space-y-2" :disabled="isLocked">
+                <!-- Yang wajib dibagikan saat staf peran ini Live Kerja (izin live.screen-optional).
+                     Satu-satunya setelan yang boleh diubah pada peran terkunci (super_admin) -> tidak
+                     ikut dikunci oleh isLocked; disimpan seketika lewat endpoint khusus. -->
+                <fieldset class="space-y-2" :disabled="savingLiveMedia">
                     <legend class="field-label">Saat Live Kerja, wajib membagikan</legend>
                     <div class="grid gap-2 sm:grid-cols-2" role="radiogroup">
                         <label

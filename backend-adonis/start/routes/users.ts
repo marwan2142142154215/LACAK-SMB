@@ -68,6 +68,10 @@ router
         router
             .route('/roles/:role', ['PUT', 'PATCH'], [RolesController, 'update'])
             .use(middleware.throttle({ max: 30, minutes: 1 }))
+        // Ubah HANYA mode media Live Kerja ("Kamera saja"); boleh untuk peran terkunci (super_admin).
+        router
+            .route('/roles/:role/live-media', ['PUT'], [RolesController, 'setLiveMedia'])
+            .use(middleware.throttle({ max: 30, minutes: 1 }))
         router
             .delete('/roles/:role', [RolesController, 'destroy'])
             .use(middleware.throttle({ max: 20, minutes: 1 }))

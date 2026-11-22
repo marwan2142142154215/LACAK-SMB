@@ -29,6 +29,10 @@ import {
 
 const ROLE_MORPH = 'Spatie\\Permission\\Models\\Role'
 
+// Mode media Live Kerja ("Kamera saja" vs "Kamera + seluruh layar") = izin ini.
+// Satu-satunya izin yang boleh diubah lewat setLiveMedia, termasuk pada peran terkunci.
+const SCREEN_OPTIONAL_PERMISSION = 'live.screen-optional'
+
 type RoleRow = {
     id: number
     name: string
@@ -249,6 +253,76 @@ export default class RolesController {
         })
 
         return success('Peran diperbarui', await roleById(role.id))
+    }
+
+    /**
+     * Ubah HANYA mode media Live Kerja peran ("Kamera saja" = izin
+     * live.screen-optional, vs "Kamera + seluruh layar"). Sengaja terpisah dari
+     * update() supaya peran TERKUNCI (super_admin) tetap bisa mengatur preferensi
+     * siaran ini tanpa membuka kunci yang melindungi akses penuh sistem: endpoint
+     * ini secara struktural hanya bisa menambah/menghapus satu izin non-akses,
+     * tidak bisa menyentuh izin akses, scope, level, nama, atau menghapus peran.
+     */
+    async setLiveMedia(ctx: HttpContext) {
+        const access = await accessOf(ctx)
+        if (!can(access, 'roles.manage')) return forbidden(ctx)
+
+        const role = await findRole(ctx.params.role)
+        if (!role) return notFound(ctx)
+
+        // Mengubah peran sendiri = cara menaikkan hak sendiri; hanya super_admin dikecualikan.
+        if (!hasRole(access, 'super_admin') && access.roles.includes(role.name)) {
+            return ctx.response
+                .status(403)
+                .send(fail('Peran yang sedang Anda pegang tidak bisa Anda ubah sendiri'))
+        }
+        // Peran yang levelnya lebih tinggi dari pelaku tidak boleh diubah (anti naik pangkat).
+        if (Number(role.level) < levelOfAccess(access)) {
+            return ctx.response
+                .status(403)
+                .send(fail('Anda tidak bisa mengubah peran yang levelnya lebih tinggi dari Anda'))
+        }
+
+        const raw = ctx.request.input('screen_optional')
+        if (raw === undefined || raw === null) {
+            return invalid(ctx, { screen_optional: ['Wajib diisi (true/false).'] })
+        }
+        const screenOptional = raw === true || raw === 'true' || raw === 1 || raw === '1'
+
+        const perm = await db
+            .from('permissions')
+            .where({ name: SCREEN_OPTIONAL_PERMISSION, guard_name: 'web' })
+            .select('id')
+            .first()
+        if (!perm) {
+            return invalid(ctx, {
+                screen_optional: ['Izin live.screen-optional tidak ada di sistem.'],
+            })
+        }
+
+        const had = (await permissionNamesOfRole(role.id)).includes(SCREEN_OPTIONAL_PERMISSION)
+        if (screenOptional && !had) {
+            await db.table('role_has_permissions').insert({ role_id: role.id, permission_id: perm.id })
+        } else if (!screenOptional && had) {
+            await db
+                .from('role_has_permissions')
+                .where({ role_id: role.id, permission_id: perm.id })
+                .delete()
+        }
+
+        if (had !== screenOptional) {
+            await writeActivity(ctx, {
+                logName: 'default',
+                description: 'Mode media Live Kerja peran diubah',
+                event: 'updated',
+                subjectType: ROLE_MORPH,
+                subjectId: role.id,
+                organizationId: null,
+                properties: { name: role.name, screen_optional: { old: had, new: screenOptional } },
+            })
+        }
+
+        return success('Mode media Live Kerja peran diperbarui', await roleById(role.id))
     }
 
     async destroy(ctx: HttpContext) {
