@@ -172,6 +172,17 @@ export const setDeviceGeofenceValidator = compile(
     ['latitude', 'longitude', 'radius_meters']
 )
 
+/**
+ * Pemegang HP (staf). null = lepas pemegang. Keberadaan user & keanggotaan site
+ * diverifikasi di controller (bukan existsIn, supaya null tidak ikut dicek).
+ */
+export const setDeviceHolderValidator = compile(
+    vine.object({
+        holder_user_id: vine.number().withoutDecimals().positive().nullable(),
+    }),
+    ['holder_user_id']
+)
+
 export const COMMAND_TYPES = [
     'lock',
     'unlock',

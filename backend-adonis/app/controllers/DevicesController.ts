@@ -26,6 +26,7 @@ import {
 import {
     moveDeviceSiteValidator,
     setDeviceGeofenceValidator,
+    setDeviceHolderValidator,
     storeDeviceValidator,
     updateDeviceValidator,
 } from '#validators/Devices'
@@ -331,6 +332,81 @@ export default class DevicesController {
             geofence_latitude: lat,
             geofence_longitude: lng,
             geofence_radius_meters: radius,
+        })
+    }
+
+    /**
+     * Tetapkan / lepas STAF PEMEGANG HP ini. Dipakai kunci per-shift-staf
+     * (StaffShiftDeviceLock): saat site menyalakan staff_shift_lock, HP dikunci
+     * mengikuti shift pemegangnya. null = lepas pemegang. Pemegang wajib staf
+     * yang punya akses ke site HP ini (home org atau site access).
+     */
+    async setHolder(ctx: HttpContext) {
+        const device = await findDeviceOrFail(ctx.params.device)
+        const access = await accessOf(ctx)
+        if (!can(access, 'devices.manage')) return forbidden(ctx)
+
+        if (!canAccessOrganization(access, device.organization_id)) {
+            return ctx.response
+                .status(403)
+                .send(fail('Anda tidak berwenang mengubah pemegang device ini'))
+        }
+
+        const input = await ctx.request.validateUsing(setDeviceHolderValidator, {
+            messagesProvider: setDeviceHolderValidator.messagesProvider,
+        })
+
+        const holderId = input.holder_user_id ?? null
+        let holderName: string | null = null
+        if (holderId !== null) {
+            const holder = await db
+                .from('users')
+                .where('id', holderId)
+                .whereNull('deleted_at')
+                .select('id', 'name', 'organization_id')
+                .first()
+            if (!holder) {
+                return ctx.response.status(422).send(fail('Staf yang dipilih tidak ditemukan.'))
+            }
+            let belongs = Number(holder.organization_id) === Number(device.organization_id)
+            if (!belongs) {
+                const siteAccess = await db
+                    .from('user_site_access')
+                    .where('user_id', holderId)
+                    .where('organization_id', device.organization_id)
+                    .first()
+                belongs = Boolean(siteAccess)
+            }
+            if (!belongs) {
+                return ctx.response
+                    .status(422)
+                    .send(fail('Staf yang dipilih bukan bagian dari site device ini.'))
+            }
+            holderName = holder.name
+        }
+
+        const now = eloquentNow()
+        await db.from('devices').where('id', device.id).update({
+            holder_user_id: holderId,
+            updated_by: ctx.authUser!.id,
+            updated_at: now,
+        })
+        await writeActivity(ctx, {
+            logName: 'devices',
+            description:
+                holderId === null
+                    ? `Melepas pemegang device "${device.device_name}"`
+                    : `Menetapkan pemegang device "${device.device_name}": ${holderName}`,
+            event: 'updated',
+            subjectType: DEVICE_MORPH,
+            subjectId: device.id,
+            properties: { holder_user_id: holderId },
+            organizationId: device.organization_id,
+        })
+
+        return success(holderId === null ? 'Pemegang device dilepas' : 'Pemegang device ditetapkan', {
+            holder_user_id: holderId,
+            holder_name: holderName,
         })
     }
 

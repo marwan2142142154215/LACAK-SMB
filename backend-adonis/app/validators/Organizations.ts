@@ -13,9 +13,15 @@ export const updateOrganizationValidator = vine.create({
     name: vine.string().maxLength(255).optional(),
     is_active: laravelBoolean().optional(),
     after_hours_lock: laravelBoolean().optional(),
+    staff_shift_lock: laravelBoolean().optional(),
 })
 
-export const UPDATE_ORGANIZATION_SOMETIMES = ['name', 'is_active', 'after_hours_lock']
+export const UPDATE_ORGANIZATION_SOMETIMES = [
+    'name',
+    'is_active',
+    'after_hours_lock',
+    'staff_shift_lock',
+]
 
 /**
  * Str::slug($name, '') Laravel: transliterasi ke ASCII, huruf kecil, '@'

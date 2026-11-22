@@ -24,7 +24,7 @@ import { localNow, localDate, isoWeekday } from '#services/LocalTime'
 
 let cachedSystemUserId: number | null = null
 
-async function systemUserId(): Promise<number | null> {
+export async function systemUserId(): Promise<number | null> {
     if (cachedSystemUserId !== null) return cachedSystemUserId
     const row = await db.from('users').where('username', 'system-automation').select('id').first()
     cachedSystemUserId = row?.id ?? null
@@ -104,9 +104,12 @@ export async function runScheduledDeviceLock(): Promise<{ locked: number; unlock
                 .where('is_active', true)
                 .where('status', 'online')
                 .where('scheduled_locked', false)
+                // HP yang punya pemegang diurus StaffShiftDeviceLock (per shift staf),
+                // supaya kedua penjadwal tidak memperebutkan device yang sama.
+                .whereNull('holder_user_id')
                 .select('id')
             for (const device of targets) {
-                await lockDevice(device.id, sysId)
+                await lockDevice(device.id, sysId, 'Jadwal: di luar jam kerja')
                 locked++
             }
         } else {
@@ -115,9 +118,10 @@ export async function runScheduledDeviceLock(): Promise<{ locked: number; unlock
                 .where('organization_id', org.id)
                 .whereNull('deleted_at')
                 .where('scheduled_locked', true)
+                .whereNull('holder_user_id')
                 .select('id', 'status')
             for (const device of targets) {
-                await unlockDevice(device.id, sysId, device.status === 'locked')
+                await unlockDevice(device.id, sysId, device.status === 'locked', 'Jadwal: jam kerja mulai')
                 unlocked++
             }
         }
@@ -126,7 +130,10 @@ export async function runScheduledDeviceLock(): Promise<{ locked: number; unlock
     return { locked, unlocked }
 }
 
-async function lockDevice(deviceId: number, sysId: number) {
+// Dipakai bersama oleh kunci per-site (file ini) dan StaffShiftDeviceLock (per shift
+// staf). Hanya MENCATAT perintah pending di device_commands; pengiriman ke HP tetap
+// lewat CommandDispatcher gateway.
+export async function lockDevice(deviceId: number, sysId: number, reason: string) {
     const now = new Date()
     await db.transaction(async (trx) => {
         await trx.table('device_commands').insert({
@@ -135,7 +142,7 @@ async function lockDevice(deviceId: number, sysId: number) {
             issued_by: sysId,
             issued_via: 'system_auto',
             status: 'pending',
-            reason_note: 'Jadwal: di luar jam kerja',
+            reason_note: reason,
             created_at: now,
             updated_at: now,
         })
@@ -146,7 +153,12 @@ async function lockDevice(deviceId: number, sysId: number) {
     })
 }
 
-async function unlockDevice(deviceId: number, sysId: number, wasLocked: boolean) {
+export async function unlockDevice(
+    deviceId: number,
+    sysId: number,
+    wasLocked: boolean,
+    reason: string
+) {
     const now = new Date()
     await db.transaction(async (trx) => {
         if (wasLocked) {
@@ -156,7 +168,7 @@ async function unlockDevice(deviceId: number, sysId: number, wasLocked: boolean)
                 issued_by: sysId,
                 issued_via: 'system_auto',
                 status: 'pending',
-                reason_note: 'Jadwal: jam kerja mulai',
+                reason_note: reason,
                 created_at: now,
                 updated_at: now,
             })

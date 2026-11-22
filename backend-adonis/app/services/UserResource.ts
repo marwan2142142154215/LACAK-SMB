@@ -34,6 +34,8 @@ export type OrganizationRow = {
     devices_count?: number
     // Saklar kunci otomatis di luar jam kerja (migrasi 0024).
     after_hours_lock?: boolean
+    // Saklar kunci HP mengikuti shift pemegangnya (migrasi 0025).
+    staff_shift_lock?: boolean
 }
 
 export const USER_COLUMNS = [
@@ -135,6 +137,7 @@ export function organizationResource(organization: OrganizationRow) {
         unique_site_code: organization.unique_site_code,
         is_active: organization.is_active,
         after_hours_lock: Boolean(organization.after_hours_lock),
+        staff_shift_lock: Boolean(organization.staff_shift_lock),
         ...(organization.devices_count !== undefined
             ? { devices_count: Number(organization.devices_count) }
             : {}),

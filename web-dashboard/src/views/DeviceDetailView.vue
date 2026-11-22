@@ -276,6 +276,64 @@ async function clearFence() {
     }
 }
 
+// ---- Pemegang HP: staf yang memegang HP ini (kunci per-shift-staf) ----
+const holderStaff = ref([])
+const holderId = ref('')
+const savingHolder = ref(false)
+const loadingHolderStaff = ref(false)
+let holderStaffOrg = null
+
+const currentHolderName = computed(() => {
+    const id = device.value?.holder_user_id
+    if (id == null) return null
+    return holderStaff.value.find((s) => s.id === id)?.name ?? `User #${id}`
+})
+
+async function loadHolderStaff(orgId) {
+    if (!orgId) return
+    loadingHolderStaff.value = true
+    try {
+        const res = await api.get('/users', { params: { organization_id: orgId, per_page: 200 } })
+        holderStaff.value = res.data.data.items ?? []
+    } catch {
+        // daftar staf gagal dimuat -> dropdown kosong; tidak menghalangi halaman
+    } finally {
+        loadingHolderStaff.value = false
+    }
+}
+
+watch(
+    device,
+    (d) => {
+        holderId.value = d?.holder_user_id ?? ''
+        // Muat daftar staf site ini sekali (untuk dropdown pemegang).
+        if (d?.organization_id && d.organization_id !== holderStaffOrg && allowed('devices.manage')) {
+            holderStaffOrg = d.organization_id
+            loadHolderStaff(d.organization_id)
+        }
+    },
+    { immediate: true },
+)
+
+async function saveHolder() {
+    savingHolder.value = true
+    try {
+        const value = holderId.value === '' || holderId.value == null ? null : Number(holderId.value)
+        await api.put(`/devices/${deviceId.value}/holder`, { holder_user_id: value })
+        toast.success(value === null ? 'Pemegang HP dilepas' : 'Pemegang HP ditetapkan')
+        await loadDevice(false)
+    } catch (err) {
+        toast.error('Gagal menyimpan pemegang HP', err.response?.data?.message)
+    } finally {
+        savingHolder.value = false
+    }
+}
+
+function clearHolder() {
+    holderId.value = ''
+    saveHolder()
+}
+
 const menuItems = computed(() => [
     { label: 'Minta lokasi sekarang', icon: MapPin, onSelect: () => issueCommand('locate_now'), disabled: acting.value, hidden: !allowed('devices.locate') },
     { label: 'Mulai pantau', icon: PlayCircle, onSelect: () => issueCommand('start_monitor'), disabled: acting.value, hidden: !allowed('devices.monitor') },
@@ -566,6 +624,49 @@ onBeforeUnmount(() => {
                                     :disabled="savingFence"
                                     @click="clearFence"
                                     >Hapus pagar</BaseButton
+                                >
+                            </div>
+                        </BaseCard>
+
+                        <BaseCard v-if="allowed('devices.manage')" title="Pemegang HP">
+                            <p class="text-xs text-pretty text-base-400">
+                                Staf yang memegang HP ini. Jika site menyalakan
+                                <strong class="text-base-200">kunci ikut shift</strong>, HP terkunci
+                                otomatis saat pemegangnya di luar jam shift-nya dan terbuka lagi saat
+                                shift mulai.
+                            </p>
+                            <div
+                                v-if="currentHolderName"
+                                class="mt-3 rounded-lg border border-accent-500/30 bg-accent-500/10 px-3 py-2 text-xs"
+                            >
+                                <p class="font-medium text-base-100">Pemegang: {{ currentHolderName }}</p>
+                            </div>
+                            <label class="mt-4 block">
+                                <span class="field-label">Pilih staf</span>
+                                <select v-model="holderId" class="field-control">
+                                    <option value="">— Tidak ada pemegang —</option>
+                                    <option v-for="s in holderStaff" :key="s.id" :value="s.id">
+                                        {{ s.name }}{{ s.username ? ` (${s.username})` : '' }}
+                                    </option>
+                                </select>
+                            </label>
+                            <p
+                                v-if="!holderStaff.length && !loadingHolderStaff"
+                                class="mt-2 text-xs text-base-500"
+                            >
+                                Belum ada staf di site ini.
+                            </p>
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                <BaseButton size="sm" :loading="savingHolder" @click="saveHolder"
+                                    >Simpan pemegang</BaseButton
+                                >
+                                <BaseButton
+                                    v-if="device.holder_user_id != null"
+                                    size="sm"
+                                    variant="danger-outline"
+                                    :disabled="savingHolder"
+                                    @click="clearHolder"
+                                    >Lepas</BaseButton
                                 >
                             </div>
                         </BaseCard>

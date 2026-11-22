@@ -48,6 +48,8 @@ export type DeviceRow = {
     geofence_latitude?: string | number | null
     geofence_longitude?: string | number | null
     geofence_radius_meters?: number | null
+    // Staf pemegang HP (migrasi 0025). Dipakai kunci per-shift-staf.
+    holder_user_id?: number | null
     enrolled_at: Date | null
     is_active: boolean
     secret_hash?: string | null
@@ -116,6 +118,7 @@ export function deviceResource(device: DeviceRow, relations: DeviceRelations = {
         geofence_latitude: laravelDecimal(device.geofence_latitude ?? null, 7),
         geofence_longitude: laravelDecimal(device.geofence_longitude ?? null, 7),
         geofence_radius_meters: device.geofence_radius_meters ?? null,
+        holder_user_id: device.holder_user_id ?? null,
         enrolled_at: laravelDate(device.enrolled_at ?? null),
         is_active: Boolean(device.is_active),
         ...(relations.latestLocation !== undefined

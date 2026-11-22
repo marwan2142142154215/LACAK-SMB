@@ -185,6 +185,25 @@ async function toggleAfterHours(org) {
     }
 }
 
+// Saklar "kunci HP ikut shift pemegang" per-site: HP yang sudah ada pemegangnya
+// dikunci saat pemegangnya di luar shift (staff_shifts). PUT langsung.
+const togglingStaffShift = ref(null)
+async function toggleStaffShift(org) {
+    togglingStaffShift.value = org.id
+    try {
+        await api.put(`/organizations/${org.id}`, { staff_shift_lock: !org.staff_shift_lock })
+        toast.success(
+            org.staff_shift_lock ? 'Kunci ikut shift dimatikan' : 'Kunci ikut shift diaktifkan',
+            org.name,
+        )
+        await loadOrganizations()
+    } catch (err) {
+        toast.error('Gagal mengubah pengaturan', err.response?.data?.message)
+    } finally {
+        togglingStaffShift.value = null
+    }
+}
+
 onMounted(loadOrganizations)
 </script>
 
@@ -299,6 +318,30 @@ onMounted(loadOrganizations)
                             <span
                                 class="absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform"
                                 :class="org.after_hours_lock ? 'translate-x-[1.375rem]' : 'translate-x-0.5'"
+                            />
+                        </button>
+                    </div>
+
+                    <div class="mt-3 flex items-center justify-between gap-3 border-t border-base-800 pt-4">
+                        <div class="min-w-0">
+                            <p class="text-sm font-medium text-base-100">Kunci HP ikut shift pemegang</p>
+                            <p class="text-[11px] text-pretty text-base-500">
+                                HP yang sudah ada pemegangnya terkunci saat pemegangnya di luar jam shift-nya.
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            :aria-checked="org.staff_shift_lock"
+                            :disabled="togglingStaffShift === org.id"
+                            class="relative h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-500 disabled:opacity-50"
+                            :class="org.staff_shift_lock ? 'bg-accent-500' : 'bg-base-700'"
+                            :title="org.staff_shift_lock ? 'Matikan' : 'Aktifkan'"
+                            @click="toggleStaffShift(org)"
+                        >
+                            <span
+                                class="absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform"
+                                :class="org.staff_shift_lock ? 'translate-x-[1.375rem]' : 'translate-x-0.5'"
                             />
                         </button>
                     </div>
