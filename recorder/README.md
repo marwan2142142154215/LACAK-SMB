@@ -55,11 +55,14 @@ Lalu `pm2 restart lacak-livekit`. Redis **tidak** diperlukan.
 
 ```
 RECORDER_URL=http://127.0.0.1:7870
-# Disarankan mulai dari layar saja (lihat "Ukuran data" di bawah):
-RECORDING_SOURCES=screen_share
+# Yang direkam (lihat "Ukuran data" di bawah). "screen_share" saja = kamera TIDAK direkam, dan staf yang
+# hanya menyiarkan kamera (iPhone / peran "Kamera saja") tidak punya rekaman sama sekali.
+RECORDING_SOURCES=camera,screen_share
+# Kualitas rekaman kamera: low (180p), medium (360p, bawaan), high (720p). Layar selalu kualitas penuh.
+# RECORDER_CAMERA_QUALITY=medium
 ```
 
-`pm2 restart lacak-api --update-env` (DO_SPACES_* dan LIVEKIT_API_* yang sudah ada dipakai apa adanya).
+`pm2 restart lacak-api lacak-api-2 lacak-api-3 lacak-api-scheduler --update-env` (DO_SPACES_* dan LIVEKIT_API_* yang sudah ada dipakai apa adanya).
 
 ### Jalankan lewat pm2
 
@@ -75,7 +78,7 @@ curl -s http://127.0.0.1:7870/health                    # {"ok":true,"recordings
 
 Variabel opsional (env atau `.env`): `RECORDER_LISTEN` (harus loopback), `RECORDER_LIVEKIT_URL` (bawaan `ws://127.0.0.1:7880`),
 `RECORDER_WEBHOOK_URL` (bawaan `http://127.0.0.1:7564/api/v1/livekit/webhook`), `RECORDER_TMP_DIR`,
-`RECORDER_FFMPEG` (`auto` = pakai ffmpeg kalau ada).
+`RECORDER_CAMERA_QUALITY` (bawaan `medium` = 360p), `RECORDER_FFMPEG` (`auto` = pakai ffmpeg kalau ada).
 
 ## Uji dengan 2-3 staf dulu
 
@@ -88,13 +91,15 @@ Variabel opsional (env atau `.env`): `RECORDER_LISTEN` (harus loopback), `RECORD
 
 ## Ukuran data (baca sebelum menyalakan untuk semua staf)
 
-Perkiraan kasar untuk VP8 (aktual bergantung isi layar dan jaringan): kamera 720p ±0,5-1 GB/jam, layar 1080p/15fps ±0,2-0,4 GB/jam
+Perkiraan kasar untuk VP8 (aktual bergantung isi layar dan jaringan): kamera 360p ±0,2 GB/jam
+(720p sampai ±1,1 GB/jam), layar 1080p/15fps ±0,2-0,4 GB/jam
 per staf. Untuk ±130 staf yang siaran bersamaan:
 
 - layar saja: ±25-50 GB per jam siaran, ±3-6 TB untuk masa simpan 72 jam;
-- kamera + layar: beberapa kali lipatnya.
+- kamera 360p: tambahan ±26 GB per jam siaran, ±0,6 TB untuk 72 jam kalau staf siaran 8 jam sehari (720p: ±5-6 kali lipatnya).
 
-Mulai dari `RECORDING_SOURCES=screen_share`, ukur ukuran file sebenarnya dari uji coba, lalu hitung biaya Spaces dan
+Tiap potongan satu jam ditulis dulu di `RECORDER_TMP_DIR` sebelum diunggah: pastikan disk server sanggup menampung satu jam
+rekaman semua staf (ffmpeg sempat memakai salinan kedua saat berkas ditutup). Uji dengan beberapa staf, ukur ukuran file sebenarnya dari uji coba, lalu hitung biaya Spaces dan
 bandwidth unggah server sebelum memperluas.
 
 ## Batasan yang perlu diketahui
@@ -105,8 +110,8 @@ bandwidth unggah server sebelum memperluas.
   gagal, laporan kedua menandai berkas itu gagal. Berkas jam terakhir baru bisa diputar setelah unggahannya selesai.
 - Rekorder di-restart di tengah jalan: rekaman yang berjalan diselesaikan dan diunggah dulu (hingga 90 detik); sisanya yang
   hilang akan dianggap selesai oleh backend pada pergantian jam berikutnya dan rekaman baru dimulai.
-- Resolusi dikunci ke kualitas tertinggi (simulcast) supaya tidak berganti di tengah berkas, jadi bandwidth LiveKit → rekorder
-  setara satu penonton ber-kualitas penuh per track.
+- Resolusi dikunci ke satu lapisan simulcast (kamera 360p, layar tertinggi) supaya tidak berganti di tengah berkas, jadi bandwidth
+  LiveKit → rekorder setara satu penonton per track, dan staf terus mengirim lapisan itu walau tidak ada yang menonton.
 - Kode ini baru diuji dengan tes unit (tanda tangan, penulisan WebM, validasi) dan kompilasi; **belum diuji terhadap server
   LiveKit sungguhan**. Itulah gunanya uji dengan 2-3 staf di atas.
 

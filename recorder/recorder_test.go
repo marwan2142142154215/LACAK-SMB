@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 func TestSignWebhookRoundTrip(t *testing.T) {
@@ -74,6 +76,54 @@ func tamper(token string) string {
 	changed := strings.Replace(string(raw), "APIkey", "Hacker", 1)
 	parts[1] = base64.RawURLEncoding.EncodeToString([]byte(changed))
 	return strings.Join(parts, ".")
+}
+
+func TestParseQuality(t *testing.T) {
+	cases := map[string]livekit.VideoQuality{
+		"low":      livekit.VideoQuality_LOW,
+		"medium":   livekit.VideoQuality_MEDIUM,
+		" MEDIUM ": livekit.VideoQuality_MEDIUM,
+		"high":     livekit.VideoQuality_HIGH,
+	}
+	for input, want := range cases {
+		got, err := parseQuality(input)
+		if err != nil || got != want {
+			t.Errorf("parseQuality(%q) = %v, %v; ingin %v", input, got, err, want)
+		}
+	}
+	for _, input := range []string{"", "360p", "off"} {
+		if _, err := parseQuality(input); err == nil {
+			t.Errorf("parseQuality(%q) seharusnya ditolak", input)
+		}
+	}
+}
+
+func TestCameraQualityFromEnv(t *testing.T) {
+	t.Setenv("LIVEKIT_API_KEY", "APIkey")
+	t.Setenv("LIVEKIT_API_SECRET", "secret-secret-secret-secret-1234")
+	t.Setenv("RECORDER_LISTEN", "127.0.0.1:7870")
+
+	t.Setenv("RECORDER_CAMERA_QUALITY", "")
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("konfigurasi bawaan ditolak: %v", err)
+	}
+	if got := cfg.qualityFor(livekit.TrackSource_CAMERA); got != livekit.VideoQuality_MEDIUM {
+		t.Errorf("kamera bawaan = %v, ingin MEDIUM", got)
+	}
+	if got := cfg.qualityFor(livekit.TrackSource_SCREEN_SHARE); got != livekit.VideoQuality_HIGH {
+		t.Errorf("layar = %v, ingin HIGH", got)
+	}
+
+	t.Setenv("RECORDER_CAMERA_QUALITY", "high")
+	if cfg, err = loadConfig(); err != nil || cfg.qualityFor(livekit.TrackSource_CAMERA) != livekit.VideoQuality_HIGH {
+		t.Errorf("RECORDER_CAMERA_QUALITY=high tidak dipakai: %v, %v", cfg.CameraQuality, err)
+	}
+
+	t.Setenv("RECORDER_CAMERA_QUALITY", "360p")
+	if _, err = loadConfig(); err == nil {
+		t.Error("nilai tidak dikenal seharusnya ditolak")
+	}
 }
 
 func TestIsLoopback(t *testing.T) {

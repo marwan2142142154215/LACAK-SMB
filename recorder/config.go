@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/livekit/protocol/livekit"
 )
 
 // Config dibaca dari environment (dan opsional berkas .env, supaya key LiveKit tidak diduplikasi).
@@ -27,6 +29,8 @@ type Config struct {
 	MaxSegment time.Duration
 	// Jalur ffmpeg untuk memperbaiki durasi/indeks (-c copy). Kosong = tidak dipakai.
 	FFmpeg string
+	// Lapisan simulcast kamera yang direkam (RECORDER_CAMERA_QUALITY); layar selalu kualitas penuh.
+	CameraQuality livekit.VideoQuality
 }
 
 // loadEnvFile membaca baris KEY=VALUE (abaikan komentar & kutip) ke environment proses,
@@ -79,6 +83,11 @@ func loadConfig() (Config, error) {
 		FFmpeg:     os.Getenv("RECORDER_FFMPEG"),
 		MaxSegment: 2 * time.Hour,
 	}
+	quality, err := parseQuality(envOr("RECORDER_CAMERA_QUALITY", "medium"))
+	if err != nil {
+		return cfg, err
+	}
+	cfg.CameraQuality = quality
 	if cfg.APIKey == "" || cfg.APISecret == "" {
 		return cfg, fmt.Errorf("LIVEKIT_API_KEY dan LIVEKIT_API_SECRET wajib diisi")
 	}

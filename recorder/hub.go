@@ -14,7 +14,6 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
@@ -141,8 +140,8 @@ func (h *hub) start(req startRequest) (string, error) {
 	}
 	// Kalau track tidak kunjung mengalir, jangan biarkan catatan rekaman menggantung selamanya.
 	time.AfterFunc(subscribeTimeout, func() { h.abandon(rc, rec, "track tidak kunjung diterima") })
-	// Kunci kualitas tertinggi supaya resolusi tidak berganti di tengah berkas (staf mengirim simulcast).
-	_ = pub.SetVideoQuality(livekit.VideoQuality_HIGH)
+	// Kunci satu lapisan supaya resolusi tidak berganti di tengah berkas (staf mengirim simulcast).
+	_ = pub.SetVideoQuality(h.cfg.qualityFor(pub.Source()))
 	return rec.id, nil
 }
 
@@ -346,6 +345,8 @@ func (h *hub) roomFor(name string) (*roomConn, error) {
 // onSubscribed dipanggil SDK saat track yang diminta sudah mengalir.
 func (h *hub) onSubscribed(rc *roomConn, track *webrtc.TrackRemote, pub *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
 	sid := pub.SID()
+	// Dikunci lagi di sini: langganan ulang (sambungan pulih) kembali ke kualitas bawaan.
+	_ = pub.SetVideoQuality(h.cfg.qualityFor(pub.Source()))
 	h.mu.Lock()
 	handle := &trackHandle{track: track, pub: pub, rp: rp}
 	rc.tracks[sid] = handle
